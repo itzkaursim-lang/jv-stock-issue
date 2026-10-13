@@ -104,6 +104,12 @@ function nextSlip() {
   for (let i = 0; i < 500; i++) { n++; const s = m[1] + String(n).padStart(m[2].length, '0'); if (!used.has(s.toUpperCase()) && SLIP_RE.test(s)) return s; }
   return '';
 }
+function plannedSlip(ids) {
+  const used = allSlips();
+  const ls = S.lines.filter(l => ids.includes(l.id) && l.slip);
+  for (const l of ls) if (!used.has(l.slip.toUpperCase())) return l.slip;
+  return '';
+}
 function slipProblem(s) {
   if (!s) return 'Enter a Slip No.';
   if (!SLIP_RE.test(s)) return 'Slip No must be 2–10 characters with at least one digit.';
@@ -139,19 +145,35 @@ function headerMap(rows, must) {
   return null;
 }
 function parseRequests(wb, kind) {
-  const ws = kind === 'old' ? (findSheet(wb, /old.?pending/i) || wb.Sheets[wb.SheetNames[0]]) : (findSheet(wb, /new.?request/i) || wb.Sheets[wb.SheetNames[0]]);
+  const isNew = kind !== 'old';
+  const prefer = isNew ? /new.?request/i : /old.?pending/i;
+  const avoid = isNew ? /read.?me|old.?pending/i : /read.?me|new.?request/i;
+  const names = [...wb.SheetNames.filter(n => prefer.test(n)), ...wb.SheetNames.filter(n => !prefer.test(n) && !avoid.test(n))];
+  let last = null;
+  for (const n of names) {
+    const r = parseReqSheet(wb.Sheets[n], kind, n);
+    if (r.rows && r.rows.length) return r;
+    if (!last || (r.info && !last.info)) last = r;
+  }
+  return last || { error: 'No sheet found in this file.' };
+}
+function parseReqSheet(ws, kind, sheetName) {
   const rows = rowsOf(ws);
-  const hm = headerMap(rows, [/request|slip/, /store|mess|project/, /code/, /qty|quant/]);
-  if (!hm) return { error: 'Columns not found. Needs: Request No, Store, Request date, Item code, Qty. Use the template.' };
+  const hm = headerMap(rows, [/request|slip|req/, /store|mess|project|area/, /code/, /qty|quant/]);
+  if (!hm) return { error: 'Sheet "' + sheetName + '": columns not found. Row 1 must have: Request No, Store, Request date, Item code, Qty.' };
   const col = re => hm.hd.findIndex(c => re.test(c));
-  const ci = { req: col(/request|slip/), store: col(/store|mess|project/), date: col(/date/), code: col(/item code|^code/), qty: col(/qty|quant/), rcv: col(/receiver/), earlier: col(/earlier/) };
+  const reqI = col(/request/) >= 0 ? col(/request/) : col(/slip|req/);
+  const slipI = hm.hd.findIndex((c, k) => k !== reqI && /slip/.test(c) && !/earlier/.test(c));
+  const ci = { req: reqI, slip: slipI, store: col(/store|mess|project|area/), date: col(/date/), code: col(/item code|^code|code/), qty: col(/qty|quant/), rcv: col(/receiver/), earlier: col(/earlier/) };
   const have = new Set(S.lines.map(l => l.req.toUpperCase() + '|' + l.code));
   const out = [], dup = [], warn = new Set(), badQty = [];
+  let ex = 0, data = 0;
   for (let i = hm.h + 1; i < rows.length; i++) {
     const r = rows[i];
-    const req = String(r[ci.req]).trim(), code = String(r[ci.code]).trim().toUpperCase(), qty = parseFloat(r[ci.qty]);
+    const req = String(r[ci.req]).trim(), code = String(r[ci.code]).trim().toUpperCase(), qty = parseFloat(String(r[ci.qty]).replace(/[^\d.]/g, ''));
     if (!req && !code) continue;
-    if (/^EX/i.test(req)) continue;
+    data++;
+    if (/^EX[-\/]/i.test(req)) { ex++; continue; }
     if (!req || !code) { warn.add('Row ' + (i + 1) + ': missing Request No or Item code'); continue; }
     if (!(qty > 0)) { badQty.push(i + 1); continue; }
     const key = req.toUpperCase() + '|' + code;
@@ -162,11 +184,14 @@ function parseRequests(wb, kind) {
     const date = (ci.date >= 0 && toISO(r[ci.date])) || today();
     const rcv = ci.rcv >= 0 ? String(r[ci.rcv]).replace(/\D/g, '') : '';
     if (rcv && rcv.length !== 6) warn.add('Row ' + (i + 1) + ': receiver must be 6 digits, ignored');
-    if (!S.stock[code]) warn.add(code + ' is not in the current stock sheet');
-    out.push({ req, store, date, code, qty, rcv: rcv.length === 6 ? rcv : '', src: kind, earlier: ci.earlier >= 0 ? String(r[ci.earlier]).trim() : '' });
+    if (Object.keys(S.stock).length && !S.stock[code]) warn.add(code + ' is not in the current stock sheet');
+    const slip = ci.slip >= 0 ? String(r[ci.slip]).trim().toUpperCase() : '';
+    if (slip && !SLIP_RE.test(slip)) warn.add('Row ' + (i + 1) + ': Slip No ' + slip + ' is not valid (2–10 chars with a digit), ignored');
+    out.push({ req, store, date, code, qty, rcv: rcv.length === 6 ? rcv : '', slip: slip && SLIP_RE.test(slip) ? slip : '', src: kind, earlier: ci.earlier >= 0 ? String(r[ci.earlier]).trim() : '' });
   }
   if (badQty.length) warn.add('Rows with a bad Qty were skipped: ' + badQty.slice(0, 8).join(', ') + (badQty.length > 8 ? '…' : ''));
-  return { rows: out, dup, warn: [...warn] };
+  const info = 'Read sheet "' + sheetName + '", headers on row ' + (hm.h + 1) + ', ' + data + ' filled rows' + (ex ? ', ' + ex + ' example rows (EX-…) skipped' : '') + '.';
+  return { rows: out, dup, warn: [...warn], info };
 }
 function parseStock(wb) {
   const rows = rowsOf(wb.Sheets[wb.SheetNames[0]]);
@@ -184,7 +209,7 @@ function parseStock(wb) {
 }
 
 /* ================= UI state ================= */
-let ui = { tab: 'home', view: null, req: null, store: null, sheet: null, reg: { type: 'issue', date: today(), items: false }, search: { q: '', type: 'all', from: '', to: '', store: '', open: null }, upload: null, form: null };
+let ui = { sort: { home: 'priority', pend: 'store', reg: 'time' }, tab: 'home', view: null, req: null, store: null, sheet: null, reg: { type: 'issue', date: today(), items: false }, search: { q: '', type: 'all', from: '', to: '', store: '', open: null }, upload: null, form: null };
 
 const ICON = {
   home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg>',
@@ -204,7 +229,8 @@ function vHome() {
   const R = requests();
   const todays = R.filter(r => r.date === t && r.src !== 'old').map(r => Object.assign(r, reqState(r, PL))).filter(r => r.st !== 'done');
   const order = { full: 0, part: 1, wait: 2 };
-  todays.sort((a, b) => order[a.st] - order[b.st] || b.can.length - a.can.length);
+  const so = ui.sort.home;
+  todays.sort((a, b) => so === 'store' ? a.store.localeCompare(b.store) : so === 'req' ? a.req.localeCompare(b.req, undefined, { numeric: true }) : so === 'size' ? b.lines.length - a.lines.length : (order[a.st] - order[b.st] || b.can.length - a.can.length));
   const pend = S.lines.filter(isPending);
   const pendCan = pend.filter(l => PL[l.id] === 'issue').length;
   const issuedToday = S.entries.filter(e => (e.at || '').slice(0, 10) === t).length;
@@ -221,11 +247,12 @@ function vHome() {
   h += '<div class="card pad col"><div class="row"><h3>Today\'s requests</h3><span class="note">' + todays.length + ' open · ' + issuedToday + ' entries done</span></div>' +
     '<div class="grid3"><div class="tile t-ok"><b>' + c.full + '</b><span>Fully possible</span></div><div class="tile t-pt"><b>' + c.part + '</b><span>Partly possible</span></div><div class="tile t-no"><b>' + c.wait + '</b><span>Waiting</span></div></div></div>';
   if (todays.length) {
-    h += '<div class="sect">Do these now, in this order</div>';
+    h += '<div class="row" style="margin-top:4px"><span class="sect">' + (so === 'priority' ? 'Do these now, in this order' : 'Today\'s requests') + '</span>' + sortSel('home', [['priority', 'Priority'], ['store', 'Store A–Z'], ['req', 'Request No'], ['size', 'Most articles']]) + '</div>';
+    h += '<button class="btn ghost full" data-a="bulkEdit">Edit Slip No, date, receiver for all requests</button>';
     todays.forEach(r => {
       const tag = r.st === 'full' ? '<span class="chip c-ok">All ' + r.w.length + ' can issue</span>' : r.st === 'part' ? '<span class="chip c-pt">' + r.can.length + ' of ' + r.w.length + ' can issue</span>' : '<span class="chip c-no">Nothing in stock</span>';
       h += '<button class="card pad tap col" style="gap:6px" data-a="openReq" data-v="' + esc(r.req) + '"><div class="row"><b style="font-size:16px">' + esc(r.store) + '</b>' + tag + '</div>' +
-        '<div class="note">Request ' + esc(r.req) + ' · ' + r.lines.length + ' articles' + (r.iss.length ? ' · ' + r.iss.length + ' already issued' : '') + '</div></button>';
+        '<div class="note">Request ' + esc(r.req) + ' · ' + r.lines.length + ' articles' + (r.iss.length ? ' · ' + r.iss.length + ' already issued' : '') + (r.w[0] && r.w[0].slip ? ' · Slip ' + esc(r.w[0].slip) : '') + '</div></button>';
     });
   } else if (S.lines.length) h += '<div class="card pad note">No open requests for today. Upload today\'s requests, or check Pending.</div>';
   h += '<button class="card pad tap row" data-a="tab" data-v="pend"><span><b>Older pending</b><div class="note">' + pend.length + ' articles waiting · ' + pendCan + ' in stock now</div></span><span class="chip ' + (pendCan ? 'c-ok' : 'c-gy') + '">Open</span></button>';
@@ -265,6 +292,7 @@ function vReq() {
   h += '</div>';
   h += '<button class="btn main full" data-a="fillReq" data-v="' + esc(r.req) + '"' + (st.can.length ? '' : ' disabled') + '>Fill on CUIMS · ' + st.can.length + ' articles</button>';
   h += '<div class="note" style="text-align:center">Articles not issued stay pending with this request\'s date.</div>';
+  h += '<button class="btn ghost full" data-a="markDone" data-v="' + esc(r.req) + '"' + (st.w.length ? '' : ' disabled') + '>Already submitted on CUIMS? Mark as issued</button>';
   h += '<div class="grid2"><button class="btn ghost sm" data-a="editReq" data-v="' + esc(r.req) + '">Edit request</button><button class="btn ghost sm" data-a="dropReq" data-v="' + esc(r.req) + '">Remove waiting articles</button></div>';
   return h + '</main>';
 }
@@ -280,7 +308,9 @@ function vPend() {
   h += '<div class="grid2"><button class="btn sm" data-a="expPendPdf"' + (pend.length ? '' : ' disabled') + '>Pending PDF</button><button class="btn sm" data-a="expPendXlsx"' + (pend.length ? '' : ' disabled') + '>Pending Excel</button></div>';
   if (!pend.length) return h + '<div class="card pad note">Nothing pending.</div></main>';
   const g = groupBy(pend, l => l.store);
-  Object.keys(g).sort().forEach(store => {
+  h += '<div class="row"><span class="sect">By store</span>' + sortSel('pend', [['store', 'Store A–Z'], ['most', 'Most pending'], ['oldest', 'Oldest first'], ['ready', 'Most in stock']]) + '</div>';
+  const ps = ui.sort.pend;
+  Object.keys(g).sort((a, b) => ps === 'most' ? g[b].length - g[a].length : ps === 'oldest' ? g[a].reduce((m, l) => l.date < m ? l.date : m, '9') .localeCompare(g[b].reduce((m, l) => l.date < m ? l.date : m, '9')) : ps === 'ready' ? g[b].filter(l => PL[l.id] === 'issue').length - g[a].filter(l => PL[l.id] === 'issue').length : a.localeCompare(b)).forEach(store => {
     const L = g[store].sort((a, b) => a.date.localeCompare(b.date));
     const c = L.filter(l => PL[l.id] === 'issue');
     h += '<div class="card"><div class="pad row" style="background:var(--soft);border-bottom:1px solid var(--line);border-radius:16px 16px 0 0"><b>' + esc(store) + '</b><span class="note">' + L.length + ' pending</span></div>';
@@ -297,7 +327,7 @@ function vPend() {
 function openStart(store, lineIds, title) {
   const ls = S.lines.filter(l => lineIds.includes(l.id));
   const rcv = (ls.find(l => l.rcv) || {}).rcv || (S.stores[store] || {}).rcv || '';
-  ui.sheet = { kind: 'start', store, lineIds, title, slip: nextSlip(), rcv };
+  ui.sheet = { kind: 'start', store, lineIds, title, slip: plannedSlip(lineIds) || nextSlip(), rcv };
   renderSheet();
 }
 function shStart() {
@@ -355,7 +385,7 @@ function shUpload() {
     const stores = [...new Set(r.rows.map(x => x.store))];
     const reqs = [...new Set(r.rows.map(x => x.req))];
     h += '<div class="card pad col"><b>' + r.rows.length + ' articles · ' + reqs.length + ' requests · ' + stores.length + ' stores</b><div class="note">' + esc(stores.join(', ')) + '</div>' +
-      (r.dup.length ? '<div class="note">Skipped ' + r.dup.length + ' already loaded (same Request No + code).</div>' : '') + '</div>';
+      (r.dup.length ? '<div class="note">Skipped ' + r.dup.length + ' already loaded (same Request No + code).</div>' : '') + (r.info ? '<div class="note">' + esc(r.info) + '</div>' : '') + '</div>';
     const unknownStores = S.areas.length ? stores.filter(s => !S.areas.some(a => a.toUpperCase() === s)) : [];
     if (unknownStores.length) r.warn.unshift('Not in the CUIMS Project Area list: ' + unknownStores.join(', '));
     if (r.warn.length) h += '<div class="card pad col" style="gap:4px">' + r.warn.slice(0, 12).map(w => '<div class="err" style="font-weight:500">' + esc(w) + '</div>').join('') + (r.warn.length > 12 ? '<div class="note">…and ' + (r.warn.length - 12) + ' more</div>' : '') + '</div>';
@@ -374,7 +404,9 @@ function vReg() {
   h += '<div class="seg"><button data-a="regType" data-v="issue" class="' + (r.type === 'issue' ? 'on' : '') + '">Issue</button><button data-a="regType" data-v="return" class="' + (r.type === 'return' ? 'on' : '') + '">Return</button></div>';
   h += '<label class="f">Date<input type="date" data-in="regDate" value="' + esc(r.date) + '"></label>';
   if (r.type === 'issue') {
-    const list = S.entries.filter(e => entryDate(e) === r.date).sort((a, b) => entryTime(a).localeCompare(entryTime(b)));
+    const rs = ui.sort.reg;
+    const list = S.entries.filter(e => entryDate(e) === r.date).sort((a, b) => rs === 'store' ? a.store.localeCompare(b.store) : rs === 'slip' ? String(a.slip).localeCompare(String(b.slip), undefined, { numeric: true }) : entryTime(a).localeCompare(entryTime(b)));
+    h += '<div class="row"><span class="sect">' + list.length + ' entries</span>' + sortSel('reg', [['time', 'Time'], ['store', 'Store A–Z'], ['slip', 'Slip No']]) + '</div>';
     h += '<div class="grid2"><button class="btn main" data-a="pdfIssue"' + (list.length ? '' : ' disabled') + '>Make PDF</button><button class="btn" data-a="newManual">+ Manual entry</button></div>';
     h += '<label class="chk"><input type="checkbox" data-a="regItems"' + (r.items ? ' checked' : '') + '> Include item lines in the PDF</label>';
     if (!list.length) h += '<div class="card pad note">No issue entries on ' + fmtLong(r.date) + '.</div>';
@@ -556,7 +588,7 @@ function rowsReturns() {
 }
 function rowsAllLines() { return S.lines.map(l => ({ 'Request No': l.req, Store: l.store, 'Request date': fmtLong(l.date), 'Item code': l.code, Item: itemName(l.code), Qty: l.qty, Status: l.status, Source: l.src, Receiver: l.rcv || '', 'Issued in': l.issued.map(x => x.slip + (x.serial ? ' #' + x.serial : '')).join(', '), 'Earlier slips': l.earlier || '' })); }
 function template() {
-  saveWb([['New Requests', [{ 'Request No': 'EX-1201', Store: 'LC MESS', 'Request date': '12-10-2026', 'Item code': 'KM-187', Qty: 50, 'Receiver (optional)': '' }]],
+  saveWb([['New Requests', [{ 'Request No': 'EX-1201', Store: 'LC MESS', 'Request date': '12-10-2026', 'Item code': 'KM-187', Qty: 50, 'Receiver (optional)': '', 'Slip No (optional)': 'JV/920' }]],
     ['Old Pending', [{ 'Request No': 'EX-1150', Store: 'LC MESS', 'Request date': '09-10-2026', 'Item code': 'GR-887', 'Qty pending': 5, 'Earlier Slip Nos (optional)': 'JV/880' }]]], 'JV-Stock-Issue-template.xlsx');
 }
 
@@ -699,7 +731,7 @@ function recordSubmit(e) {
   toast('Saved ' + job.slip + ', Serial ' + (e.serial || '–') + '.');
   render();
   if (S.queue) {
-    const nx = nextQueueJob(); const slip = nextSlip();
+    const nx = nextQueueJob(); const slip = nx ? (plannedSlip(nx.ids) || nextSlip()) : '';
     if (nx && slip) { setTimeout(() => { toast('Queue: ' + nx.store + ', request ' + nx.req + ', Slip ' + slip); startJob(nx.store, slip, nx.rcv, nx.ids); }, 2500); return; }
     toast('Queue finished: nothing else can be issued today.');
   }
@@ -725,16 +757,44 @@ function renderSheet() {
   const el = document.getElementById('sheet');
   if (!ui.sheet) { el.innerHTML = ''; return; }
   const k = ui.sheet.kind;
-  const body = k === 'start' ? shStart() : k === 'upload' ? shUpload() : k === 'entry' ? shEntry() : k === 'return' ? shReturn() : k === 'editReq' ? shEditReq() : '';
+  const body = k === 'start' ? shStart() : k === 'upload' ? shUpload() : k === 'entry' ? shEntry() : k === 'return' ? shReturn() : k === 'editReq' ? shEditReq() : k === 'bulk' ? shBulk() : k === 'mark' ? shMark() : '';
   const sc = el.querySelector('.sheet') ? el.querySelector('.sheet').scrollTop : 0;
   el.innerHTML = '<div class="sheetbg" data-a="bgClose"><div class="sheet" role="dialog" aria-modal="true">' + body + '</div></div>';
   el.querySelector('.sheet').scrollTop = sc;
+}
+function sortSel(k, opts) { return '<select data-sort="' + k + '" style="width:auto;min-height:38px;font-size:14px;padding:0 8px">' + opts.map(([v, l]) => '<option value="' + v + '"' + (ui.sort[k] === v ? ' selected' : '') + '>Sort: ' + l + '</option>').join('') + '</select>'; }
+function bulkList() {
+  const PL = plan();
+  return requests().map(r => Object.assign(r, reqState(r, PL))).filter(r => r.w.length).sort((a, b) => a.date.localeCompare(b.date) || a.req.localeCompare(b.req, undefined, { numeric: true }));
+}
+function shBulk() {
+  const f = ui.form;
+  let h = '<div class="row"><h2>Edit all requests</h2><button class="btn sm ghost" data-a="closeSheet">Close</button></div>';
+  h += '<div class="note">Set Slip No, date and receiver for every open request at once. Slip No is used for the next entry of that request.</div>';
+  h += '<div class="card pad col"><b>Auto-number Slip Nos</b><div class="grid2"><input type="text" data-bulkstart="1" value="' + esc(f.start) + '" class="mono" placeholder="First slip, e.g. JV/920" autocapitalize="characters"><button class="btn" data-a="bulkAuto">Fill in order</button></div><div class="note">Fills empty Slip boxes below, top to bottom, counting up.</div></div>';
+  f.rows.forEach((r, i) => {
+    h += '<div class="card pad col" style="gap:8px"><div class="row"><b>' + esc(r.store) + '</b><span class="note">Request ' + esc(r.req) + ' · ' + r.n + ' open</span></div>' +
+      '<div class="grid3"><label class="f">Slip No<input type="text" data-br="' + i + '|slip" value="' + esc(r.slip) + '" class="mono" autocapitalize="characters"></label><label class="f">Date<input type="date" data-br="' + i + '|date" value="' + esc(r.date) + '"></label><label class="f">Receiver<input type="text" data-br="' + i + '|rcv" value="' + esc(r.rcv) + '" class="mono" inputmode="numeric" maxlength="6"></label></div></div>';
+  });
+  h += '<button class="btn main full" data-a="bulkSave">Save all</button>';
+  return h;
+}
+function shMark() {
+  const f = ui.form;
+  let h = '<div class="row"><h2>Mark as issued</h2><button class="btn sm ghost" data-a="closeSheet">Close</button></div>';
+  h += '<div class="note">Use this when the entry is already submitted on CUIMS but the app did not record it. Stock and pending update like a normal entry.</div>';
+  h += '<div class="grid2"><label class="f">Slip No<input type="text" data-f="slip" value="' + esc(f.slip) + '" class="mono" autocapitalize="characters"></label><label class="f">Serial No<input type="text" data-f="serial" value="' + esc(f.serial) + '" class="mono" inputmode="numeric"></label></div>';
+  h += '<div class="grid2"><label class="f">Receiver (6 digits)<input type="text" data-f="rcv" value="' + esc(f.rcv) + '" class="mono" inputmode="numeric" maxlength="6"></label><label class="f">Date<input type="date" data-f="date" value="' + esc(f.date) + '"></label></div>';
+  h += '<div class="sect">Articles in this entry</div><div class="card">' + f.lines.map(l => '<label class="line chk" style="flex-direction:row;gap:10px"><input type="checkbox" data-a="markPick" data-v="' + l.id + '"' + (f.pick[l.id] ? ' checked' : '') + '><span><b>' + esc(itemName(l.code)) + '</b><br><span class="note mono">' + esc(l.code) + ' · ' + num(l.qty) + ' ' + esc(itemUom(l.code)) + '</span></span></label>').join('') + '</div>';
+  h += '<button class="btn main full" data-a="markSave">Save as issued</button>';
+  return h;
 }
 function shEditReq() {
   const f = ui.form;
   let h = '<div class="row"><h2>Edit request ' + esc(f.req) + '</h2><button class="btn sm ghost" data-a="closeSheet">Close</button></div><div class="note">Only waiting articles can be changed. Issued ones stay as recorded.</div>';
   h += '<label class="f">Store<input type="text" data-f="store" list="areaList" value="' + esc(f.store) + '" autocapitalize="characters"></label>' + areaDatalist();
   h += '<div class="grid2"><label class="f">Request date<input type="date" data-f="date" value="' + esc(f.date) + '"></label><label class="f">Receiver for this request<input type="text" data-f="rcv" value="' + esc(f.rcv) + '" class="mono" inputmode="numeric" maxlength="6"></label></div>';
+  h += '<label class="f">Slip No for the next entry<input type="text" data-f="slip" value="' + esc(f.slip || '') + '" class="mono" autocapitalize="characters" placeholder="optional"></label>';
   h += '<div class="sect">Waiting articles</div>' + itemRowsHtml(f.items, true) + '<button class="btn ghost" data-a="addItem">+ Add article</button>';
   h += '<button class="btn main full" data-a="saveReq">Save request</button>';
   return h;
@@ -752,7 +812,7 @@ document.addEventListener('click', async ev => {
   const t = ev.target.closest('[data-a]'); if (!t) return;
   const a = t.dataset.a, v = t.dataset.v;
   if (a === 'bgClose') { if (ev.target === t) { ui.sheet = null; renderSheet(); } return; }
-  if (t.type === 'checkbox' && !['hold', 'queueToggle', 'regItems', 'mgrToggle', 'syncAuto', 'lockToggle'].includes(a)) return;
+  if (t.type === 'checkbox' && !['hold', 'queueToggle', 'regItems', 'mgrToggle', 'syncAuto', 'lockToggle', 'markPick'].includes(a)) return;
   switch (a) {
     case 'tab': ui.tab = v; ui.view = null; render(); window.scrollTo(0, 0); break;
     case 'openSite': if (N) N.openSite(); else toast('Open this inside the app.'); break;
@@ -765,14 +825,39 @@ document.addEventListener('click', async ev => {
     case 'fillReq': { const PL = plan(); const r = requests().find(x => x.req === v); const ids = r.lines.filter(l => l.status === 'waiting' && PL[l.id] === 'issue').map(l => l.id); openStart(r.store, ids, r.store + ', request ' + r.req); break; }
     case 'fillStore': { const PL = plan(); const ids = S.lines.filter(l => isPending(l) && l.store === v && PL[l.id] === 'issue').map(l => l.id); openStart(v, ids, v + ', pending clearance'); break; }
     case 'editReq': { const r = requests().find(x => x.req === v); const w = r.lines.filter(l => l.status === 'waiting');
-      ui.form = { req: v, store: r.store, date: r.date, rcv: (r.lines.find(l => l.rcv) || {}).rcv || '', items: w.map(l => ({ lineId: l.id, code: l.code, qty: l.qty, name: itemName(l.code), uom: itemUom(l.code) })) };
+      ui.form = { req: v, store: r.store, date: r.date, rcv: (r.lines.find(l => l.rcv) || {}).rcv || '', slip: (w.find(l => l.slip) || {}).slip || '', items: w.map(l => ({ lineId: l.id, code: l.code, qty: l.qty, name: itemName(l.code), uom: itemUom(l.code) })) };
       ui.sheet = { kind: 'editReq' }; renderSheet(); break; }
     case 'dropReq': if (confirm('Remove all waiting articles of request ' + v + '? Issued ones stay in the records.')) { S.lines.forEach(l => { if (l.req === v && l.status === 'waiting') l.status = 'dropped'; }); save(); ui.view = null; render(); } break;
     case 'saveReq': { const f = ui.form; if (f.rcv && !/^\d{6}$/.test(f.rcv)) { toast('Receiver must be 6 digits or blank.'); break; }
       const items = cleanItems(f.items); const keep = new Set(items.filter(i => i.lineId).map(i => i.lineId));
-      S.lines.forEach(l => { if (l.req !== f.req) return; l.store = f.store.trim().toUpperCase(); l.date = f.date || l.date; l.rcv = f.rcv || ''; if (l.status === 'waiting' && !keep.has(l.id)) l.status = 'dropped'; });
-      items.forEach(i => { if (i.lineId) { const l = S.lines.find(x => x.id === i.lineId); l.code = i.code; l.qty = i.qty; } else S.lines.push({ id: nid(), req: f.req, store: f.store.trim().toUpperCase(), date: f.date, code: i.code, qty: i.qty, rcv: f.rcv || '', src: 'new', earlier: '', status: 'waiting', issued: [] }); });
+      const sl = (f.slip || '').trim().toUpperCase(); if (sl && !SLIP_RE.test(sl)) { toast('Slip No must be 2–10 characters with a digit.'); break; }
+      S.lines.forEach(l => { if (l.req !== f.req) return; l.store = f.store.trim().toUpperCase(); l.date = f.date || l.date; l.rcv = f.rcv || ''; if (l.status === 'waiting') l.slip = sl; if (l.status === 'waiting' && !keep.has(l.id)) l.status = 'dropped'; });
+      items.forEach(i => { if (i.lineId) { const l = S.lines.find(x => x.id === i.lineId); l.code = i.code; l.qty = i.qty; } else S.lines.push({ id: nid(), req: f.req, store: f.store.trim().toUpperCase(), date: f.date, code: i.code, qty: i.qty, rcv: f.rcv || '', slip: sl, src: 'new', earlier: '', status: 'waiting', issued: [] }); });
       save(); ui.sheet = null; renderSheet(); render(); toast('Request saved.'); break; }
+    case 'bulkEdit': ui.form = { start: nextSlip(), rows: bulkList().map(r => ({ req: r.req, store: r.store, n: r.w.length, slip: (r.w.find(l => l.slip) || {}).slip || '', date: r.date, rcv: (r.lines.find(l => l.rcv) || {}).rcv || (S.stores[r.store] || {}).rcv || '' })) }; ui.sheet = { kind: 'bulk' }; renderSheet(); break;
+    case 'bulkAuto': { const f = ui.form; const m = String(f.start || '').trim().toUpperCase().match(/^(.*?)(\d+)$/); if (!m) { toast('Type the first Slip No, ending in a number, e.g. JV/920'); break; }
+      const used = allSlips(); f.rows.forEach(r => used.has((r.slip || '').toUpperCase()) || r.slip ? used.add(r.slip.toUpperCase()) : 0);
+      let n = parseInt(m[2], 10);
+      f.rows.forEach(r => { if (r.slip) return; let sl; do { sl = m[1] + String(n).padStart(m[2].length, '0'); n++; } while (used.has(sl.toUpperCase())); used.add(sl.toUpperCase()); r.slip = sl; });
+      renderSheet(); break; }
+    case 'bulkSave': { const f = ui.form; const bad = f.rows.find(r => (r.slip && !SLIP_RE.test(r.slip)) || (r.rcv && !/^\d{6}$/.test(r.rcv)));
+      if (bad) { toast('Check ' + bad.store + ': Slip 2–10 chars with a digit, receiver 6 digits.'); break; }
+      const seen = {}; const used = allSlips(); const clash = f.rows.find(r => r.slip && (seen[r.slip] || used.has(r.slip)) ? true : (seen[r.slip] = 1, false));
+      if (clash) { toast('Slip ' + clash.slip + ' is used twice or already used. Change it.'); break; }
+      f.rows.forEach(r => S.lines.forEach(l => { if (l.req !== r.req) return; if (r.date) l.date = r.date; l.rcv = r.rcv || ''; if (l.status === 'waiting') l.slip = r.slip || ''; }));
+      save(); ui.sheet = null; renderSheet(); render(); toast('All requests updated.'); break; }
+    case 'markDone': { const PL = plan(); const r = requests().find(x => x.req === v); const w = r.lines.filter(l => l.status === 'waiting'); const pick = {}; w.forEach(l => { if (PL[l.id] === 'issue') pick[l.id] = 1; });
+      ui.form = { req: v, store: r.store, slip: plannedSlip(w.map(l => l.id)) || '', serial: '', rcv: (r.lines.find(l => l.rcv) || {}).rcv || (S.stores[r.store] || {}).rcv || '', date: today(), lines: w, pick };
+      ui.sheet = { kind: 'mark' }; renderSheet(); break; }
+    case 'markPick': if (t.checked) ui.form.pick[v] = 1; else delete ui.form.pick[v]; break;
+    case 'markSave': { const f = ui.form; const slip = (f.slip || '').trim().toUpperCase(); const sp = slipProblem(slip);
+      if (sp) { toast(sp); break; } if (!/^\d{6}$/.test(f.rcv)) { toast('Receiver must be 6 digits.'); break; }
+      const ls = f.lines.filter(l => f.pick[l.id]); if (!ls.length) { toast('Tick at least one article.'); break; }
+      const at = new Date(f.date + 'T' + timeNow()).toISOString();
+      S.entries.push({ id: nid(), slip, serial: (f.serial || '').trim(), store: f.store, rcv: f.rcv, rname: rname(f.rcv), at, date: f.date, time: timeNow(), by: meTag(), kind: 'auto', remarks: 'marked by hand',
+        items: ls.map(l => ({ lineId: l.id, req: l.req, code: l.code, name: itemName(l.code), uom: itemUom(l.code), qty: l.qty, remark: remarkFor(l.date) })) });
+      ls.forEach(l => { const x = S.lines.find(y => y.id === l.id); x.status = 'issued'; x.issued.push({ slip, serial: (f.serial || '').trim(), at }); if (S.stock[l.code]) S.stock[l.code].qty = Math.round((S.stock[l.code].qty - l.qty) * 1000) / 1000; });
+      save(); ui.sheet = null; renderSheet(); render(); toast('Recorded ' + slip + ' as issued.'); break; }
     case 'expPendPdf': pdfPending(); break;
     case 'expPendXlsx': saveWb([['Pending', rowsPending()]], 'Pending-' + today() + '.xlsx'); break;
     case 'closeSheet': ui.sheet = null; renderSheet(); break;
@@ -840,6 +925,8 @@ document.addEventListener('input', ev => {
   if (el.dataset.in === 'slip' || el.dataset.in === 'rcv') { const k = focusKey(el); ui.sheet[el.dataset.in] = el.dataset.in === 'slip' ? el.value.trim().toUpperCase() : el.value.replace(/\D/g, ''); renderSheet(); refocus(k); return; }
   if (el.dataset.in === 'q') { const k = focusKey(el); ui.search.q = el.value; render(); refocus(k); return; }
   if (el.dataset.f) { ui.form[el.dataset.f] = el.value; return; }
+  if (el.dataset.br) { const [i, f] = el.dataset.br.split('|'); ui.form.rows[+i][f] = f === 'slip' ? el.value.trim().toUpperCase() : f === 'rcv' ? el.value.replace(/\D/g, '') : el.value; return; }
+  if (el.dataset.bulkstart) { ui.form.start = el.value; return; }
   if (el.dataset.it) { const [i, f] = el.dataset.it.split('|'); ui.form.items[+i][f] = el.value; return; }
 });
 document.addEventListener('change', async ev => {
@@ -854,6 +941,7 @@ document.addEventListener('change', async ev => {
     } catch (e) { ui.upload.error = 'Could not read this file. Use .xlsx or .csv.'; }
     renderSheet(); return;
   }
+  if (el.dataset.sort) { ui.sort[el.dataset.sort] = el.value; render(); return; }
   if (el.dataset.in === 'regDate') { ui.reg.date = el.value || today(); render(); return; }
   if (el.dataset.in === 'sFrom') { ui.search.from = el.value; render(); return; }
   if (el.dataset.in === 'sTo') { ui.search.to = el.value; render(); return; }
@@ -870,7 +958,7 @@ function doImport() {
   if (u.kind === 'stock') { S.stock = r.stock; S.stockAt = new Date().toISOString(); save(); toast('Stock replaced: ' + r.count + ' items. Everything re-planned.'); }
   else {
     r.rows.forEach(x => {
-      S.lines.push({ id: nid(), req: x.req, store: x.store, date: x.date, code: x.code, qty: x.qty, rcv: x.rcv, src: x.src, earlier: x.earlier || '', status: 'waiting', issued: [] });
+      S.lines.push({ id: nid(), req: x.req, store: x.store, date: x.date, code: x.code, qty: x.qty, rcv: x.rcv, slip: x.slip || '', src: x.src, earlier: x.earlier || '', status: 'waiting', issued: [] });
       if (!S.stores[x.store]) S.stores[x.store] = { rcv: '', rname: '' };
     });
     save(); toast(r.rows.length + ' articles imported.');

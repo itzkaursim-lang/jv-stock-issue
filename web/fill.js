@@ -40,7 +40,7 @@
 
   function Pause(msg) { this.msg = msg; }
   function pauseWith(msg) { var j = job(); if (!j) return; j.paused = true; j.pauseMsg = msg; save(j); log(j, msg, true); ev('paused', { msg: msg }); throw new Pause(msg); }
-  function guard(j, k) { j.tries = j.tries || {}; j.tries[k] = (j.tries[k] || 0) + 1; save(j); if (j.tries[k] > 3) pauseWith(k + ': tried 3 times without success. Check the page, then tap Resume.'); }
+  function guard(j, k) { j.tries = j.tries || {}; j.tries[k] = (j.tries[k] || 0) + 1; save(j); if (j.tries[k] > 5) pauseWith('CUIMS did not respond at step "' + k + '" after 5 tries. Check the page, then tap Resume.'); }
 
   /* ---------- page kinds ---------- */
   var isIssue = !!$('ContentPlaceHolder1_ddldoctype');
@@ -49,9 +49,25 @@
   /* ---------- control bar ---------- */
   var bar = document.createElement('div');
   bar.id = 'jvbar';
-  bar.style.cssText = 'position:fixed;left:6px;right:6px;bottom:6px;z-index:2147483647;background:#fff;color:#1C1917;border:2px solid #1C1917;border-radius:14px;padding:10px 12px;font:14px/1.4 system-ui,sans-serif;box-shadow:0 8px 28px rgba(0,0,0,.28);max-height:46vh;overflow:auto';
+  bar.style.cssText = 'position:absolute;left:0;top:0;z-index:2147483647;background:#fff;color:#1C1917;border:2px solid #1C1917;border-radius:16px;padding:12px 14px;font:16px/1.45 system-ui,sans-serif;box-shadow:0 8px 28px rgba(0,0,0,.28);max-height:60vh;overflow:auto;transform-origin:0 0;box-sizing:border-box';
   document.body.appendChild(bar);
-  var BTN = 'min-height:40px;padding:0 12px;border-radius:10px;font:600 13px system-ui,sans-serif;cursor:pointer;';
+  var mini = false; try { mini = localStorage.getItem('jvBarMini') === '1'; } catch (e) {}
+  function place() {
+    var vv = window.visualViewport;
+    var sc = vv ? vv.scale : 1, vw = vv ? vv.width : window.innerWidth, vh = vv ? vv.height : window.innerHeight;
+    var pl = vv ? vv.pageLeft : window.scrollX, pt = vv ? vv.pageTop : window.scrollY;
+    var inv = 1 / sc, gap = 8;
+    var w = mini ? 0 : Math.round(vw * sc - gap * 2);
+    bar.style.width = mini ? 'auto' : w + 'px';
+    bar.style.transform = 'scale(' + inv + ')';
+    var h = bar.offsetHeight, bw = bar.offsetWidth;
+    bar.style.left = (mini ? pl + vw - (bw + gap) * inv : pl + gap * inv) + 'px';
+    bar.style.top = (pt + vh - (h + gap) * inv) + 'px';
+  }
+  if (window.visualViewport) { visualViewport.addEventListener('resize', place); visualViewport.addEventListener('scroll', place); }
+  window.addEventListener('scroll', place); window.addEventListener('resize', place);
+  setInterval(place, 800);
+  var BTN = 'min-height:46px;padding:0 14px;border-radius:12px;font:600 15px system-ui,sans-serif;cursor:pointer;';
   function btn(id, label, kind) {
     var st = kind === 'main' ? 'background:#1C1917;color:#fff;border:0;' : kind === 'warn' ? 'background:#fff;color:#B91C1C;border:1.5px solid #B91C1C;' : 'background:#fff;color:#1C1917;border:1.5px solid #A8A29E;';
     return '<button type="button" data-jv="' + id + '" style="' + BTN + st + '">' + label + '</button>';
@@ -61,12 +77,21 @@
     for (var i = 0; i < j.items.length; i++) { var it = j.items[i]; if (!it.skip && !inGrid(it.code)) return it; }
     return null;
   }
-  function paint() {
+  function paint() { paintInner(); place(); }
+  function paintInner() {
     var j = job();
     var h = '';
+    if (mini) {
+      var tt = j && j.items ? j.items.filter(function (x) { return !x.skip; }).length : 0;
+      var dd = j && j.items ? j.items.filter(function (x) { return !x.skip && inGrid(x.code); }).length : 0;
+      var st = !active(j) ? 'JV' : j.paused ? 'JV ⏸ ' + dd + '/' + tt : 'JV ▶ ' + dd + '/' + tt;
+      bar.innerHTML = '<button type="button" data-jv="expand" style="' + BTN + 'background:' + (active(j) && j.paused ? '#B45309' : '#1C1917') + ';color:#fff;border:0">' + st + ' ▲</button>';
+      bar.style.padding = '4px'; return;
+    }
+    bar.style.padding = '12px 14px';
     if (!active(j)) {
       var last = j && j.phase === 'done' ? '<div style="color:#15803D;font-weight:700">Saved: ' + esc(j.slip) + ', Serial ' + esc(j.serial || '') + '</div>' : '';
-      h = '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div><b>JV Stock Issue</b><div style="font-size:12px;color:#57534E">' + (last ? '' : 'No entry running. Start one from the app.') + '</div>' + last + '</div>' + btn('app', 'Back to app', 'main') + '</div>';
+      h = '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div><b>JV Stock Issue</b> ' + btn('hide', '▼ Hide', '') + '<div style="font-size:12px;color:#57534E">' + (last ? '' : 'No entry running. Start one from the app.') + '</div>' + last + '</div>' + btn('app', 'Back to app', 'main') + '</div>';
       bar.innerHTML = h; return;
     }
     var total = (j.items || []).filter(function (x) { return !x.skip; }).length;
@@ -79,7 +104,7 @@
     else if (j.phase === 'fill') status = 'Filling… ' + done + ' of ' + total + ' items added';
     else if (j.phase === 'await') status = 'All ' + total + ' items added and checked. Review Selected Items, then tap SUBMIT.';
     else if (j.phase === 'capture') status = 'Finding the Serial No for ' + j.slip + '…';
-    h += '<div style="display:flex;justify-content:space-between;gap:8px"><b>' + esc(j.store) + ', Slip ' + esc(j.slip) + '</b><span style="font-size:12px;color:#57534E">' + done + '/' + total + '</span></div>';
+    h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>' + esc(j.store) + ', Slip ' + esc(j.slip) + '</b><span style="display:flex;gap:6px;align-items:center"><span style="font-size:13px;color:#57534E">' + done + '/' + total + '</span>' + btn('hide', '▼ Hide', '') + '</span></div>';
     h += '<div style="height:6px;border-radius:3px;background:#E7E5E4;margin:6px 0;overflow:hidden"><div style="height:6px;width:' + (total ? Math.round(done / total * 100) : 0) + '%;background:#16A34A"></div></div>';
     h += '<div style="font-weight:600;color:' + (j.paused ? '#B45309' : '#1C1917') + '">' + esc(status) + '</div>';
     var L = (j.log || []).slice(-4);
@@ -89,8 +114,10 @@
       h += '<span style="width:100%;font-size:13px">Cancel this entry?</span>' + btn('cancelReset', 'Cancel + clear form', 'warn') + btn('cancelKeep', 'Cancel, leave form', 'warn') + btn('noCancel', 'Keep going', '');
     } else if (j.phase === 'dupfound') {
       h += btn('dupDone', 'Mark as done', 'main') + btn('dupIgnore', 'Fill anyway', '') + btn('app', 'Back to app', '');
+    } else if (j.phase === 'await' && ui.serialBox) {
+      h += '<input id="jvserial" inputmode="numeric" placeholder="Serial No from CUIMS" style="flex:1;min-width:150px;min-height:46px;border:1.5px solid #A8A29E;border-radius:12px;padding:0 10px;font:16px system-ui">' + btn('serialSave', 'Save', 'main') + btn('serialNo', 'Back', '');
     } else if (j.phase === 'await') {
-      h += btn('app', 'Back to app', '') + btn('cancel', 'Cancel', 'warn');
+      h += btn('app', 'Back to app', '') + btn('serialAsk', 'Submitted? Enter Serial', '') + btn('cancel', 'Cancel', 'warn');
     } else if (!isLogin) {
       h += (j.paused ? btn('resume', 'Resume', 'main') : btn('pause', 'Pause', 'main'));
       if (j.phase === 'fill' && curItem(j)) h += btn('skip', 'Skip ' + esc(curItem(j).code), '');
@@ -105,6 +132,8 @@
     var t = e.target.closest('[data-jv]'); if (!t) return;
     var a = t.getAttribute('data-jv'); var j = job();
     if (a === 'app') { B.showApp(); return; }
+    if (a === 'hide') { mini = true; try { localStorage.setItem('jvBarMini', '1'); } catch (er) {} paint(); return; }
+    if (a === 'expand') { mini = false; try { localStorage.setItem('jvBarMini', '0'); } catch (er) {} paint(); return; }
     if (!j) return;
     if (a === 'pause') { j.paused = true; j.pauseMsg = 'by you'; save(j); ev('paused', { msg: 'by you' }); paint(); }
     else if (a === 'resume') { j.paused = false; j.pauseMsg = ''; j.tries = {}; save(j); B.clearAlert(); ev('resumed'); paint(); run(); }
@@ -122,6 +151,14 @@
       if (a === 'cancelReset' && $('ContentPlaceHolder1_btnreset')) $('ContentPlaceHolder1_btnreset').click();
     }
     else if (a === 'dupDone') { j.phase = 'done'; j.serial = j.dupSerial; save(j); ev('submitted', { serial: j.dupSerial, rname: j.rname || '', items: j.items, note: 'already on CUIMS' }); paint(); }
+    else if (a === 'serialAsk') { ui.serialBox = true; paint(); var si = $('jvserial'); if (si) si.focus(); }
+    else if (a === 'serialNo') { ui.serialBox = false; paint(); }
+    else if (a === 'serialSave') {
+      var v = (($('jvserial') || {}).value || '').replace(/\D/g, '');
+      if (!v) return;
+      ui.serialBox = false; j.phase = 'done'; j.serial = v; save(j); log(j, 'Serial ' + v + ' entered by you');
+      ev('submitted', { serial: v, rname: j.rname || '', items: j.items, note: 'serial entered by hand' }); paint();
+    }
     else if (a === 'dupIgnore') { j.phase = 'fill'; save(j); if ($('DivInsert')) $('DivInsert').click(); paint(); run(); }
   });
 
@@ -130,6 +167,12 @@
     var spans = document.querySelectorAll('[id^="ContentPlaceHolder1_grdselecteditems_lblFinalCode_"]');
     for (var i = 0; i < spans.length; i++) if (spans[i].textContent.trim().toUpperCase() === String(code).toUpperCase()) return spans[i];
     return null;
+  }
+  function batchOpen() {
+    var bp = $('divBatch'), q0 = $('ContentPlaceHolder1_gvBatch_txtQuantity_0');
+    if (!bp || !q0) return false;
+    if (bp.offsetWidth > 60) return true;
+    var w = bp.style.width; return !!(w && w !== '0px' && w !== '0');
   }
   function gridRow(code) {
     var s = inGrid(code); if (!s) return null;
@@ -198,8 +241,8 @@
     var next = curItem(j);
     if (!next) return finishCheck(j);
 
-    var bp = $('divBatch'), q0 = $('ContentPlaceHolder1_gvBatch_txtQuantity_0');
-    if (q0 && bp && bp.style.width && bp.style.width !== '0px' && bp.style.width !== '0') {
+    var q0 = $('ContentPlaceHolder1_gvBatch_txtQuantity_0');
+    if (batchOpen()) {
       var fc = $('ContentPlaceHolder1_gvBatch_lblFinalCode_0');
       if (fc && fc.textContent.trim().toUpperCase() !== next.code.toUpperCase()) pauseWith('Batch popup shows ' + fc.textContent.trim() + ' instead of ' + next.code);
       await act(j, 'batch' + next.code, 'batch', function () {
@@ -208,6 +251,7 @@
         $('ContentPlaceHolder1_btnAddToGrid').click();
       });
       var r = gridRow(next.code);
+      if (!r) { for (var w = 0; w < 15 && !r; w++) { await sleep(200); r = gridRow(next.code); } }
       if (r) {
         if (r.bal < 0) pauseWith(next.code + ': balance below zero on the site (stock ' + r.stock + '). Skip it or check stock.');
         log(job(), next.code + ' ' + (r.name || '') + ' × ' + next.qty + ' added' + (next.remark ? ', remark added' : ''));
@@ -219,8 +263,9 @@
     if (!cb) pauseWith('Code box not found');
     if (cb.value.trim().toUpperCase() !== next.code.toUpperCase() || !nm || !nm.value.trim()) {
       await act(j, 'code' + next.code, 'Code', function () { cb.value = next.code; fire(cb, 'change'); });
-      var n2 = $('txtItem');
-      if (job().tries['code' + next.code] >= 2 && (!n2 || !n2.value.trim())) pauseWith(next.code + ': CUIMS did not find this code. Skip it or check the code.');
+      var ok = false;
+      for (var t = 0; t < 20; t++) { if (batchOpen() || (($('txtItem') || {}).value || '').trim()) { ok = true; break; } await sleep(200); }
+      if (!ok && job().tries['code' + next.code] >= 3) pauseWith(next.code + ': CUIMS did not find this item code. Skip it or check the code.');
       return;
     }
     await act(j, 'add' + next.code, 'ADD', function () {
