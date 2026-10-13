@@ -824,9 +824,9 @@ function reportDef(type) {
   if (type === 'issue') {
     const list = S.entries.filter(e => entryDate(e) === d);
     let G = issueGroups(list); if (p.sort === 'az') G.sort((a, b) => a.store.localeCompare(b.store)); if (p.sort === 'time') G.sort((a, b) => (a.slips[0] || {}).time > (b.slips[0] || {}).time ? 1 : -1);
-    return { cols: [['no', '#'], ['req', 'Request No'], ['store', 'Store'], ['to', 'Issued to'], ['slips', 'Slip No'], ['serials', 'Serial No'], ['times', 'Time'], ['items', 'Items'], ['remarks', 'Remarks'], ['by', 'Entered by']],
-      rows: G.map((g, i) => ({ no: i + 1, req: g.req || '–', store: g.store, to: [...g.to], slips: g.slips.map(x => x.slip), serials: g.slips.map(x => x.serial || '______'), times: g.slips.map(x => x.time), items: g.items.length, remarks: [...g.remarks].join(', ') || '–', by: [...g.by] })),
-      chips: [['Date', fmtLong(d)], ['Requests', G.length], ['Slips', list.length], ['Items', list.reduce((n, e) => n + e.items.length, 0)]],
+    return { cols: [['no', '#'], ['req', 'Request No'], ['rdate', 'Requisition Requested Date'], ['store', 'Store'], ['to', 'Issued to'], ['slips', 'Slip No'], ['serials', 'Serial No'], ['times', 'Time'], ['items', 'Items'], ['remarks', 'Remarks'], ['by', 'Entered by']],
+      rows: G.map((g, i) => ({ no: i + 1, req: g.req || '–', rdate: reqDateOf(g.req), store: g.store, to: [...g.to], slips: g.slips.map(x => x.slip), serials: g.slips.map(x => x.serial || '______'), times: g.slips.map(x => x.time), items: g.items.length, remarks: [...g.remarks].join(', ') || '–', by: [...g.by] })),
+      chips: [['Date', fmtLong(d)], ['Requests', G.length], ['Items', list.reduce((n, e) => n + e.items.length, 0)]],
       detail: G.map(g => ({ head: 'Request ' + (g.req || '–') + '   ·   ' + g.store + '   ·   ' + [...g.to].join(', ') + '   ·   Slips ' + g.slips.map(x => x.slip + (x.serial ? ' #' + x.serial : '')).join(', '),
         cols: ['S.No', 'Slip No', 'Item code', 'Item', 'UOM', 'Qty', 'Item remarks'], rows: g.items.map((x, i) => [i + 1, x.slip, x.code, x.name || itemName(x.code), x.uom || itemUom(x.code), num(x.qty), x.remark || '–']) })),
       file: 'Issue-Register-' + d, sub2: 'Issue · Department · Offline · HOSTEL MESS (GA)' };
@@ -844,6 +844,11 @@ function reportDef(type) {
   const keys = objRows.length ? Object.keys(objRows[0]) : [];
   const chips = type === 'pending' ? [['Date', fmtLong(today())], ['Stores', new Set(objRows.map(r => r.Store)).size], ['Articles', objRows.length]] : [['Date', fmtLong(today())], ['Rows', objRows.length]];
   return { cols: keys.map(k => [k, k]), rows: objRows, chips, file: REPORTS[type].name.replace(/[^A-Za-z]+/g, '-') + '-' + today(), sub2: '' };
+}
+function reqDateOf(req) {
+  if (!req) return '–';
+  const ds = [...new Set(S.lines.filter(l => l.req === req).map(l => l.date))].sort();
+  return ds.length ? ds.map(fmtLong) : '–';
 }
 function searchRows() { const rows = []; searchRecords().forEach(x => x.items.forEach(i => rows.push({ Type: x.type, Date: x.date ? fmtLong(x.date) : '', Time: x.time || '', 'Slip / Return No': x.no, 'Serial No': x.serial, Store: x.store, 'Issued to / Returned by': x.who, 'Request / Against': x.reqs, 'Item code': i.code, Item: i.name || itemName(i.code), Qty: Number(i.qty), UOM: i.uom || '', 'Item remark': i.remark || '', 'Entered by': x.by.name || '', 'Emp code': x.by.emp || '' }))); return rows; }
 function colOn(p, k) { return p.cols[k] !== false; }
