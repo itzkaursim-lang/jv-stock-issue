@@ -1,4 +1,3 @@
-yaml
 name: Unpack uploaded ZIP
 on:
   push:
