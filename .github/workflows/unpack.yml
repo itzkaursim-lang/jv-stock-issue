@@ -1,0 +1,29 @@
+```yaml
+name: Unpack uploaded ZIP
+on:
+  push:
+    branches: [main]
+    paths: ['*.zip']
+permissions:
+  contents: write
+jobs:
+  unpack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.UNPACK_TOKEN }}
+      - name: Unpack
+        run: |
+          shopt -s nullglob
+          for z in *.zip; do
+            unzip -o "$z" -d .
+            git rm -q --cached "$z" || true
+            rm -f "$z"
+          done
+          git config user.name "jv-bot"
+          git config user.email "jv-bot@users.noreply.github.com"
+          git add -A
+          git commit -m "Unpack uploaded ZIP" || echo "Nothing to commit"
+          git push
+```
