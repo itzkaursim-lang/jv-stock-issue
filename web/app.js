@@ -445,7 +445,6 @@ function vReg() {
     const list = S.entries.filter(e => entryDate(e) === r.date).sort((a, b) => rs === 'custom' ? byStore(a.store, b.store) : rs === 'store' ? a.store.localeCompare(b.store) : rs === 'slip' ? String(a.slip).localeCompare(String(b.slip), undefined, { numeric: true }) : entryTime(a).localeCompare(entryTime(b)));
     h += '<div class="row"><span class="sect">' + list.length + ' entries</span>' + sortSel('reg', [['time', 'Time'], ['custom', 'My order'], ['store', 'Store A–Z'], ['slip', 'Slip No']]) + '</div>';
     h += '<div class="grid2"><button class="btn main" data-a="pdfIssue"' + (list.length ? '' : ' disabled') + '>Make PDF</button><button class="btn" data-a="newManual">+ Manual entry</button></div>';
-    h += '<label class="chk"><input type="checkbox" data-a="regItems"' + (r.items ? ' checked' : '') + '> Include item lines in the PDF</label>';
     if (!list.length) h += '<div class="card pad note">No issue entries on ' + fmtLong(r.date) + '.</div>';
     list.forEach(e => {
       h += '<button class="card pad tap col" style="gap:4px" data-a="editEntry" data-v="' + e.id + '"><div class="row"><b>' + esc(e.store) + '</b><span class="chip ' + (e.kind === 'manual' ? 'c-pt' : 'c-in') + '">' + (e.kind === 'manual' ? 'Manual' : 'App') + '</span></div>' +
@@ -718,7 +717,8 @@ function pdfHead(doc, title, sub, chips) {
   });
   return cy + 12;
 }
-function pdfSign(doc) {
+function pdfSign(doc, showMe, showMgr) {
+  if (showMe === undefined) showMe = true; if (showMgr === undefined) showMgr = S.mgr.on;
   const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight();
   let y = (doc.lastAutoTable ? doc.lastAutoTable.finalY : 40) + 14;
   if (y > H - 40) { doc.addPage(); y = 24; }
@@ -729,8 +729,8 @@ function pdfSign(doc) {
     doc.setTextColor(...INK); doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.text(name || ' ', x + 5, y + 22.5);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(107, 111, 118); doc.text(sub || ' ', x + 5, y + 26.2);
   };
-  box(12, 'Prepared & checked by', S.me.name || '', [S.me.emp, S.me.desig].filter(Boolean).join(' · '));
-  if (S.mgr.on) box(W - 92, 'Manager', S.mgr.name || '', S.mgr.desig || '');
+  if (showMe) box(12, 'Prepared & checked by', S.me.name || '', [S.me.emp, S.me.desig].filter(Boolean).join(' · '));
+  if (showMgr) box(showMe ? W - 92 : 12, 'Manager', S.mgr.name || '', S.mgr.desig || '');
 }
 function pdfFoot(doc, label) {
   const n = doc.getNumberOfPages(), W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight();
@@ -802,6 +802,104 @@ function pdfPending() {
     body: rows.sort((a, b) => byStore(a.Store, b.Store)).map(r => [r.Store, r['Request No'], r['Item code'], r.Item, r.Qty, r.UOM, r['Requested on'], r['Days pending'], r['Earlier slips']]),
     columnStyles: { 0: { fontStyle: 'bold' }, 7: { halign: 'center', textColor: [142, 27, 42], fontStyle: 'bold' } } }));
   pdfSign(doc); pdfFoot(doc, 'Pending'); pdfSave(doc, 'Pending-' + today() + '.pdf');
+}
+
+/* ---------------- export preview + settings ---------------- */
+const REPORTS = {
+  issue: { name: 'Daily Issue Register', pdf: true, landscape: true, dated: 'reg', details: true, sorts: true },
+  ret: { name: 'Daily Return Register', pdf: true, landscape: false, dated: 'reg', details: true, sorts: true },
+  pending: { name: 'Pending Report', pdf: true, landscape: true, sorts: true },
+  requests: { name: 'Requests Register' }, entries: { name: 'Entries Log' }, items: { name: 'Entry Items' },
+  stock: { name: 'Stock Now' }, returns: { name: 'Returns (all)' }, search: { name: 'Search Results' }
+};
+function rptPref(type) {
+  S.rp = S.rp || {};
+  const R = REPORTS[type];
+  const p = S.rp[type] = Object.assign({ title: R.name, sub: S.me.storeName || '', orient: R.landscape ? 'l' : 'p', font: 'n', details: !!R.details && type === 'ret', sign: true, mgr: S.mgr.on, sort: 'custom', cols: {} }, S.rp[type] || {});
+  return p;
+}
+function sortStores(arr, key, how) { return arr.sort((a, b) => how === 'az' ? String(a[key]).localeCompare(String(b[key])) : byStore(a[key], b[key])); }
+function reportDef(type) {
+  const p = rptPref(type), d = ui.reg.date;
+  if (type === 'issue') {
+    const list = S.entries.filter(e => entryDate(e) === d);
+    let G = issueGroups(list); if (p.sort === 'az') G.sort((a, b) => a.store.localeCompare(b.store)); if (p.sort === 'time') G.sort((a, b) => (a.slips[0] || {}).time > (b.slips[0] || {}).time ? 1 : -1);
+    return { cols: [['no', '#'], ['req', 'Request No'], ['store', 'Store'], ['to', 'Issued to'], ['slips', 'Slip No'], ['serials', 'Serial No'], ['times', 'Time'], ['items', 'Items'], ['remarks', 'Remarks'], ['by', 'Entered by']],
+      rows: G.map((g, i) => ({ no: i + 1, req: g.req || '–', store: g.store, to: [...g.to], slips: g.slips.map(x => x.slip), serials: g.slips.map(x => x.serial || '______'), times: g.slips.map(x => x.time), items: g.items.length, remarks: [...g.remarks].join(', ') || '–', by: [...g.by] })),
+      chips: [['Date', fmtLong(d)], ['Requests', G.length], ['Slips', list.length], ['Items', list.reduce((n, e) => n + e.items.length, 0)]],
+      detail: G.map(g => ({ head: 'Request ' + (g.req || '–') + '   ·   ' + g.store + '   ·   ' + [...g.to].join(', ') + '   ·   Slips ' + g.slips.map(x => x.slip + (x.serial ? ' #' + x.serial : '')).join(', '),
+        cols: ['S.No', 'Slip No', 'Item code', 'Item', 'UOM', 'Qty', 'Item remarks'], rows: g.items.map((x, i) => [i + 1, x.slip, x.code, x.name || itemName(x.code), x.uom || itemUom(x.code), num(x.qty), x.remark || '–']) })),
+      file: 'Issue-Register-' + d, sub2: 'Issue · Department · Offline · HOSTEL MESS (GA)' };
+  }
+  if (type === 'ret') {
+    let list = S.returns.filter(x => x.date === d);
+    list = p.sort === 'time' ? list.sort((a, b) => (a.time || '').localeCompare(b.time || '')) : sortStores(list, 'store', p.sort);
+    return { cols: [['no', '#'], ['rno', 'Return No'], ['store', 'Store'], ['by', 'Returned by'], ['dt', 'Date & time'], ['against', 'Against'], ['serial', 'Serial No'], ['items', 'Items'], ['remarks', 'Remarks'], ['ent', 'Entered by']],
+      rows: list.map((r, i) => ({ no: i + 1, rno: r.no, store: r.store, by: ['GA' + r.by].concat(r.byName ? [r.byName] : []), dt: fmtShort(r.date) + ' ' + (r.time || ''), against: r.against, serial: r.serial || '______', items: r.items.length, remarks: r.remarks || '–', ent: [(r.enteredBy || {}).name || ''].concat((r.enteredBy || {}).emp ? [r.enteredBy.emp] : []) })),
+      chips: [['Date', fmtLong(d)], ['Returns', list.length], ['Items', list.reduce((n, r) => n + r.items.length, 0)]],
+      detail: list.map(r => ({ head: r.no + '   ·   ' + r.store + '   ·   Returned by GA' + r.by + '   ·   Serial ' + (r.serial || '____'), cols: ['S.No', 'Item code', 'Item', 'UOM', 'Qty', 'Item remarks'], rows: r.items.map((x, i) => [i + 1, x.code, x.name || itemName(x.code), x.uom || itemUom(x.code), num(x.qty), x.remark || '–']) })),
+      file: 'Return-Register-' + d, sub2: 'Return · Department · Against Issue No 1111' };
+  }
+  const objRows = type === 'pending' ? sortStores(rowsPending(), 'Store', p.sort) : type === 'requests' ? rowsRequests() : type === 'entries' ? rowsEntries() : type === 'items' ? rowsItems() : type === 'stock' ? rowsStock() : type === 'returns' ? rowsReturns() : type === 'search' ? searchRows() : [];
+  const keys = objRows.length ? Object.keys(objRows[0]) : [];
+  const chips = type === 'pending' ? [['Date', fmtLong(today())], ['Stores', new Set(objRows.map(r => r.Store)).size], ['Articles', objRows.length]] : [['Date', fmtLong(today())], ['Rows', objRows.length]];
+  return { cols: keys.map(k => [k, k]), rows: objRows, chips, file: REPORTS[type].name.replace(/[^A-Za-z]+/g, '-') + '-' + today(), sub2: '' };
+}
+function searchRows() { const rows = []; searchRecords().forEach(x => x.items.forEach(i => rows.push({ Type: x.type, Date: x.date ? fmtLong(x.date) : '', Time: x.time || '', 'Slip / Return No': x.no, 'Serial No': x.serial, Store: x.store, 'Issued to / Returned by': x.who, 'Request / Against': x.reqs, 'Item code': i.code, Item: i.name || itemName(i.code), Qty: Number(i.qty), UOM: i.uom || '', 'Item remark': i.remark || '', 'Entered by': x.by.name || '', 'Emp code': x.by.emp || '' }))); return rows; }
+function colOn(p, k) { return p.cols[k] !== false; }
+function cellText(v, sep) { return Array.isArray(v) ? v.join(sep) : v == null ? '' : String(v); }
+function openExport(type) { rptPref(type); ui.sheet = { kind: 'export', type }; renderSheet(); }
+function shExport() {
+  const type = ui.sheet.type, R = REPORTS[type], p = rptPref(type), D = reportDef(type);
+  const cols = D.cols.filter(c => colOn(p, c[0]));
+  let h = '<div class="row"><h2>' + esc(R.name) + '</h2><button class="btn sm ghost" data-a="closeSheet">Close</button></div>';
+  h += '<div class="note">Your choices are saved for next time.</div>';
+  h += '<div class="card pad col"><h3>Basics</h3><label class="f">Title<input type="text" data-rp="title" value="' + esc(p.title) + '"></label><label class="f">Subtitle (store name)<input type="text" data-rp="sub" value="' + esc(p.sub) + '"></label>' +
+    (R.dated ? '<label class="f">Date<input type="date" data-in="regDate" value="' + esc(ui.reg.date) + '"></label>' : '') +
+    (R.sorts ? '<label class="f">Order<select data-rp="sort">' + [['custom', 'My store order'], ['az', 'Store A–Z']].concat(R.dated ? [['time', 'Time']] : []).map(([v, l]) => '<option value="' + v + '"' + (p.sort === v ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></label>' : '') + '</div>';
+  if (R.pdf) {
+    h += '<div class="card pad col"><h3>Page</h3><div class="seg">' + [['p', 'Portrait'], ['l', 'Landscape']].map(([v, l]) => '<button data-a="rpSet" data-k="orient" data-v="' + v + '" class="' + (p.orient === v ? 'on' : '') + '">' + l + '</button>').join('') + '</div>' +
+      '<div class="seg">' + [['s', 'Small text'], ['n', 'Normal'], ['b', 'Large text']].map(([v, l]) => '<button data-a="rpSet" data-k="font" data-v="' + v + '" class="' + (p.font === v ? 'on' : '') + '">' + l + '</button>').join('') + '</div>' +
+      (R.details ? '<label class="chk"><input type="checkbox" data-a="rpTog" data-k="details"' + (p.details ? ' checked' : '') + '> Print item details under each ' + (type === 'issue' ? 'request' : 'return') + '</label>' : '') +
+      '<label class="chk"><input type="checkbox" data-a="rpTog" data-k="sign"' + (p.sign ? ' checked' : '') + '> Signature box (Prepared & checked by)</label>' +
+      '<label class="chk"><input type="checkbox" data-a="rpTog" data-k="mgr"' + (p.mgr ? ' checked' : '') + '> Manager signature box</label></div>';
+  }
+  h += '<div class="card pad col"><div class="row"><h3>Columns</h3><span class="note">' + cols.length + ' of ' + D.cols.length + '</span></div><div class="grid2">' +
+    D.cols.map(([k, l]) => '<label class="chk" style="min-height:40px;font-size:14.5px"><input type="checkbox" data-a="rpCol" data-k="' + esc(k) + '"' + (colOn(p, k) ? ' checked' : '') + '> ' + esc(l) + '</label>').join('') + '</div></div>';
+  // preview
+  const pr = D.rows.slice(0, 8);
+  h += '<div class="sect">Preview</div><div class="card" style="overflow:hidden"><div style="background:linear-gradient(160deg,#1B2540,#0B1220);color:#fff;padding:12px 14px;border-bottom:2px solid var(--gold)"><b style="font-size:16px">' + esc(p.title) + '</b><div style="font-size:12px;color:#C9CED6">' + esc([p.sub, D.sub2].filter(Boolean).join(' · ')) + '</div></div>' +
+    '<div class="wrap" style="gap:6px;padding:10px 12px">' + D.chips.map(c => pill(c[0] + ' ' + c[1], 'c-gd')).join('') + '</div>' +
+    '<div class="tblwrap" style="padding:0 0 6px"><table style="font-size:' + (p.font === 's' ? 12 : p.font === 'b' ? 15 : 13.5) + 'px"><tr>' + cols.map(c => '<th>' + esc(c[1]) + '</th>').join('') + '</tr>' +
+    (pr.length ? pr.map(r => '<tr>' + cols.map(c => '<td style="white-space:pre-line">' + esc(cellText(r[c[0]], '\n')) + '</td>').join('') + '</tr>').join('') : '<tr><td colspan="' + cols.length + '" class="note">No data for this selection.</td></tr>') + '</table></div>' +
+    (D.rows.length > pr.length ? '<div class="note" style="padding:0 12px 10px">…and ' + (D.rows.length - pr.length) + ' more rows</div>' : '') +
+    (R.pdf && p.details && D.detail && D.detail.length ? '<div class="note" style="padding:0 12px 10px">+ item details for ' + D.detail.length + ' ' + (type === 'issue' ? 'requests' : 'returns') + '</div>' : '') +
+    (R.pdf && (p.sign || p.mgr) ? '<div class="note" style="padding:0 12px 12px">+ ' + [p.sign ? 'your signature box' : '', p.mgr ? 'manager signature box' : ''].filter(Boolean).join(' and ') + '</div>' : '') + '</div>';
+  h += '<div class="grid2">' + (R.pdf ? '<button class="btn main" data-a="rpPdf"' + (D.rows.length && cols.length ? '' : ' disabled') + '>Download PDF</button>' : '') + '<button class="btn' + (R.pdf ? '' : ' main') + '" data-a="rpXlsx"' + (D.rows.length && cols.length ? '' : ' disabled') + '>Download Excel</button></div>';
+  return h;
+}
+function rpPdf(type) {
+  const p = rptPref(type), D = reportDef(type), R = REPORTS[type];
+  const doc = pdfDoc(p.orient === 'l'); if (!doc) return;
+  const fs = p.font === 's' ? 7.5 : p.font === 'b' ? 10 : 8.5;
+  const cols = D.cols.filter(c => colOn(p, c[0]));
+  const y0 = pdfHead(doc, p.title, [p.sub, D.sub2].filter(Boolean).join(' · '), D.chips);
+  const st = Object.assign({}, TSTYLE, { styles: Object.assign({}, TSTYLE.styles, { fontSize: fs }), headStyles: Object.assign({}, TSTYLE.headStyles, { fontSize: fs }) });
+  doc.autoTable(Object.assign({}, st, { startY: y0, head: [cols.map(c => c[1])], body: D.rows.map(r => cols.map(c => cellText(r[c[0]], '\n'))),
+    didParseCell: d => { if (d.section === 'body') { const k = cols[d.column.index][0]; if (/req|store|Store|Request/.test(k)) d.cell.styles.fontStyle = 'bold'; if (/slips|Slip/.test(k)) d.cell.styles.textColor = [30, 58, 138]; if (/serial|Serial/.test(k)) d.cell.styles.textColor = [11, 94, 61]; } } }));
+  if (p.details && D.detail) D.detail.forEach(b => {
+    doc.autoTable(Object.assign({}, st, { startY: doc.lastAutoTable.finalY + 6, headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: 'bold', fontSize: fs }, head: [[{ content: b.head, colSpan: b.cols.length }], b.cols], body: b.rows }));
+  });
+  if (p.sign || p.mgr) pdfSign(doc, p.sign, p.mgr);
+  pdfFoot(doc, R.name); pdfSave(doc, D.file + '.pdf');
+}
+function rpXlsx(type) {
+  const p = rptPref(type), D = reportDef(type), R = REPORTS[type];
+  const cols = D.cols.filter(c => colOn(p, c[0]));
+  const rows = D.rows.map(r => { const o = {}; cols.forEach(c => o[c[1]] = cellText(r[c[0]], ', ')); return o; });
+  const sheets = [[R.name.slice(0, 30), rows]];
+  if (p.details && D.detail && D.detail.length) { const dr = []; D.detail.forEach(b => b.rows.forEach(x => { const o = { Group: b.head }; b.cols.forEach((c, i) => o[c] = x[i]); dr.push(o); })); sheets.push(['Item details', dr]); }
+  saveWb(sheets, D.file + '.xlsx');
 }
 
 /* ---------------- Google Sheet sync ---------------- */
@@ -947,7 +1045,7 @@ function renderSheet() {
   const el = document.getElementById('sheet');
   if (!ui.sheet) { el.innerHTML = ''; return; }
   const k = ui.sheet.kind;
-  const body = k === 'crop' ? shCrop() : k === 'backups' ? shBackups() : k === 'start' ? shStart() : k === 'upload' ? shUpload() : k === 'entry' ? shEntry() : k === 'return' ? shReturn() : k === 'editReq' ? shEditReq() : k === 'bulk' ? shBulk() : k === 'mark' ? shMark() : '';
+  const body = k === 'export' ? shExport() : k === 'crop' ? shCrop() : k === 'backups' ? shBackups() : k === 'start' ? shStart() : k === 'upload' ? shUpload() : k === 'entry' ? shEntry() : k === 'return' ? shReturn() : k === 'editReq' ? shEditReq() : k === 'bulk' ? shBulk() : k === 'mark' ? shMark() : '';
   const sc = el.querySelector('.sheet') ? el.querySelector('.sheet').scrollTop : 0;
   el.innerHTML = '<div class="sheetbg" data-a="bgClose"><div class="sheet" role="dialog" aria-modal="true">' + body + '</div></div>';
   el.querySelector('.sheet').scrollTop = sc;
@@ -1020,7 +1118,7 @@ document.addEventListener('click', async ev => {
   if (a === 'lockTap') { if (ui.locked) askUnlock(); else { ui.locked = true; render(); renderSheet(); toast('Locked.'); } return; }
   if (ui.locked && GUARDED.has(a)) { ev.preventDefault(); if (t.type === 'checkbox') t.checked = !t.checked; askUnlock(); return; }
   if (a === 'bgClose') { if (ev.target === t) { ui.sheet = null; renderSheet(); } return; }
-  if (t.type === 'checkbox' && !['hold', 'queueToggle', 'regItems', 'mgrToggle', 'syncAuto', 'lockToggle', 'markPick', 'stOn'].includes(a)) return;
+  if (t.type === 'checkbox' && !['hold', 'queueToggle', 'regItems', 'mgrToggle', 'syncAuto', 'lockToggle', 'markPick', 'stOn', 'rpTog', 'rpCol'].includes(a)) return;
   switch (a) {
     case 'tab': ui.tab = v; ui.view = null; if (v === 'set') ui.setPage = null; render(); window.scrollTo(0, 0); break;
     case 'openSite': if (N) N.openSite(); else toast('Open this inside the app.'); break;
@@ -1070,7 +1168,7 @@ document.addEventListener('click', async ev => {
         items: ls.map(l => ({ lineId: l.id, req: l.req, code: l.code, name: itemName(l.code), uom: itemUom(l.code), qty: l.qty, remark: remarkFor(l.date) })) });
       ls.forEach(l => { const x = S.lines.find(y => y.id === l.id); x.status = 'issued'; x.issued.push({ slip, serial: (f.serial || '').trim(), at }); if (S.stock[l.code]) S.stock[l.code].qty = Math.round((S.stock[l.code].qty - l.qty) * 1000) / 1000; });
       save(); ui.sheet = null; renderSheet(); render(); toast('Recorded ' + slip + ' as issued.'); break; }
-    case 'expPendPdf': pdfPending(); break;
+    case 'expPendPdf': openExport('pending'); break;
     case 'setPage': ui.setPage = v; render(); window.scrollTo(0, 0); break;
     case 'setBack': ui.setPage = null; render(); window.scrollTo(0, 0); break;
     case 'goProfile': ui.tab = 'set'; ui.view = null; ui.setPage = 'profile'; render(); window.scrollTo(0, 0); break;
@@ -1090,8 +1188,13 @@ document.addEventListener('click', async ev => {
       g.fillStyle = '#fff'; g.fillRect(0, 0, 320, 320); g.drawImage(img, dx * k, dy * k, dw * k, dh * k);
       S.me.photo = out.toDataURL('image/jpeg', 0.88); save(); ui.sheet = null; renderSheet(); render(); toast('Photo updated.'); break; }
     case 'photoDel': delete S.me.photo; save(); render(); break;
-    case 'expPendXlsx': saveWb([['Pending', rowsPending()]], 'Pending-' + today() + '.xlsx'); break;
+    case 'expPendXlsx': openExport('pending'); break;
     case 'closeSheet': ui.sheet = null; renderSheet(); break;
+    case 'rpSet': rptPref(ui.sheet.type)[t.dataset.k] = v; save(true); renderSheet(); break;
+    case 'rpTog': rptPref(ui.sheet.type)[t.dataset.k] = t.checked; save(true); renderSheet(); break;
+    case 'rpCol': rptPref(ui.sheet.type).cols[t.dataset.k] = t.checked; save(true); renderSheet(); break;
+    case 'rpPdf': rpPdf(ui.sheet.type); break;
+    case 'rpXlsx': rpXlsx(ui.sheet.type); break;
     case 'queueToggle': S.queue = t.checked; save(true); break;
     case 'startFill': { const s = ui.sheet; if (slipProblem(s.slip) || !/^\d{6}$/.test(s.rcv)) break;
       if (!S.stores[s.store]) S.stores[s.store] = { rcv: s.rcv, rname: '' }; else if (!S.stores[s.store].rcv) S.stores[s.store].rcv = s.rcv;
@@ -1110,8 +1213,8 @@ document.addEventListener('click', async ev => {
     case 'uploadOk': doImport(); break;
     case 'regType': ui.reg.type = v; render(); break;
     case 'regItems': ui.reg.items = t.checked; break;
-    case 'pdfIssue': pdfIssue(); break;
-    case 'pdfReturn': pdfReturn(); break;
+    case 'pdfIssue': openExport('issue'); break;
+    case 'pdfReturn': openExport('ret'); break;
     case 'newManual': ui.form = { _new: true, kind: 'manual', slip: '', serial: '', store: '', rcv: '', rname: '', date: ui.reg.date, time: timeNow(), reqs: '', remarks: '', byName: S.me.name, byEmp: S.me.emp, items: [blankItem()] }; ui.sheet = { kind: 'entry' }; renderSheet(); break;
     case 'editEntry': { const e = S.entries.find(x => String(x.id) === v); ui.form = Object.assign(JSON.parse(JSON.stringify(e)), { date: entryDate(e), time: entryTime(e), reqs: e.reqs || [...new Set(e.items.map(i => i.req).filter(Boolean))].join(', '), byName: (e.by || {}).name || '', byEmp: (e.by || {}).emp || '' }); ui.sheet = { kind: 'entry' }; renderSheet(); break; }
     case 'saveEntry': { const f = ui.form; const items = cleanItems(f.items);
@@ -1138,7 +1241,8 @@ document.addEventListener('click', async ev => {
     case 'addItem': ui.form.items.push(blankItem()); renderSheet(); break;
     case 'sType': ui.search.type = v; render(); break;
     case 'sOpen': ui.search.open = ui.search.open === v ? null : v; render(); break;
-    case 'expSearch': { const res = searchRecords(); const rows = []; res.forEach(x => x.items.forEach(i => rows.push({ Type: x.type, Date: x.date ? fmtLong(x.date) : '', Time: x.time || '', 'Slip / Return No': x.no, 'Serial No': x.serial, Store: x.store, 'Issued to / Returned by': x.who, 'Request / Against': x.reqs, 'Item code': i.code, Item: i.name || itemName(i.code), Qty: Number(i.qty), UOM: i.uom || '', 'Item remark': i.remark || '', 'Entered by': x.by.name || '', 'Emp code': x.by.emp || '' })));
+    case 'expSearch': openExport('search'); break;
+    case 'expSearchOld': { const res = searchRecords(); const rows = []; res.forEach(x => x.items.forEach(i => rows.push({ Type: x.type, Date: x.date ? fmtLong(x.date) : '', Time: x.time || '', 'Slip / Return No': x.no, 'Serial No': x.serial, Store: x.store, 'Issued to / Returned by': x.who, 'Request / Against': x.reqs, 'Item code': i.code, Item: i.name || itemName(i.code), Qty: Number(i.qty), UOM: i.uom || '', 'Item remark': i.remark || '', 'Entered by': x.by.name || '', 'Emp code': x.by.emp || '' })));
       saveWb([['Search results', rows]], 'Search-' + today() + '.xlsx'); break; }
     case 'mgrToggle': S.mgr.on = t.checked; save(); render(); break;
     case 'rmStore': if (confirm('Remove ' + v + ' from your store list? Records stay.')) { delete S.stores[v]; save(); render(); } break;
@@ -1156,11 +1260,11 @@ document.addEventListener('click', async ev => {
     case 'bkNote': { const b = (ui.sheet.items || []).find(x => x.id === v); ui.sheet.editing = v; ui.sheet.rename = b ? b.note : ''; renderSheet(); break; }
     case 'bkNoteCancel': ui.sheet.editing = null; renderSheet(); break;
     case 'bkNoteSave': try { await apiPost({ action: 'meta', id: v, note: ui.sheet.rename || '' }); ui.sheet.editing = null; loadBackups(); } catch (e) { toast('Failed: ' + e.message); } break;
-    case 'expRequests': saveWb([['Requests register', rowsRequests()]], 'Requests-register-' + today() + '.xlsx'); break;
-    case 'expEntries': saveWb([['Entries log', rowsEntries()]], 'Entries-log-' + today() + '.xlsx'); break;
-    case 'expItems': saveWb([['Entry items', rowsItems()]], 'Entry-items-' + today() + '.xlsx'); break;
-    case 'expStock': saveWb([['Stock now', rowsStock()]], 'Stock-now-' + today() + '.xlsx'); break;
-    case 'expReturns': saveWb([['Returns', rowsReturns()]], 'Returns-' + today() + '.xlsx'); break;
+    case 'expRequests': openExport('requests'); break;
+    case 'expEntries': openExport('entries'); break;
+    case 'expItems': openExport('items'); break;
+    case 'expStock': openExport('stock'); break;
+    case 'expReturns': openExport('returns'); break;
     case 'expAll': saveWb([['Requests register', rowsRequests()], ['Request lines', rowsAllLines()], ['Entries log', rowsEntries()], ['Entry items', rowsItems()], ['Pending', rowsPending()], ['Returns', rowsReturns()], ['Stock now', rowsStock()]], 'JV-Stock-Issue-backup-' + today() + '.xlsx'); break;
     case 'lockToggle': if (N) { N.setLock(t.checked); INFO.lock = t.checked; toast(t.checked ? 'Lock on. Fingerprint or PIN needed when opening.' : 'Lock off.'); } break;
     case 'checkUpdate': checkUpdate(true); break;
@@ -1175,6 +1279,7 @@ document.addEventListener('input', ev => {
   if (el.dataset.in === 'slip' || el.dataset.in === 'rcv') { const k = focusKey(el); ui.sheet[el.dataset.in] = el.dataset.in === 'slip' ? el.value.trim().toUpperCase() : el.value.replace(/\D/g, ''); renderSheet(); refocus(k); return; }
   if (el.dataset.in === 'q') { const k = focusKey(el); ui.search.q = el.value; render(); refocus(k); return; }
   if (el.dataset.bk) { ui.sheet[el.dataset.bk] = el.value; return; }
+  if (el.dataset.rp) { rptPref(ui.sheet.type)[el.dataset.rp] = el.value; save(true); if (el.tagName === 'SELECT') renderSheet(); return; }
   if (el.dataset.crop) { ui.sheet.zoom = parseFloat(el.value); const im = document.querySelector('#cropBox img'); if (im) { const V = 280, c = ui.sheet, base = Math.max(V / c.img.width, V / c.img.height) * c.zoom, dw = c.img.width * base, dh = c.img.height * base; im.style.width = dw + 'px'; im.style.height = dh + 'px'; im.style.left = ((V - dw) / 2 + c.x) + 'px'; im.style.top = ((V - dh) / 2 + c.y) + 'px'; } return; }
   if (el.dataset.url) { ui[el.dataset.url === 'emp' ? 'urlEmp' : 'urlMgr'] = el.value.trim(); return; }
   if (el.dataset.stq) { ui.sheet.qty[el.dataset.stq] = el.value; return; }
@@ -1205,7 +1310,8 @@ document.addEventListener('change', async ev => {
     renderSheet(); return;
   }
   if (el.dataset.sort) { ui.sort[el.dataset.sort] = el.value; render(); return; }
-  if (el.dataset.in === 'regDate') { ui.reg.date = el.value || today(); render(); return; }
+  if (el.dataset.rp) { later(() => renderSheet()); return; }
+  if (el.dataset.in === 'regDate') { ui.reg.date = el.value || today(); render(); if (ui.sheet && ui.sheet.kind === 'export') renderSheet(); return; }
   if (el.dataset.in === 'sFrom') { ui.search.from = el.value; render(); return; }
   if (el.dataset.in === 'sTo') { ui.search.to = el.value; render(); return; }
   if (el.dataset.in === 'sStore') { ui.search.store = el.value; render(); return; }

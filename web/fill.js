@@ -49,7 +49,7 @@
   /* ---------- control bar ---------- */
   var bar = document.createElement('div');
   bar.id = 'jvbar';
-  bar.style.cssText = 'position:absolute;left:0;top:0;z-index:2147483647;background:#fff;color:#14161A;border-radius:20px;padding:0;font:16px/1.45 system-ui,sans-serif;box-shadow:0 12px 40px rgba(15,23,42,.35),0 0 0 1px rgba(201,162,75,.45);max-height:62vh;overflow:auto;transform-origin:0 0;box-sizing:border-box';
+  bar.style.cssText = 'position:absolute;left:0;top:0;z-index:2147483647;background:#FBFAF6;color:#14161A;border-radius:22px;padding:0;font:16px/1.45 system-ui,sans-serif;box-shadow:0 12px 40px rgba(15,23,42,.35),0 0 0 1px rgba(201,162,75,.45);max-height:62vh;overflow:auto;transform-origin:0 0;box-sizing:border-box';
   document.body.appendChild(bar);
   var mini = false; try { mini = localStorage.getItem('jvBarMini') === '1'; } catch (e) {}
   function place() {
@@ -70,7 +70,7 @@
   var BTN = 'min-height:46px;padding:0 16px;border-radius:999px;font:600 15px system-ui,sans-serif;cursor:pointer;';
   var WHO = (B.who && B.who()) || 'emp';
   function btn(id, label, kind) {
-    var st = kind === 'main' ? 'background:linear-gradient(135deg,#0F172A,#1E293B);color:#fff;border:0;box-shadow:0 2px 8px rgba(15,23,42,.3);' : kind === 'gold' ? 'background:#C9A24B;color:#1B1405;border:0;' : kind === 'warn' ? 'background:#fff;color:#B42335;border:1.5px solid #E8B4BC;' : kind === 'link' ? 'background:none;color:#8E1B2A;border:0;padding:0 8px;' : kind === 'ghost' ? 'background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.25);min-height:38px;padding:0 12px;font-size:13.5px;' : 'background:#fff;color:#0F172A;border:1.5px solid #D9D5CC;';
+    var st = kind === 'main' ? 'background:linear-gradient(160deg,#1B2540,#0B1220);color:#F1E2B4;border:1px solid rgba(212,175,55,.45);box-shadow:0 4px 12px rgba(7,12,26,.3);' : kind === 'gold' ? 'background:linear-gradient(160deg,#E6C873,#C49A3A);color:#1A1203;border:0;box-shadow:0 4px 12px rgba(196,154,58,.35);' : kind === 'warn' ? 'background:#fff;color:#9B1C2E;border:1.5px solid #EBC3CA;' : kind === 'link' ? 'background:none;color:#8E1B2A;border:0;padding:0 8px;' : kind === 'ghost' ? 'background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.25);min-height:38px;padding:0 12px;font-size:13.5px;' : 'background:#fff;color:#0D1528;border:1.5px solid #E2D9C3;';
     return '<button type="button" data-jv="' + id + '" style="' + BTN + st + 'display:inline-flex;align-items:center;gap:8px">' + label + '</button>';
   }
   function curItem(j) {
@@ -88,10 +88,10 @@
   function ic(n, sz, col) { return '<svg viewBox="0 0 24 24" width="' + (sz || 18) + '" height="' + (sz || 18) + '" fill="none" stroke="' + (col || 'currentColor') + '" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;vertical-align:-3px">' + IC[n] + '</svg>'; }
   function head(title, sub) {
     var who = ME.builder || ME.name || '';
-    var photo = ME.photo ? '<img src="' + ME.photo + '" alt="" style="width:40px;height:40px;border-radius:50%;object-fit:cover;border:2px solid #C9A24B;flex-shrink:0">' : '';
-    return '<div style="background:radial-gradient(120% 140% at 0% 0%,#24324d 0%,#0F172A 60%,#0B1120 100%);color:#fff;padding:12px 12px 12px 14px;display:flex;align-items:center;gap:12px;border-bottom:2px solid #C9A24B">' +
+    var photo = ME.photo ? '<img src="' + ME.photo + '" alt="" style="width:40px;height:40px;border-radius:50%;object-fit:cover;border:2px solid #D4AF37;box-shadow:0 0 0 3px rgba(212,175,55,.18);flex-shrink:0">' : '';
+    return '<div style="background:linear-gradient(160deg,#1B2540 0%,#0D1528 55%,#070C1A 100%);color:#fff;padding:12px 12px 12px 14px;display:flex;align-items:center;gap:12px;border-bottom:1px solid rgba(212,175,55,.55);box-shadow:inset 0 1px 0 rgba(255,255,255,.06)">' +
       '<img src="' + LOGO + '" alt="JV Stock Issue" style="width:42px;height:42px;border-radius:12px;flex-shrink:0">' +
-      '<span style="flex:1;min-width:0"><span style="display:block;font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:#E8C97A;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(title) + '</span><b style="display:block;font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + sub + '</b>' + (who ? '<span style="display:block;font-size:11.5px;color:#AEB4BE">Built by ' + esc(who) + '</span>' : '') + '</span>' +
+      '<span style="flex:1;min-width:0"><span style="display:block;font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:#E3C878;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(title) + '</span><b style="display:block;font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + sub + '</b>' + (who ? '<span style="display:block;font-size:11.5px;color:#AEB4BE">Built by ' + esc(who) + '</span>' : '') + '</span>' +
       photo + '<button type="button" data-jv="hide" aria-label="Hide panel" style="width:40px;height:40px;border-radius:12px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">' + ic('down', 20) + '</button></div>';
   }
   function row(label, value, ok) {
@@ -123,10 +123,10 @@
       var tt = j && j.items ? j.items.filter(function (x) { return !x.skip; }).length : 0;
       var dd = j && j.items ? j.items.filter(function (x) { return !x.skip && inGrid(x.code); }).length : 0;
       var lab = WHO === 'mgr' ? 'Manager' : !active(j) ? 'Ready' : dd + ' / ' + tt;
-      bar.innerHTML = '<button type="button" data-jv="expand" aria-label="Show panel" style="min-height:48px;padding:0 14px 0 6px;border-radius:999px;background:linear-gradient(135deg,#0F172A,#1E293B);color:#fff;border:2px solid #C9A24B;display:flex;align-items:center;gap:10px;font:700 15px system-ui;cursor:pointer"><img src="' + LOGO + '" alt="" style="width:34px;height:34px;border-radius:10px">' + (active(j) && j.paused ? ic('pause', 16, '#E8C97A') : '') + esc(lab) + ic('up', 18) + '</button>';
+      bar.innerHTML = '<button type="button" data-jv="expand" aria-label="Show panel" style="min-height:48px;padding:0 14px 0 6px;border-radius:999px;background:linear-gradient(160deg,#1B2540,#0B1220);color:#F1E2B4;border:1.5px solid #D4AF37;display:flex;align-items:center;gap:10px;font:700 15px system-ui;cursor:pointer"><img src="' + LOGO + '" alt="" style="width:34px;height:34px;border-radius:10px">' + (active(j) && j.paused ? ic('pause', 16, '#E8C97A') : '') + esc(lab) + ic('up', 18) + '</button>';
       bar.style.borderRadius = '999px'; bar.style.boxShadow = '0 8px 24px rgba(15,23,42,.35)'; return;
     }
-    bar.style.borderRadius = '20px'; bar.style.boxShadow = '0 12px 40px rgba(15,23,42,.35),0 0 0 1px rgba(201,162,75,.45)';
+    bar.style.borderRadius = '22px'; bar.style.boxShadow = '0 18px 50px rgba(7,12,26,.45),0 0 0 1px rgba(212,175,55,.55)';
     var body = 'padding:14px 16px 16px';
     if (WHO === 'mgr') {
       bar.innerHTML = head('Manager CUIMS', 'Live stock report') + '<div style="' + body + '"><div style="font-size:14px;color:#6B6F76">Separate login for the manager ID. Download the Item Stock Statement, then upload it in the app.</div><div style="display:flex;gap:8px;margin-top:12px">' + btn('app', ic('back', 16) + ' Back to app', 'main') + '</div></div>';
@@ -142,6 +142,12 @@
     var pct = total ? Math.round(done / total * 100) : 0;
     h += head(j.store, 'Slip ' + esc(j.slip) + '<span style="color:#E8C97A;font-weight:600"> · ' + done + ' of ' + total + '</span>');
     h += '<div style="' + body + '">';
+    if (ui.confirmCancel) {
+      h += '<div style="padding:12px 14px;border-radius:14px;background:#FBF3F4;border:1px solid #F1D3D8;color:#7E1A28;font-weight:700;font-size:15.5px">Cancel entry ' + esc(j.slip) + '?</div>' +
+        '<div style="font-size:13.5px;color:#6B6F76;margin-top:8px">Nothing has been submitted. You can clear the CUIMS form or keep it as it is.</div>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:14px">' + btn('cancelReset', 'Cancel and clear form', 'warn') + btn('cancelKeep', 'Cancel, keep form', '') + btn('noCancel', 'Keep going', 'main') + '</div></div>';
+      bar.innerHTML = h; return;
+    }
     if (j.phase === 'await' && !ui.serialBox) {
       var V = verify(j), allOk = V.every(function (r) { return r[2] !== false; });
       h += '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;background:' + (allOk ? '#E3F4EC' : '#FBE6E9') + ';color:' + (allOk ? '#0B5E3D' : '#8E1B2A') + ';font-weight:700;font-size:15.5px">' + ic(allOk ? 'ok' : 'alert', 20) + (allOk ? 'Rechecked. Everything matches. Tap SUBMIT.' : 'Something does not match. Check before SUBMIT.') + '</div>';
@@ -156,7 +162,7 @@
     else if (j.phase === 'dupfound') { status = j.slip + ' already exists on CUIMS (Serial ' + (j.dupSerial || '?') + ').'; tone = '#8E1B2A'; bg = '#FBE6E9'; icon = 'alert'; }
     else if (j.phase === 'fill') status = 'Filling the form';
     else if (j.phase === 'capture') status = 'Finding the Serial No for ' + j.slip;
-    h += '<div style="height:6px;border-radius:99px;background:#EFEDE8;overflow:hidden"><div style="height:6px;width:' + pct + '%;background:linear-gradient(90deg,#C9A24B,#E8C97A);border-radius:99px"></div></div>';
+    h += '<div style="height:6px;border-radius:99px;background:#EFEDE8;overflow:hidden"><div style="height:6px;width:' + pct + '%;background:linear-gradient(90deg,#C49A3A,#E6C873,#F3E2AE);border-radius:99px"></div></div>';
     h += '<div style="margin-top:12px;display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border-radius:12px;background:' + bg + ';color:' + tone + ';font-weight:650;font-size:15px">' + (icon ? ic(icon, 20) : '') + '<span>' + esc(status) + '</span></div>';
     var L = (j.log || []).slice(-2);
     if (L.length && !j.paused) h += '<div style="font-size:13px;color:#6B6F76;margin-top:10px;line-height:1.6">' + L.map(function (x) { return ic(x[1] ? 'no' : 'ok', 14, x[1] ? '#B42335' : '#0E7A4F') + ' ' + esc(x[0]); }).join('<br>') + '</div>';
@@ -190,10 +196,10 @@
       try { if (typeof window.closeBatchPopup === 'function') closeBatchPopup(); } catch (er) {}
       log(j, 'Skipped ' + it.code + ' (stays pending)'); ev('skip', { lineId: it.lineId, code: it.code }); run();
     }
-    else if (a === 'cancel') { ui.confirmCancel = true; if (!j.paused) { j.paused = true; j.pauseMsg = 'cancelling'; save(j); } paint(); }
-    else if (a === 'noCancel') { ui.confirmCancel = false; j.paused = false; j.pauseMsg = ''; save(j); paint(); run(); }
+    else if (a === 'cancel') { ui.confirmCancel = true; if (!j.paused && j.phase !== 'await') { j.paused = true; j.pauseMsg = 'cancelling'; j.cancelPaused = true; save(j); } paint(); }
+    else if (a === 'noCancel') { ui.confirmCancel = false; if (j.cancelPaused) { j.paused = false; j.pauseMsg = ''; j.cancelPaused = false; save(j); } paint(); run(); }
     else if (a === 'cancelReset' || a === 'cancelKeep') {
-      ui.confirmCancel = false; j.phase = 'cancelled'; save(j); ev('cancelled');
+      ui.confirmCancel = false; j.phase = 'cancelled'; j.paused = false; save(j); ev('cancelled');
       paint();
       if (a === 'cancelReset' && $('ContentPlaceHolder1_btnreset')) $('ContentPlaceHolder1_btnreset').click();
     }
