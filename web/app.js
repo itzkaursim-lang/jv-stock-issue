@@ -221,7 +221,7 @@ function parseStock(wb) {
 }
 
 /* ================= UI state ================= */
-let ui = { sort: { home: 'priority', pend: 'store', reg: 'time' }, tab: 'home', view: null, req: null, store: null, sheet: null, reg: { type: 'issue', date: today(), items: false }, search: { q: '', type: 'all', from: '', to: '', store: '', open: null }, upload: null, form: null };
+let ui = { setPage: null, openStore: {}, sort: { home: 'priority', pend: 'store', reg: 'time' }, tab: 'home', view: null, req: null, store: null, sheet: null, reg: { type: 'issue', date: today(), items: false }, search: { q: '', type: 'all', from: '', to: '', store: '', open: null }, upload: null, form: null };
 
 const ICON = {
   home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg>',
@@ -235,8 +235,12 @@ const TABS = [['home', 'Home'], ['pend', 'Pending'], ['reg', 'Registers'], ['fin
 function reqCard(r) {
   const tag = r.st === 'full' ? pill('All ' + r.w.length + ' can issue', 'c-ok') : r.st === 'part' ? pill(r.can.length + ' of ' + r.w.length + ' can issue', 'c-pt') : r.st === 'done' ? pill('Done', 'c-in') : pill('Nothing in stock', 'c-no');
   const slip = (r.w.find(l => l.slip) || {}).slip, rcv = (r.lines.find(l => l.rcv) || {}).rcv || (S.stores[r.store] || {}).rcv || '';
-  return '<button class="card pad tap col" style="gap:8px" data-a="openReq" data-v="' + esc(r.req) + '"><div class="row"><b style="font-size:17px">' + esc(r.store) + '</b>' + tag + '</div>' +
-    '<div class="wrap" style="gap:6px">' + pill('Req ' + r.req, 'c-gy') + pill(fmtShort(r.date), r.date === today() ? 'c-gy' : 'c-pt') + (slip ? pill('Slip ' + slip, 'c-in') : pill('No slip', 'c-no')) + (rcv ? pill('GA' + rcv, 'c-gy') : pill('No receiver', 'c-no')) + (r.iss.length ? pill(r.iss.length + ' issued', 'c-in') : '') + '</div></button>';
+  return '<div class="card scard"><button class="main" data-a="openReq" data-v="' + esc(r.req) + '"><div class="row"><b style="font-size:17px">' + esc(r.store) + '</b>' + tag + '</div>' +
+    '<div class="wrap" style="gap:6px">' + pill('Req ' + r.req, 'c-gy') + pill(fmtShort(r.date), r.date === today() ? 'c-gy' : 'c-pt') + (slip ? pill('Slip ' + slip, 'c-in') : pill('No slip', 'c-no')) + (rcv ? pill('GA' + rcv, 'c-gy') : pill('No receiver', 'c-no')) + pill(r.lines.length + ' articles', 'c-gy') + (r.iss.length ? pill(r.iss.length + ' issued', 'c-in') : '') + '</div></button>' +
+    '<div class="side"><button class="xbtn" data-a="dropReq" data-v="' + esc(r.req) + '" aria-label="Remove ' + esc(r.store) + ' from the list">✕</button></div></div>';
+}
+function appBar() {
+  return '<div class="appbar"><img class="logo" src="icon.png" alt="JV Stock Issue logo"><div class="t"><b>JV Stock Issue</b><span>Built by <i>' + esc(S.me.builder || S.me.name || 'JV') + '</i>' + (S.me.storeName ? ' · ' + esc(S.me.storeName) : '') + '</span></div><button data-a="goProfile" aria-label="Profile" style="border:0;background:none;padding:0">' + avatar(false) + '</button></div>';
 }
 function stockAge() { return S.stockAt ? 'Stock from ' + fmtDT(S.stockAt) : 'No stock uploaded yet'; }
 
@@ -252,7 +256,7 @@ function vHome() {
   const pend = S.lines.filter(isPending);
   const pendCan = pend.filter(l => PL[l.id] === 'issue').length;
   const issuedToday = S.entries.filter(e => (e.at || '').slice(0, 10) === t).length;
-  let h = '<header class="top"><div><h1>JV Stock Issue</h1><div class="sub">' + fmtLong(t) + ' · ' + esc(stockAge()) + '</div></div>' +
+  let h = '<header class="top"><div><h1>' + (S.me.name ? 'Hello, ' + esc(S.me.name.split(' ')[0]) : 'Today') + '</h1><div class="sub">' + fmtLong(t) + ' · ' + esc(stockAge()) + '</div></div>' +
     '<button class="iconbtn" data-a="openSite" aria-label="Open CUIMS">' + '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></button></header><main>';
   if (S.updateInfo && S.updateInfo.newer) h += '<button class="banner t-in tap" data-a="goUpdate" style="border:0"><b>Update ' + esc(S.updateInfo.tag) + ' available.</b> Tap to install.</button>';
   if (!S.me.name) h += '<button class="banner t-pt tap" data-a="tab" data-v="set" style="border:0"><b>Add your name and emp code</b> in Settings, so entries and PDFs show who made them.</button>';
@@ -321,19 +325,27 @@ function vPend() {
   const g = groupBy(pend, l => l.store);
   h += '<div class="row"><span class="sect">By store</span>' + sortSel('pend', [['store', 'Store A–Z'], ['most', 'Most pending'], ['oldest', 'Oldest first'], ['ready', 'Most in stock']]) + '</div>';
   const ps = ui.sort.pend;
-  Object.keys(g).sort((a, b) => ps === 'most' ? g[b].length - g[a].length : ps === 'oldest' ? g[a].reduce((m, l) => l.date < m ? l.date : m, '9') .localeCompare(g[b].reduce((m, l) => l.date < m ? l.date : m, '9')) : ps === 'ready' ? g[b].filter(l => PL[l.id] === 'issue').length - g[a].filter(l => PL[l.id] === 'issue').length : a.localeCompare(b)).forEach(store => {
+  Object.keys(g).sort((a, b) => ps === 'most' ? g[b].length - g[a].length : ps === 'oldest' ? oldestOf(g[a]).localeCompare(oldestOf(g[b])) : ps === 'ready' ? g[b].filter(l => PL[l.id] === 'issue').length - g[a].filter(l => PL[l.id] === 'issue').length : a.localeCompare(b)).forEach(store => {
     const L = g[store].sort((a, b) => a.date.localeCompare(b.date));
     const c = L.filter(l => PL[l.id] === 'issue');
-    h += '<div class="card"><div class="pad row" style="background:var(--soft);border-bottom:1px solid var(--line);border-radius:16px 16px 0 0"><b>' + esc(store) + '</b><span class="note">' + L.length + ' pending</span></div>';
-    const byR = groupBy(L, l => l.req);
-    Object.keys(byR).forEach(rq => {
-      const f = byR[rq][0];
-      h += '<div class="pad" style="padding-top:10px;padding-bottom:6px;background:var(--soft)"><div class="wrap" style="gap:6px">' + pill('Req ' + rq, 'c-gy') + pill(fmtShort(f.date), 'c-pt') + ((byR[rq].find(l => l.slip) || {}).slip ? pill('Slip ' + byR[rq].find(l => l.slip).slip, 'c-in') : '') + '</div></div>';
-      byR[rq].forEach(l => {
-        h += '<div class="line"><div class="row" style="align-items:flex-start"><span><b>' + esc(itemName(l.code)) + '</b><div class="note mono">' + esc(l.code) + '</div></span><b class="mono" style="white-space:nowrap">' + num(l.qty) + ' ' + esc(itemUom(l.code)) + '</b></div><div class="wrap" style="gap:6px">' + linePills(l, PL[l.id]) + '</div></div>';
+    const reqs = [...new Set(L.map(l => l.req))];
+    const old = days(oldestOf(L));
+    const open = !!ui.openStore[store];
+    h += '<div class="card" style="overflow:hidden"><div class="scard"><button class="main" data-a="togStore" data-v="' + esc(store) + '"><div class="row"><b style="font-size:17px">' + esc(store) + '</b><span class="chev" style="transform:rotate(' + (open ? 90 : 0) + 'deg)">›</span></div>' +
+      '<div class="wrap" style="gap:6px">' + pill(L.length + ' pending', 'c-pt') + pill(c.length + ' in stock now', c.length ? 'c-ok' : 'c-gy') + pill(reqs.length + (reqs.length === 1 ? ' request' : ' requests'), 'c-gy') + pill(old ? 'Oldest ' + old + ' d' : 'Today', old > 2 ? 'c-no' : 'c-gd') + '</div></button>' +
+      '<div class="side"><button class="xbtn" data-a="dropStore" data-v="' + esc(store) + '" aria-label="Remove ' + esc(store) + ' pending">✕</button></div></div>';
+    if (open) {
+      const byR = groupBy(L, l => l.req);
+      Object.keys(byR).forEach(rq => {
+        const f = byR[rq][0];
+        h += '<div class="pad" style="padding-top:10px;padding-bottom:6px;background:var(--soft);border-top:1px solid var(--line)"><div class="wrap" style="gap:6px">' + pill('Req ' + rq, 'c-gy') + pill(fmtShort(f.date), 'c-pt') + ((byR[rq].find(l => l.slip) || {}).slip ? pill('Slip ' + byR[rq].find(l => l.slip).slip, 'c-in') : '') + '</div></div>';
+        byR[rq].forEach(l => {
+          h += '<div class="line"><div class="row" style="align-items:flex-start"><span><b>' + esc(itemName(l.code)) + '</b><div class="note mono">' + esc(l.code) + '</div></span><b class="mono" style="white-space:nowrap">' + num(l.qty) + ' ' + esc(itemUom(l.code)) + '</b></div><div class="wrap" style="gap:6px">' + linePills(l, PL[l.id]) + '</div></div>';
+        });
       });
-    });
-    h += '<div class="pad">' + (c.length ? '<button class="btn main full" data-a="fillStore" data-v="' + esc(store) + '">Clear ' + c.length + ' in-stock article' + (c.length > 1 ? 's' : '') + ' on CUIMS</button>' : '<div class="note">Nothing in stock yet. Upload fresh stock to recheck.</div>') + '</div></div>';
+      h += '<div class="pad">' + (c.length ? '<button class="btn main full" data-a="fillStore" data-v="' + esc(store) + '">Clear ' + c.length + ' in-stock article' + (c.length > 1 ? 's' : '') + ' on CUIMS</button>' : '<div class="note">Nothing in stock yet. Upload fresh stock to recheck.</div>') + '</div>';
+    }
+    h += '</div>';
   });
   return h + '</main>';
 }
@@ -531,14 +543,49 @@ function vFind() {
 /* ---------------- Settings ---------------- */
 let INFO = {};
 try { INFO = N ? JSON.parse(N.info()) : { version: 'browser', mode: 'online' }; } catch (e) {}
+const SETPAGES = [
+  ['profile', 'Profile', 'Photo, name, emp code, designation', '#E5EDFD', '#1D4ED8', '<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>'],
+  ['pdf', 'PDF and signatures', 'Store name, manager signature', '#F7EFD9', '#8A6A1F', '<path d="M6 3h9l3 3v15H6z"/><path d="M9 13h6M9 17h4"/>'],
+  ['stores', 'Stores and receivers', 'Project Areas, 6-digit codes', '#E3F4EC', '#0B5E3D', '<path d="M3 10l9-6 9 6v10H3z"/><path d="M9 20v-6h6v6"/>'],
+  ['fill', 'Filling and automation', 'Queue mode', '#FCF1DA', '#8A5A00', '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>'],
+  ['cloud', 'Cloud backup', 'Google Drive + Sheet, restore', '#E5EDFD', '#1E3A8A', '<path d="M7 18a5 5 0 1 1 1-9.9A6 6 0 0 1 19 10a4 4 0 0 1-1 8z"/>'],
+  ['data', 'Downloads and data', 'Excel exports, template, clear data', '#EFEDE8', '#3A3E45', '<path d="M12 3v12M7 10l5 5 5-5M4 21h16"/>'],
+  ['security', 'Security', 'Fingerprint / PIN lock', '#FBE6E9', '#8E1B2A', '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>'],
+  ['app', 'App and updates', 'Version, updates, rollback', '#F7EFD9', '#8A6A1F', '<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>']
+];
+function initials(n) { return String(n || 'JV').trim().split(/\s+/).map(x => x[0]).slice(0, 2).join('').toUpperCase(); }
+function avatar(big) { return S.me.photo ? '<img class="avatar' + (big ? ' big' : '') + '" src="' + S.me.photo + '" alt="Profile photo">' : '<span class="avatar' + (big ? ' big' : '') + '">' + esc(initials(S.me.name)) + '</span>'; }
 function vSet() {
-  let h = '<header class="top"><div><h1>Settings</h1><div class="sub">App ' + esc(INFO.version || '') + ' · screens ' + (INFO.bundled ? 'built-in' : 'online') + ' ' + WEB_VERSION + '</div></div></header><main>';
-  h += '<div class="card pad col"><h3>My details</h3><div class="note">Every entry made through the app gets these. Also printed on PDFs.</div>' +
-    '<label class="f">Name<input type="text" data-set="me.name" value="' + esc(S.me.name) + '"></label>' +
-    '<div class="grid2"><label class="f">Emp code<input type="text" data-set="me.emp" value="' + esc(S.me.emp) + '" autocapitalize="characters"></label><label class="f">Designation<input type="text" data-set="me.desig" value="' + esc(S.me.desig) + '"></label></div>' +
-    '<label class="f">Store name (PDF title)<input type="text" data-set="me.storeName" value="' + esc(S.me.storeName) + '"></label></div>';
+  const pg = ui.setPage;
+  let h = '';
+  if (!pg) {
+    h += '<header class="top"><div><h1>Settings</h1></div></header><main>';
+    h += '<button class="card pad tap" data-a="setPage" data-v="profile" style="display:flex;align-items:center;gap:14px">' + avatar(true) + '<span style="flex:1"><b style="font-size:19px">' + esc(S.me.name || 'Add your name') + '</b><div class="note">' + esc([S.me.desig, S.me.emp].filter(Boolean).join(' · ') || 'Tap to set up your profile') + '</div></span><span class="chev">›</span></button>';
+    const groups = [['Account', ['profile', 'pdf']], ['Work', ['stores', 'fill']], ['Data', ['cloud', 'data']], ['App', ['security', 'app']]];
+    groups.forEach(([g, keys]) => {
+      h += '<div class="sect">' + g + '</div><div class="card" style="overflow:hidden">';
+      keys.forEach(k => { const p = SETPAGES.find(x => x[0] === k);
+        h += '<button class="srow" data-a="setPage" data-v="' + k + '"><span class="ic" style="background:' + p[3] + ';color:' + p[4] + '">' + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + p[5] + '</svg></span><span class="tx"><b>' + p[1] + '</b><span>' + p[2] + '</span></span><span class="chev">›</span></button>'; });
+      h += '</div>';
+    });
+    h += '<div class="note" style="text-align:center;padding:8px 0 4px">JV Stock Issue ' + esc(INFO.version || '') + ' · Built by ' + esc(S.me.builder || S.me.name || 'JV') + '</div>';
+    return h + '</main>';
+  }
+  const P0 = SETPAGES.find(x => x[0] === pg);
+  h += '<header class="top"><div><button class="btn sm ghost" data-a="setBack">‹ Settings</button><h1 style="margin-top:10px">' + P0[1] + '</h1></div></header><main>';
+  if (pg === 'profile') {
+    h += '<div class="card pad col" style="align-items:center;text-align:center">' + avatar(true) + '<div class="grid2" style="width:100%"><button class="btn sm" data-a="photo">Change photo</button><button class="btn sm ghost" data-a="photoDel"' + (S.me.photo ? '' : ' disabled') + '>Remove photo</button></div></div>';
+    h += '<div class="card pad col"><h3>My details</h3><div class="note">Entries made through the app get these. Also printed on PDFs.</div>' +
+      '<label class="f">Name<input type="text" data-set="me.name" value="' + esc(S.me.name) + '"></label>' +
+      '<div class="grid2"><label class="f">Emp code<input type="text" data-set="me.emp" value="' + esc(S.me.emp) + '" autocapitalize="characters"></label><label class="f">Designation<input type="text" data-set="me.desig" value="' + esc(S.me.desig) + '"></label></div>' +
+      '<label class="f">"Built by" name in the top bar<input type="text" data-set="me.builder" value="' + esc(S.me.builder || '') + '" placeholder="' + esc(S.me.name || 'Your name') + '"></label></div>';
+  }
+  if (pg === 'pdf') {
+    h += '<div class="card pad col"><label class="f">Store name (PDF title)<input type="text" data-set="me.storeName" value="' + esc(S.me.storeName) + '"></label></div>';
   h += '<div class="card pad col"><h3>Manager signature on PDFs</h3><label class="chk"><input type="checkbox" data-a="mgrToggle"' + (S.mgr.on ? ' checked' : '') + '> Add manager signature line</label>' +
     (S.mgr.on ? '<div class="grid2"><label class="f">Manager name<input type="text" data-set="mgr.name" value="' + esc(S.mgr.name) + '"></label><label class="f">Designation<input type="text" data-set="mgr.desig" value="' + esc(S.mgr.desig) + '"></label></div>' : '') + '</div>';
+  }
+  if (pg === 'stores') {
   const stores = Object.keys(S.stores).sort();
   h += '<div class="card"><div class="pad col" style="gap:4px"><h3>Stores and receivers</h3><div class="note">Store = exact CUIMS Project Area. Receiver = 6 digits; change anytime. ' + (S.areas.length ? S.areas.length + ' Project Areas known from CUIMS.' : 'Open CUIMS once to load the Project Area list.') + '</div></div>';
   stores.forEach(s => {
@@ -548,21 +595,32 @@ function vSet() {
       '<div class="grid2"><input type="text" inputmode="numeric" maxlength="6" data-store-rcv="' + esc(s) + '" value="' + esc(v) + '" placeholder="6-digit receiver" class="mono' + (bad ? ' bad' : '') + '"><input type="text" data-store-name="' + esc(s) + '" value="' + esc(S.stores[s].rname || rname(v)) + '" placeholder="Receiver name"></div></div>';
   });
   h += '<div class="pad col"><input type="text" id="newStore" list="areaList" placeholder="Add store: type or pick Project Area" autocapitalize="characters">' + areaDatalist() + '<button class="btn" data-a="addStore">+ Add store</button></div></div>';
+  }
+  if (pg === 'fill') {
   h += '<div class="card pad col"><h3>Filling</h3><label class="chk"><input type="checkbox" data-a="queueToggle"' + (S.queue ? ' checked' : '') + '> Queue mode: after each submit, fill the next request automatically</label></div>';
+  }
+  if (pg === 'cloud') {
   h += '<div class="card pad col"><h3>Cloud backup (Google Drive + Sheet)</h3><label class="f">Apps Script web app URL<input type="text" data-set="sync.url" value="' + esc(S.sync.url) + '" placeholder="https://script.google.com/macros/s/…/exec"></label>' +
     '<label class="chk"><input type="checkbox" data-a="syncAuto"' + (S.sync.auto ? ' checked' : '') + '> Back up automatically after changes</label>' +
     '<div class="note">' + (S.sync.at ? 'Last backup ' + fmtDT(S.sync.at) : 'Not backed up yet') + '</div>' +
     '<div class="grid2"><button class="btn" data-a="syncNow"' + (S.sync.url ? '' : ' disabled') + '>Back up now</button><button class="btn main" data-a="backups"' + (S.sync.url ? '' : ' disabled') + '>Manage backups</button></div></div>';
+  }
+  if (pg === 'data') {
   h += '<div class="card pad col"><h3>Downloads</h3><div class="grid2">' +
     [['expRequests', 'Requests register'], ['expEntries', 'Entries log'], ['expItems', 'Entry items'], ['expPendXlsx', 'Pending (Excel)'], ['expPendPdf', 'Pending (PDF)'], ['expStock', 'Stock now'], ['expReturns', 'Returns'], ['expAll', 'Full backup']].map(([a, l]) => '<button class="btn sm" data-a="' + a + '">' + l + '</button>').join('') +
     '</div><button class="btn sm ghost" data-a="template">Download data template</button></div>';
+  h += '<div class="card pad col"><h3>Data</h3><div class="note">' + S.lines.length + ' request articles · ' + S.entries.length + ' issue entries · ' + S.returns.length + ' returns · ' + Object.keys(S.stock).length + ' stock items</div><button class="btn warn" data-a="wipe">Clear all data on this phone</button></div>';
+  }
+  if (pg === 'security') {
   h += '<div class="card pad col"><h3>Security</h3><label class="chk"><input type="checkbox" data-a="lockToggle"' + (INFO.lock ? ' checked' : '') + '> Fingerprint / PIN lock when opening</label></div>';
+  }
+  if (pg === 'app') {
   const ui2 = S.updateInfo;
   h += '<div class="card pad col" id="upd"><h3>App updates</h3><div class="note">Installed ' + esc(INFO.version || '–') + '. ' + (ui2 ? (ui2.newer ? 'New version ' + esc(ui2.tag) + ' is available.' : 'You have the latest version (checked ' + fmtDT(ui2.at) + ').') : '') + '</div>' +
     '<div class="grid2"><button class="btn" data-a="checkUpdate">Check now</button><button class="btn main" data-a="installUpdate"' + (ui2 && ui2.newer ? '' : ' disabled') + '>Install update</button></div>' +
     '<div class="note">Screens update by themselves from GitHub. If a new screen version misbehaves, switch to the built-in version.</div>' +
     '<div class="seg"><button data-a="mode" data-v="online" class="' + (INFO.mode !== 'bundled' ? 'on' : '') + '">Latest online</button><button data-a="mode" data-v="bundled" class="' + (INFO.mode === 'bundled' ? 'on' : '') + '">Built-in (rollback)</button></div></div>';
-  h += '<div class="card pad col"><h3>Data</h3><div class="note">' + S.lines.length + ' request articles · ' + S.entries.length + ' issue entries · ' + S.returns.length + ' returns · ' + Object.keys(S.stock).length + ' stock items</div><button class="btn warn" data-a="wipe">Clear all data on this phone</button></div>';
+  }
   return h + '</main>';
 }
 
@@ -787,6 +845,7 @@ window.jvOnReturnFromSite = () => render();
 window.jvBack = () => {
   if (ui.sheet) { ui.sheet = null; renderSheet(); return true; }
   if (ui.view) { ui.view = null; render(); return true; }
+  if (ui.tab === 'set' && ui.setPage) { ui.setPage = null; render(); return true; }
   if (ui.tab !== 'home') { ui.tab = 'home'; render(); return true; }
   return false;
 };
@@ -795,7 +854,7 @@ window.jvBack = () => {
 function render() {
   const app = document.getElementById('app');
   const y = window.scrollY;
-  app.innerHTML = ui.view === 'req' ? vReq() : ({ home: vHome, pend: vPend, reg: vReg, find: vFind, set: vSet })[ui.tab]();
+  app.innerHTML = appBar() + (ui.view === 'req' ? vReq() : ({ home: vHome, pend: vPend, reg: vReg, find: vFind, set: vSet })[ui.tab]());
   document.querySelector('#tabs .in').innerHTML = TABS.map(([k, l]) => '<button data-a="tab" data-v="' + k + '" class="' + (ui.tab === k && !ui.view ? 'on' : '') + '">' + ICON[k] + l + '</button>').join('');
   window.scrollTo(0, y);
 }
@@ -809,6 +868,7 @@ function renderSheet() {
   el.querySelector('.sheet').scrollTop = sc;
 }
 function sortSel(k, opts) { return '<select data-sort="' + k + '" style="width:auto;min-height:38px;font-size:14px;padding:0 8px">' + opts.map(([v, l]) => '<option value="' + v + '"' + (ui.sort[k] === v ? ' selected' : '') + '>Sort: ' + l + '</option>').join('') + '</select>'; }
+function oldestOf(L) { return L.reduce((m, l) => l.date < m ? l.date : m, '9999'); }
 function bulkList() {
   const PL = plan();
   return requests().map(r => Object.assign(r, reqState(r, PL))).filter(r => r.w.length).sort((a, b) => a.date.localeCompare(b.date) || a.req.localeCompare(b.req, undefined, { numeric: true }));
@@ -862,7 +922,7 @@ document.addEventListener('click', async ev => {
   if (a === 'bgClose') { if (ev.target === t) { ui.sheet = null; renderSheet(); } return; }
   if (t.type === 'checkbox' && !['hold', 'queueToggle', 'regItems', 'mgrToggle', 'syncAuto', 'lockToggle', 'markPick', 'stOn'].includes(a)) return;
   switch (a) {
-    case 'tab': ui.tab = v; ui.view = null; render(); window.scrollTo(0, 0); break;
+    case 'tab': ui.tab = v; ui.view = null; if (v === 'set') ui.setPage = null; render(); window.scrollTo(0, 0); break;
     case 'openSite': if (N) N.openSite(); else toast('Open this inside the app.'); break;
     case 'goUpdate': ui.tab = 'set'; ui.view = null; render(); setTimeout(() => { const u = document.getElementById('upd'); if (u) u.scrollIntoView(); }, 50); break;
     case 'upload': ui.upload = null; ui.sheet = { kind: 'upload' }; renderSheet(); break;
@@ -875,7 +935,7 @@ document.addEventListener('click', async ev => {
     case 'editReq': { const r = requests().find(x => x.req === v); const w = r.lines.filter(l => l.status === 'waiting');
       ui.form = { req: v, store: r.store, date: r.date, rcv: (r.lines.find(l => l.rcv) || {}).rcv || '', slip: (w.find(l => l.slip) || {}).slip || '', items: w.map(l => ({ lineId: l.id, code: l.code, qty: l.qty, name: itemName(l.code), uom: itemUom(l.code) })) };
       ui.sheet = { kind: 'editReq' }; renderSheet(); break; }
-    case 'dropReq': if (confirm('Remove all waiting articles of request ' + v + '? Issued ones stay in the records.')) { S.lines.forEach(l => { if (l.req === v && l.status === 'waiting') l.status = 'dropped'; }); save(); ui.view = null; render(); } break;
+    case 'dropReq': if (confirm('Remove request ' + v + ' (' + ((requests().find(x => x.req === v) || {}).store || '') + ') from the list? Waiting articles are removed; issued ones stay in the records.')) { S.lines.forEach(l => { if (l.req === v && l.status === 'waiting') l.status = 'dropped'; }); save(); ui.view = null; render(); } break;
     case 'saveReq': { const f = ui.form; if (f.rcv && !/^\d{6}$/.test(f.rcv)) { toast('Receiver must be 6 digits or blank.'); break; }
       const items = cleanItems(f.items); const keep = new Set(items.filter(i => i.lineId).map(i => i.lineId));
       const sl = (f.slip || '').trim().toUpperCase(); if (sl && !SLIP_RE.test(sl)) { toast('Slip No must be 2–10 characters with a digit.'); break; }
@@ -911,6 +971,14 @@ document.addEventListener('click', async ev => {
       ls.forEach(l => { const x = S.lines.find(y => y.id === l.id); x.status = 'issued'; x.issued.push({ slip, serial: (f.serial || '').trim(), at }); if (S.stock[l.code]) S.stock[l.code].qty = Math.round((S.stock[l.code].qty - l.qty) * 1000) / 1000; });
       save(); ui.sheet = null; renderSheet(); render(); toast('Recorded ' + slip + ' as issued.'); break; }
     case 'expPendPdf': pdfPending(); break;
+    case 'setPage': ui.setPage = v; render(); window.scrollTo(0, 0); break;
+    case 'setBack': ui.setPage = null; render(); window.scrollTo(0, 0); break;
+    case 'goProfile': ui.tab = 'set'; ui.view = null; ui.setPage = 'profile'; render(); window.scrollTo(0, 0); break;
+    case 'togStore': ui.openStore[v] = !ui.openStore[v]; render(); break;
+    case 'dropStore': { const n = S.lines.filter(l => isPending(l) && l.store === v).length;
+      if (confirm('Remove all ' + n + ' pending articles of ' + v + '? Issued records stay. (You can restore from a cloud backup if needed.)')) { S.lines.forEach(l => { if (isPending(l) && l.store === v) l.status = 'dropped'; }); save(); render(); toast(v + ' removed from Pending.'); } break; }
+    case 'photo': document.getElementById('photoIn').click(); break;
+    case 'photoDel': delete S.me.photo; save(); render(); break;
     case 'expPendXlsx': saveWb([['Pending', rowsPending()]], 'Pending-' + today() + '.xlsx'); break;
     case 'closeSheet': ui.sheet = null; renderSheet(); break;
     case 'queueToggle': S.queue = t.checked; save(true); break;
@@ -1006,6 +1074,13 @@ document.addEventListener('input', ev => {
 });
 document.addEventListener('change', async ev => {
   const el = ev.target;
+  if (el.id === 'photoIn') {
+    const f = el.files[0]; el.value = ''; if (!f) return;
+    const img = new Image(); const fr = new FileReader();
+    fr.onload = () => { img.onload = () => { const c = document.createElement('canvas'); c.width = c.height = 220; const k = Math.min(img.width, img.height); const g = c.getContext('2d');
+      g.drawImage(img, (img.width - k) / 2, (img.height - k) / 2, k, k, 0, 0, 220, 220); S.me.photo = c.toDataURL('image/jpeg', 0.85); save(); render(); toast('Photo updated.'); }; img.src = fr.result; };
+    fr.readAsDataURL(f); return;
+  }
   if (el.id === 'fileIn') {
     const f = el.files[0]; el.value = ''; if (!f || !ui.upload) return;
     if (!window.XLSX) { ui.upload.error = 'Excel tools not loaded yet. Check internet and try again.'; renderSheet(); return; }

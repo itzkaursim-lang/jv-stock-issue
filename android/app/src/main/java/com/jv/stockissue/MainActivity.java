@@ -124,10 +124,16 @@ public class MainActivity extends AppCompatActivity {
                 fileCb = cb;
                 Intent i = new Intent(Intent.ACTION_GET_CONTENT);
                 i.addCategory(Intent.CATEGORY_OPENABLE);
-                i.setType("*/*");
-                i.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{
-                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        "application/vnd.ms-excel", "text/csv", "text/comma-separated-values", "application/octet-stream"});
+                String[] acc = p.getAcceptTypes();
+                boolean img = acc != null && acc.length > 0 && acc[0] != null && acc[0].startsWith("image");
+                if (img) {
+                    i.setType("image/*");
+                } else {
+                    i.setType("*/*");
+                    i.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            "application/vnd.ms-excel", "text/csv", "text/comma-separated-values", "text/plain", "application/octet-stream"});
+                }
                 try { startActivityForResult(i, 42); } catch (Exception ex) { fileCb = null; return false; }
                 return true;
             }

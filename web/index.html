@@ -12,25 +12,27 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
 :root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);
---bg:#F5F5F4;--card:#FFFFFF;--line:#E7E5E4;--soft:#FAFAF9;--ink:#1C1917;--mute:#78716C;--ink2:#44403C;
---ok:#16A34A;--okBg:#DCFCE7;--okInk:#166534;--pt:#F59E0B;--ptBg:#FEF3C7;--ptInk:#92400E;--no:#DC2626;--noBg:#FEE2E2;--noInk:#991B1B;
---info:#2563EB;--infoBg:#DBEAFE;--infoInk:#1E40AF;--gryBg:#F0EFED}
+--bg:#F6F5F2;--card:#FFFFFF;--line:#E8E5DF;--soft:#FAF9F6;--ink:#14161A;--mute:#6B6F76;--ink2:#3A3E45;
+--brand:#0F172A;--brand2:#1E293B;--gold:#C9A24B;--goldInk:#8A6A1F;--goldBg:#F7EFD9;
+--ok:#0E7A4F;--okBg:#E3F4EC;--okInk:#0B5E3D;--pt:#B7791F;--ptBg:#FCF1DA;--ptInk:#8A5A00;--no:#B42335;--noBg:#FBE6E9;--noInk:#8E1B2A;
+--info:#1D4ED8;--infoBg:#E5EDFD;--infoInk:#1E3A8A;--gryBg:#EFEDE8}
 *,*::before,*::after{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--ink);font-family:'Outfit',system-ui,sans-serif;font-size:16.5px;line-height:1.5;-webkit-tap-highlight-color:transparent}
 .app{max-width:560px;margin:0 auto;min-height:100vh;padding-bottom:calc(76px + env(safe-area-inset-bottom,0px))}
-header.top{padding:20px 18px 10px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+header.top{padding:14px 18px 6px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
 h1{margin:0;font-size:27px;font-weight:700;letter-spacing:-.01em}
 h2{margin:0;font-size:20px;font-weight:700}
 h3{margin:0;font-size:17px;font-weight:700}
 .sub{font-size:14.5px;color:var(--mute)}
 main{padding:0 16px;display:flex;flex-direction:column;gap:16px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:0 1px 2px rgba(15,23,42,.04),0 4px 14px rgba(15,23,42,.04)}
 .pad{padding:16px 18px}
 .row{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .wrap{display:flex;flex-wrap:wrap;gap:8px}
 .col{display:flex;flex-direction:column;gap:8px}
-.btn{min-height:50px;padding:0 18px;border-radius:14px;border:1.5px solid var(--ink);background:var(--card);color:var(--ink);font:600 15.5px 'Outfit',sans-serif;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px}
-.btn.main{background:var(--ink);color:#fff}
+.btn{min-height:50px;padding:0 18px;border-radius:14px;border:1.5px solid var(--brand);background:var(--card);color:var(--ink);font:600 15.5px 'Outfit',sans-serif;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:6px}
+.btn.main{background:var(--brand);border-color:var(--brand);color:#fff}
+.btn.gold{background:var(--gold);border-color:var(--gold);color:#1B1405}
 .btn.ghost{border-color:var(--line)}
 .btn.warn{border-color:var(--no);color:var(--no)}
 .btn.sm{min-height:42px;padding:0 14px;font-size:14.5px;border-radius:12px}
@@ -44,7 +46,7 @@ main{padding:0 16px;display:flex;flex-direction:column;gap:16px}
 .tile span{font-size:14px;font-weight:500}
 .t-ok{background:var(--okBg);color:var(--okInk)}.t-pt{background:var(--ptBg);color:var(--ptInk)}.t-no{background:var(--noBg);color:var(--noInk)}.t-in{background:var(--infoBg);color:var(--infoInk)}
 .chip{font-size:13px;font-weight:700;padding:5px 11px;border-radius:99px;white-space:nowrap;display:inline-block}
-.c-ok{background:var(--okBg);color:var(--okInk)}.c-pt{background:var(--ptBg);color:var(--ptInk)}.c-no{background:var(--noBg);color:var(--noInk)}.c-gy{background:var(--gryBg);color:var(--ink2)}.c-in{background:var(--infoBg);color:var(--infoInk)}
+.c-ok{background:var(--okBg);color:var(--okInk)}.c-pt{background:var(--ptBg);color:var(--ptInk)}.c-no{background:var(--noBg);color:var(--noInk)}.c-gy{background:var(--gryBg);color:var(--ink2)}.c-in{background:var(--infoBg);color:var(--infoInk)}.c-gd{background:var(--goldBg);color:var(--goldInk)}
 .sect{font-size:14.5px;font-weight:600;color:var(--mute);padding:6px 2px 0}
 .tap{display:block;width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer;background:var(--card)}
 .line{display:flex;flex-direction:column;gap:5px;padding:14px 18px;border-bottom:1px solid var(--line)}
@@ -63,7 +65,8 @@ nav.tabs{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-to
 nav.tabs .in{max-width:560px;margin:0 auto;display:flex}
 nav.tabs button{flex:1;min-height:64px;border:0;background:none;font:500 13px 'Outfit',sans-serif;color:var(--mute);cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}
 nav.tabs button svg{width:22px;height:22px}
-nav.tabs button.on{color:var(--ink);font-weight:700}
+nav.tabs button.on{color:var(--brand);font-weight:700}
+nav.tabs button.on svg{color:var(--gold)}
 .sheetbg{position:fixed;inset:0;background:rgba(28,25,23,.45);z-index:40;display:flex;align-items:flex-end;justify-content:center}
 .sheet{background:var(--bg);width:100%;max-width:560px;max-height:92vh;overflow:auto;border-radius:24px 24px 0 0;padding:20px 16px calc(18px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:14px}
 .toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:#fff;padding:11px 16px;border-radius:12px;font-size:14px;z-index:60;max-width:92%;display:none}
@@ -79,6 +82,25 @@ th{color:var(--mute);font-weight:600}
 .hidden{display:none}
 .iconbtn{min-width:44px;min-height:44px;border-radius:12px;border:1.5px solid var(--line);background:var(--card);display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
 @media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
+
+.appbar{position:sticky;top:0;z-index:15;background:linear-gradient(135deg,#0F172A 0%,#1E293B 100%);color:#fff;padding:12px 16px;display:flex;align-items:center;gap:12px;box-shadow:0 2px 12px rgba(15,23,42,.25)}
+.appbar img.logo{width:40px;height:40px;border-radius:11px;box-shadow:0 0 0 1.5px rgba(201,162,75,.6)}
+.appbar .t{flex:1;min-width:0}
+.appbar .t b{display:block;font-size:18px;letter-spacing:.01em}
+.appbar .t span{display:block;font-size:12.5px;color:#C9CED6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.appbar .t span i{font-style:normal;color:var(--gold);font-weight:600}
+.avatar{width:42px;height:42px;border-radius:50%;object-fit:cover;border:2px solid var(--gold);background:#334155;color:#fff;display:inline-flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;cursor:pointer;flex-shrink:0}
+.avatar.big{width:76px;height:76px;font-size:28px}
+.srow{display:flex;align-items:center;gap:14px;padding:15px 18px;border-bottom:1px solid var(--line);width:100%;background:none;border-left:0;border-right:0;border-top:0;text-align:left;font:inherit;color:inherit;cursor:pointer}
+.srow:last-child{border-bottom:0}
+.srow .ic{width:38px;height:38px;border-radius:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.srow .ic svg{width:20px;height:20px}
+.srow .tx{flex:1;min-width:0}.srow .tx b{display:block;font-size:16px}.srow .tx span{font-size:13.5px;color:var(--mute)}
+.chev{color:var(--mute);font-size:22px}
+.scard{display:flex;align-items:stretch}
+.scard .main{flex:1;min-width:0;border:0;background:none;text-align:left;font:inherit;color:inherit;cursor:pointer;padding:16px 4px 16px 18px;display:flex;flex-direction:column;gap:8px}
+.scard .side{display:flex;align-items:center;padding-right:10px}
+.xbtn{width:40px;height:40px;border-radius:12px;border:1px solid var(--line);background:var(--soft);color:var(--mute);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px}
 </style>
 </head>
 <body>
@@ -87,6 +109,7 @@ th{color:var(--mute);font-weight:600}
 <div id="sheet"></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <input type="file" id="fileIn" accept=".xlsx,.xls,.csv" class="hidden">
-<script src="app.js?v=3.0.4"></script>
+<input type="file" id="photoIn" accept="image/*" class="hidden">
+<script src="app.js?v=3.0.5"></script>
 </body>
 </html>
