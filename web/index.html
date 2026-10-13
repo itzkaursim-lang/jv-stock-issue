@@ -24,7 +24,7 @@ h1{margin:0;font-size:27px;font-weight:700;letter-spacing:-.01em}
 h2{margin:0;font-size:20px;font-weight:700}
 h3{margin:0;font-size:17px;font-weight:700}
 .sub{font-size:14.5px;color:var(--mute)}
-main{padding:0 16px;display:flex;flex-direction:column;gap:16px}
+main{padding:0 16px;display:flex;flex-direction:column;gap:18px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:0 1px 2px rgba(15,23,42,.04),0 4px 14px rgba(15,23,42,.04)}
 .pad{padding:16px 18px}
 .row{display:flex;justify-content:space-between;align-items:center;gap:8px}
@@ -45,7 +45,7 @@ main{padding:0 16px;display:flex;flex-direction:column;gap:16px}
 .tile b{display:block;font-size:28px;line-height:1.15}
 .tile span{font-size:14px;font-weight:500}
 .t-ok{background:var(--okBg);color:var(--okInk)}.t-pt{background:var(--ptBg);color:var(--ptInk)}.t-no{background:var(--noBg);color:var(--noInk)}.t-in{background:var(--infoBg);color:var(--infoInk)}
-.chip{font-size:13px;font-weight:700;padding:5px 11px;border-radius:99px;white-space:nowrap;display:inline-block}
+.chip{font-size:12.5px;font-weight:700;padding:5px 12px;border-radius:99px;white-space:nowrap;display:inline-block}
 .c-ok{background:var(--okBg);color:var(--okInk)}.c-pt{background:var(--ptBg);color:var(--ptInk)}.c-no{background:var(--noBg);color:var(--noInk)}.c-gy{background:var(--gryBg);color:var(--ink2)}.c-in{background:var(--infoBg);color:var(--infoInk)}.c-gd{background:var(--goldBg);color:var(--goldInk)}
 .sect{font-size:14.5px;font-weight:600;color:var(--mute);padding:6px 2px 0}
 .tap{display:block;width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer;background:var(--card)}
@@ -104,6 +104,18 @@ th{color:var(--mute);font-weight:600}
 .scard .main{flex:1;min-width:0;border:0;background:none;text-align:left;font:inherit;color:inherit;cursor:pointer;padding:16px 4px 16px 18px;display:flex;flex-direction:column;gap:8px}
 .scard .side{display:flex;align-items:center;padding-right:10px}
 .xbtn{width:40px;height:40px;border-radius:12px;border:1px solid var(--line);background:var(--soft);color:var(--mute);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px}
+
+.ttl{font-size:18px;font-weight:700;letter-spacing:-.005em}
+.meta{display:flex;flex-wrap:wrap;align-items:center;row-gap:2px;font-size:14px;color:var(--mute);min-width:0}
+.meta i{display:inline-block;width:3px;height:3px;border-radius:50%;background:#B9B5AD;margin:0 8px}
+.meta em{font-style:normal;color:var(--noInk);font-weight:600}
+.unav{display:flex;gap:8px;align-items:flex-start;margin-top:2px;padding:9px 12px;border-radius:12px;background:#FDF3F4;color:var(--noInk);font-size:13.5px;line-height:1.5;border:1px solid #F4D4D9}
+.unav svg{flex-shrink:0;margin-top:2px}
+.unav b{font-weight:700}
+.qty{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.cta{padding:0 18px 18px}
+.chev{display:inline-flex;align-items:center}
+.chip{letter-spacing:.01em}
 </style>
 </head>
 <body>
@@ -113,6 +125,6 @@ th{color:var(--mute);font-weight:600}
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <input type="file" id="fileIn" accept=".xlsx,.xls,.csv" class="hidden">
 <input type="file" id="photoIn" accept="image/*" class="hidden">
-<script src="app.js?v=3.0.6"></script>
+<script src="app.js?v=3.0.7"></script>
 </body>
 </html>

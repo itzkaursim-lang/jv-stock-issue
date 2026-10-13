@@ -76,6 +76,16 @@ function plan() {
 }
 const STATUS = { issue: ['Can issue', 'c-ok'], short: ['Not enough stock', 'c-pt'], missing: ['Not in stock sheet', 'c-gy'], hold: ['On hold', 'c-pt'], issued: ['Issued', 'c-in'] };
 const chip = k => '<span class="chip ' + STATUS[k][1] + '">' + STATUS[k][0] + '</span>';
+const ICONS = { x: '<path d="M6 6l12 12M18 6L6 18"/>', up: '<path d="M6 15l6-6 6 6"/>', down: '<path d="M6 9l6 6 6-6"/>', right: '<path d="M9 6l6 6-6 6"/>', lock: '<rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>', alert: '<circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16.5v.5"/>', ext: '<path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/>' };
+const ico = (n, sz) => '<svg viewBox="0 0 24 24" width="' + (sz || 20) + '" height="' + (sz || 20) + '" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICONS[n] + '</svg>';
+const meta = arr => '<div class="meta">' + arr.filter(Boolean).map(x => '<span>' + x + '</span>').join('<i></i>') + '</div>';
+function unavail(lines, PL) {
+  const out = [];
+  lines.forEach(l => { const k = PL[l.id]; if (k !== 'short' && k !== 'missing' && k !== 'hold') return;
+    const s = S.stock[l.code];
+    out.push('<b>' + esc(itemName(l.code)) + '</b> ' + num(l.qty) + ' ' + esc(itemUom(l.code)) + (k === 'missing' ? ' (not in stock sheet)' : k === 'hold' ? ' (on hold)' : s && s.qty >= l.qty ? ' (stock kept for higher-priority requests)' : ' (have ' + num(s ? s.qty : 0) + ')')); });
+  return out.length ? '<div class="unav">' + ico('alert', 16) + '<span>Not available: ' + out.join(', ') + '</span></div>' : '';
+}
 const pill = (txt, cls) => '<span class="chip ' + (cls || 'c-gy') + '">' + esc(txt) + '</span>';
 function linePills(l, k) {
   const s = S.stock[l.code], u = itemUom(l.code), out = [];
@@ -233,12 +243,13 @@ const ICON = {
 const TABS = [['home', 'Home'], ['pend', 'Pending'], ['reg', 'Registers'], ['find', 'Search'], ['set', 'Settings']];
 
 function reqCard(r) {
-  const tag = r.st === 'full' ? pill('All ' + r.w.length + ' can issue', 'c-ok') : r.st === 'part' ? pill(r.can.length + ' of ' + r.w.length + ' can issue', 'c-pt') : r.st === 'done' ? pill('Done', 'c-in') : pill('Nothing in stock', 'c-no');
+  const PL = plan();
+  const tag = r.st === 'full' ? pill('Ready', 'c-ok') : r.st === 'part' ? pill(r.can.length + ' of ' + r.w.length + ' ready', 'c-gd') : r.st === 'done' ? pill('Done', 'c-in') : pill('Waiting', 'c-no');
   const slip = (r.w.find(l => l.slip) || {}).slip, rcv = (r.lines.find(l => l.rcv) || {}).rcv || (S.stores[r.store] || {}).rcv || '';
-  return '<div class="card"><div class="scard"><button class="main" data-a="openReq" data-v="' + esc(r.req) + '"><div class="row"><b style="font-size:17px">' + esc(r.store) + '</b>' + tag + '</div>' +
-    '<div class="wrap" style="gap:6px">' + pill('Req ' + r.req, 'c-gy') + pill(fmtShort(r.date), r.date === today() ? 'c-gy' : 'c-pt') + (slip ? pill('Slip ' + slip, 'c-in') : pill('No slip', 'c-no')) + (rcv ? pill('GA' + rcv, 'c-gy') : pill('No receiver', 'c-no')) + pill(r.lines.length + ' articles', 'c-gy') + (r.iss.length ? pill(r.iss.length + ' issued', 'c-in') : '') + '</div></button>' +
-    '<div class="side"><button class="xbtn" data-a="dropReq" data-v="' + esc(r.req) + '" aria-label="Remove ' + esc(r.store) + ' from the list">✕</button></div></div>' +
-    (r.can && r.can.length ? '<div style="padding:0 18px 16px;margin-top:-6px"><button class="btn main full" data-a="fillReq" data-v="' + esc(r.req) + '">Fill on CUIMS · ' + r.can.length + ' available</button></div>' : '') + '</div>';
+  return '<div class="card"><div class="scard"><button class="main" data-a="openReq" data-v="' + esc(r.req) + '"><div class="row"><b class="ttl">' + esc(r.store) + '</b>' + tag + '</div>' +
+    meta(['Req ' + esc(r.req), fmtShort(r.date), slip ? 'Slip ' + esc(slip) : '<em>No slip</em>', rcv ? 'GA' + esc(rcv) : '<em>No receiver</em>', r.lines.length + ' articles']) + unavail(r.w, PL) + '</button>' +
+    '<div class="side"><button class="xbtn" data-a="dropReq" data-v="' + esc(r.req) + '" aria-label="Remove ' + esc(r.store) + ' from the list">' + ico('x', 18) + '</button></div></div>' +
+    (r.can && r.can.length ? '<div class="cta"><button class="btn main full" data-a="fillReq" data-v="' + esc(r.req) + '">Fill on CUIMS · ' + r.can.length + ' available</button></div>' : '') + '</div>';
 }
 function appBar() {
   const lk = ui.locked ? '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>' : '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="M8 11V7a4 4 0 0 1 7.5-1.8"/></svg>';
@@ -297,15 +308,17 @@ function vReq() {
   const st = reqState(r, PL);
   const rcv = (r.lines.find(l => l.rcv) || {}).rcv || (S.stores[r.store] || {}).rcv || '';
   let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:8px">' + esc(r.store) + '</h1><div class="sub">Request ' + esc(r.req) + ' · ' + fmtLong(r.date) + ' · Receiver ' + (rcv ? 'GA' + esc(rcv) : 'not set') + '</div></div></header><main>';
-  h += '<div class="wrap">' + pill(st.can.length + ' can issue', 'c-ok') + pill((st.w.length - st.can.length) + ' waiting', st.w.length - st.can.length ? 'c-pt' : 'c-gy') + pill(st.iss.length + ' issued', 'c-in') + pill(r.lines.length + ' articles', 'c-gy') + ((st.w.find(l => l.slip) || {}).slip ? pill('Next slip ' + st.w.find(l => l.slip).slip, 'c-in') : pill('No slip set', 'c-no')) + '</div>';
+  h += meta([st.can.length + ' ready', (st.w.length - st.can.length) + ' waiting', st.iss.length + ' issued', (st.w.find(l => l.slip) || {}).slip ? 'next slip ' + esc(st.w.find(l => l.slip).slip) : '<em>no slip set</em>']);
   h += '<div class="card">';
   const ordr = { issue: 0, short: 1, hold: 2, missing: 3 };
   const lines = r.lines.slice().sort((a, b) => (a.status === 'issued') - (b.status === 'issued') || (ordr[PL[a.id]] || 0) - (ordr[PL[b.id]] || 0));
   lines.forEach(l => {
     const k = l.status === 'issued' ? 'issued' : PL[l.id];
-    h += '<div class="line"><div class="row" style="align-items:flex-start"><span><b>' + esc(itemName(l.code)) + '</b><div class="note mono">' + esc(l.code) + '</div></span><b class="mono" style="white-space:nowrap">' + num(l.qty) + ' ' + esc(itemUom(l.code)) + '</b></div>' +
-      '<div class="wrap" style="gap:6px">' + linePills(l, k) + '</div>' +
-      (l.status === 'waiting' && k !== 'missing' ? '<label class="chk" style="min-height:36px;font-size:14px;color:var(--mute)"><input type="checkbox" data-a="hold" data-v="' + l.id + '"' + (S.hold[l.id] ? ' checked' : '') + '> Hold this article</label>' : '') + '</div>';
+    const st = S.stock[l.code], u = itemUom(l.code);
+    const status = k === 'issued' ? pill('Issued', 'c-in') : k === 'issue' ? pill('Ready', 'c-ok') : k === 'short' ? pill('Short', 'c-no') : k === 'missing' ? pill('Not in stock', 'c-no') : pill('On hold', 'c-gd');
+    const info = k === 'issued' ? l.issued.map(x => 'Slip ' + esc(x.slip) + (x.serial ? ' · Serial ' + esc(x.serial) : '')) : [esc(l.code), st ? 'stock ' + num(st.qty) + ' ' + esc(u) : '', k === 'short' && st ? '<em>' + (st.qty >= l.qty ? 'kept for higher priority' : 'short by ' + num(l.qty - st.qty)) + '</em>' : '', remarkFor(l.date) && k === 'issue' ? 'remark added' : ''];
+    h += '<div class="line"><div class="row"><b>' + esc(itemName(l.code)) + '</b><span class="qty">' + num(l.qty) + ' ' + esc(u) + '</span></div><div class="row" style="align-items:center">' + meta(info) + status + '</div>' +
+      (l.status === 'waiting' && k !== 'missing' ? '<label class="chk" style="min-height:34px;font-size:14px;color:var(--mute)"><input type="checkbox" data-a="hold" data-v="' + l.id + '"' + (S.hold[l.id] ? ' checked' : '') + '> Hold this article</label>' : '') + '</div>';
   });
   h += '</div>';
   h += '<button class="btn main full" data-a="fillReq" data-v="' + esc(r.req) + '"' + (st.can.length ? '' : ' disabled') + '>Fill on CUIMS · ' + st.can.length + ' articles</button>';
@@ -334,10 +347,10 @@ function vPend() {
     const c = L.filter(l => PL[l.id] === 'issue');
     const reqs = [...new Set(L.map(l => l.req))];
     const old = days(oldestOf(L));
-    h += '<div class="card" style="overflow:hidden"><div class="scard"><div class="main" style="cursor:default"><div class="row"><b style="font-size:17px">' + esc(store) + '</b>' + pill(L.length + ' pending', 'c-pt') + '</div>' +
-      '<div class="wrap" style="gap:6px">' + pill(c.length + ' available now', c.length ? 'c-ok' : 'c-gy') + pill(reqs.length + (reqs.length === 1 ? ' request' : ' requests'), 'c-gy') + pill(old ? 'Oldest ' + old + ' d' : 'Today', old > 2 ? 'c-no' : 'c-gd') + '</div></div>' +
-      '<div class="side"><button class="xbtn" data-a="dropStore" data-v="' + esc(store) + '" aria-label="Remove ' + esc(store) + ' pending">✕</button></div></div>' +
-      '<div style="padding:0 18px 16px">' + (c.length ? '<button class="btn main full" data-a="fillStore" data-v="' + esc(store) + '">Fill on CUIMS · ' + c.length + ' available</button>' : '<button class="btn full" disabled>Nothing available yet</button>') + '</div>';
+    h += '<div class="card" style="overflow:hidden"><div class="scard"><div class="main" style="cursor:default"><div class="row"><b class="ttl">' + esc(store) + '</b>' + (c.length === L.length ? pill('All ready', 'c-ok') : c.length ? pill(c.length + ' of ' + L.length + ' ready', 'c-gd') : pill('Waiting', 'c-no')) + '</div>' +
+      meta([L.length + ' pending', reqs.length + (reqs.length === 1 ? ' request' : ' requests'), old ? 'oldest ' + old + (old === 1 ? ' day' : ' days') : 'today']) + unavail(L, PL) + '</div>' +
+      '<div class="side"><button class="xbtn" data-a="dropStore" data-v="' + esc(store) + '" aria-label="Remove ' + esc(store) + ' pending">' + ico('x', 18) + '</button></div></div>' +
+      (c.length ? '<div class="cta"><button class="btn main full" data-a="fillStore" data-v="' + esc(store) + '">Fill on CUIMS · ' + c.length + ' available</button></div>' : '');
     h += '</div>';
   });
   return h + '</main>';
@@ -364,7 +377,7 @@ function shStart() {
   h += '<div class="row"><span class="sect">Articles for this entry</span><span class="note">' + s.lineIds.filter(id => !s.off[id]).length + ' selected</span></div>';
   h += '<div class="card">' + ls.map(l => '<div class="line"><div class="row" style="align-items:center"><label class="chk" style="min-height:0;gap:10px;flex:1"><input type="checkbox" data-a="stOn" data-v="' + l.id + '"' + (s.off[l.id] ? '' : ' checked') + '><span><b>' + esc(itemName(l.code)) + '</b><div class="note mono">' + esc(l.code) + ' · Req ' + esc(l.req) + '</div></span></label>' +
     '<input type="number" inputmode="decimal" data-stq="' + l.id + '" value="' + esc(s.qty[l.id] != null ? s.qty[l.id] : l.qty) + '" style="width:96px;text-align:right"><span class="note" style="width:38px">' + esc(itemUom(l.code)) + '</span></div>' +
-    (S.stock[l.code] ? '<div class="wrap" style="gap:6px">' + pill(num(S.stock[l.code].qty) + ' in stock', 'c-gy') + (remarkFor(l.date) ? pill('Remark added', 'c-gy') : '') + '</div>' : '') + '</div>').join('') + '</div>';
+    meta([S.stock[l.code] ? num(S.stock[l.code].qty) + ' in stock' : '', remarkFor(l.date) ? 'remark added' : '']) + '</div>').join('') + '</div>';
   h += '<div class="card pad col"><b>Add an article to this entry</b><div class="grid2"><input type="text" data-stadd="code" value="' + esc(s.addCode || '') + '" placeholder="Item code e.g. GR-198" autocapitalize="characters" class="mono"><input type="number" inputmode="decimal" data-stadd="qty" value="' + esc(s.addQty || '') + '" placeholder="Qty"></div><button class="btn" data-a="stAdd">+ Add article</button></div>';
   h += '<label class="chk"><input type="checkbox" data-a="queueToggle"' + (S.queue ? ' checked' : '') + '> Queue mode: after I submit, fill the next request automatically</label>';
   h += '<button class="btn main full" data-a="startFill"' + (sp || rp ? ' disabled' : '') + '>Start filling on CUIMS</button>';
@@ -374,7 +387,7 @@ function shStart() {
 function startJob(store, slip, rcv, lineIds) {
   const ls = S.lines.filter(l => lineIds.includes(l.id) && l.status === 'waiting');
   const job = { id: 'J' + Date.now(), slip, rcv, store, phase: 'dup', paused: false, log: [], tries: {},
-    items: ls.map(l => ({ lineId: l.id, req: l.req, code: l.code, name: itemName(l.code), uom: itemUom(l.code), qty: l.qty, remark: remarkFor(l.date), skip: false })) };
+    items: ls.map(l => ({ lineId: l.id, req: l.req, reqDate: l.date, code: l.code, name: itemName(l.code), uom: itemUom(l.code), qty: l.qty, remark: remarkFor(l.date), skip: false })) };
   if (!N) { toast('Open this inside the JV Stock Issue app to fill CUIMS.'); return; }
   N.startJob(JSON.stringify(job));
 }
@@ -554,12 +567,12 @@ function vSet() {
   let h = '';
   if (!pg) {
     h += '<header class="top"><div><h1>Settings</h1></div></header><main>';
-    h += '<button class="card pad tap" data-a="setPage" data-v="profile" style="display:flex;align-items:center;gap:14px">' + avatar(true) + '<span style="flex:1"><b style="font-size:19px">' + esc(S.me.name || 'Add your name') + '</b><div class="note">' + esc([S.me.desig, S.me.emp].filter(Boolean).join(' · ') || 'Tap to set up your profile') + '</div></span><span class="chev">›</span></button>';
+    h += '<button class="card pad tap" data-a="setPage" data-v="profile" style="display:flex;align-items:center;gap:14px">' + avatar(true) + '<span style="flex:1"><b style="font-size:19px">' + esc(S.me.name || 'Add your name') + '</b><div class="note">' + esc([S.me.desig, S.me.emp].filter(Boolean).join(' · ') || 'Tap to set up your profile') + '</div></span><span class="chev">' + ico('right', 18) + '</span></button>';
     const groups = [['Account', ['profile', 'pdf']], ['Work', ['stores', 'fill', 'cuims']], ['Data', ['cloud', 'data']], ['App', ['security', 'app']]];
     groups.forEach(([g, keys]) => {
       h += '<div class="sect">' + g + '</div><div class="card" style="overflow:hidden">';
       keys.forEach(k => { const p = SETPAGES.find(x => x[0] === k);
-        h += '<button class="srow" data-a="setPage" data-v="' + k + '"><span class="ic" style="background:' + p[3] + ';color:' + p[4] + '">' + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + p[5] + '</svg></span><span class="tx"><b>' + p[1] + '</b><span>' + p[2] + '</span></span><span class="chev">›</span></button>'; });
+        h += '<button class="srow" data-a="setPage" data-v="' + k + '"><span class="ic" style="background:' + p[3] + ';color:' + p[4] + '">' + '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + p[5] + '</svg></span><span class="tx"><b>' + p[1] + '</b><span>' + p[2] + '</span></span><span class="chev">' + ico('right', 18) + '</span></button>'; });
       h += '</div>';
     });
     h += '<div class="note" style="text-align:center;padding:8px 0 4px">JV Stock Issue ' + esc(INFO.version || '') + ' · Built by ' + esc(S.me.builder || S.me.name || 'JV') + '</div>';
@@ -567,7 +580,7 @@ function vSet() {
   }
   const P0 = SETPAGES.find(x => x[0] === pg);
   h += '<header class="top"><div><button class="btn sm ghost" data-a="setBack">‹ Settings</button><h1 style="margin-top:10px">' + P0[1] + '</h1></div></header><main>';
-  if (ui.locked) h += '<button class="banner tap" data-a="lockTap" style="border:0;background:var(--goldBg);color:var(--goldInk)"><b>🔒 View only.</b> Tap to unlock with fingerprint to make changes.</button>';
+  if (ui.locked) h += '<button class="banner tap" data-a="lockTap" style="border:0;background:var(--goldBg);color:var(--goldInk)"><span style="display:inline-flex;gap:8px;align-items:center">' + ico('lock', 18) + '<span><b>View only.</b> Tap to unlock with fingerprint to make changes.</span></span></button>';
   h += '<fieldset ' + (ui.locked ? 'disabled ' : '') + 'style="border:0;padding:0;margin:0;min-width:0;display:flex;flex-direction:column;gap:16px">';
   if (pg === 'profile') {
     h += '<div class="card pad col" style="align-items:center;text-align:center">' + avatar(true) + '<div class="grid2" style="width:100%"><button class="btn sm" data-a="photo">Change photo</button><button class="btn sm ghost" data-a="photoDel"' + (S.me.photo ? '' : ' disabled') + '>Remove photo</button></div></div>';
@@ -592,7 +605,7 @@ function vSet() {
   if (pg === 'stores') {
     const allSt = [...new Set([...(S.storeOrder || []), ...Object.keys(S.stores), ...S.lines.map(l => l.store)])].sort(byStore);
     h += '<div class="card"><div class="pad col" style="gap:4px"><h3>My store order</h3><div class="note">Used everywhere when sort is "My order". Move stores up or down.</div></div>' +
-      allSt.map((st, i) => '<div class="line row" style="flex-direction:row"><b style="flex:1">' + (i + 1) + '. ' + esc(st) + '</b><button class="xbtn" data-a="moveStore" data-v="' + esc(st) + '" data-d="-1"' + (i ? '' : ' disabled') + ' aria-label="Move up">↑</button><button class="xbtn" data-a="moveStore" data-v="' + esc(st) + '" data-d="1"' + (i < allSt.length - 1 ? '' : ' disabled') + ' aria-label="Move down">↓</button></div>').join('') + '</div>';
+      allSt.map((st, i) => '<div class="line row" style="flex-direction:row"><b style="flex:1">' + (i + 1) + '. ' + esc(st) + '</b><button class="xbtn" data-a="moveStore" data-v="' + esc(st) + '" data-d="-1"' + (i ? '' : ' disabled') + ' aria-label="Move up">' + ico('up', 18) + '</button><button class="xbtn" data-a="moveStore" data-v="' + esc(st) + '" data-d="1"' + (i < allSt.length - 1 ? '' : ' disabled') + ' aria-label="Move down">' + ico('down', 18) + '</button></div>').join('') + '</div>';
   const stores = Object.keys(S.stores).sort();
   h += '<div class="card"><div class="pad col" style="gap:4px"><h3>Stores and receivers</h3><div class="note">Store = exact CUIMS Project Area. Receiver = 6 digits; change anytime. ' + (S.areas.length ? S.areas.length + ' Project Areas known from CUIMS.' : 'Open CUIMS once to load the Project Area list.') + '</div></div>';
   stores.forEach(s => {
@@ -841,7 +854,7 @@ function shBackups() {
   items.forEach(b => {
     const c = b.counts || {};
     h += '<div class="card pad col" style="gap:8px"><div class="row"><b>' + fmtDT(b.updated) + '</b>' + pill(b.keep ? 'Kept' : b.kind === 'manual' ? 'Manual' : 'Auto', b.keep ? 'c-ok' : 'c-gy') + '</div>' +
-      '<div class="wrap" style="gap:6px">' + (c.requests != null ? pill(c.requests + ' requests', 'c-gy') + pill(c.entries + ' entries', 'c-in') + pill(c.returns + ' returns', 'c-gy') : '') + pill(Math.round(b.size / 1024) + ' KB', 'c-gy') + (b.by ? pill(b.by, 'c-gy') : '') + '</div>' +
+      meta([c.requests != null ? c.requests + ' requests' : '', c.entries != null ? c.entries + ' entries' : '', c.returns != null ? c.returns + ' returns' : '', Math.round(b.size / 1024) + ' KB', b.by ? esc(b.by) : '']) +
       (s.editing === b.id ? '<input type="text" data-bk="rename" value="' + esc(s.rename || '') + '" placeholder="Note"><div class="grid2"><button class="btn sm" data-a="bkNoteSave" data-v="' + b.id + '">Save note</button><button class="btn sm ghost" data-a="bkNoteCancel">Cancel</button></div>' : (b.note ? '<div class="note">' + esc(b.note) + '</div>' : '')) +
       '<div class="grid3"><button class="btn sm main" data-a="bkRestore" data-v="' + b.id + '">Restore</button><button class="btn sm" data-a="bkKeep" data-v="' + b.id + '" data-k="' + (b.keep ? '0' : '1') + '">' + (b.keep ? 'Unkeep' : 'Keep') + '</button><button class="btn sm warn" data-a="bkDel" data-v="' + b.id + '">Delete</button></div>' +
       (s.editing === b.id ? '' : '<button class="btn sm ghost" data-a="bkNote" data-v="' + b.id + '">Add / edit note</button>') + '</div>';
@@ -1065,7 +1078,7 @@ document.addEventListener('click', async ev => {
     case 'dropStore': { const n = S.lines.filter(l => isPending(l) && l.store === v).length;
       if (confirm('Remove all ' + n + ' pending articles of ' + v + '? Issued records stay. (You can restore from a cloud backup if needed.)')) { S.lines.forEach(l => { if (isPending(l) && l.store === v) l.status = 'dropped'; }); save(); render(); toast(v + ' removed from Pending.'); } break; }
     case 'photo': document.getElementById('photoIn').click(); break;
-    case 'openMgr': if (N && N.openMgr) N.openMgr(); else toast('Update the app (Settings → App and updates) to use Manager CUIMS.'); break;
+    case 'openMgr': if (N && N.openMgr) N.openMgr(); else toast('Update the app (Settings > App and updates) to use Manager CUIMS.'); break;
     case 'saveUrls': { const e = ui.urlEmp != null ? ui.urlEmp : INFO.urlEmp, m = ui.urlMgr != null ? ui.urlMgr : INFO.urlMgr;
       if (N && N.setUrls) { N.setUrls(e || '', m || ''); INFO.urlEmp = e; INFO.urlMgr = m; toast('Pages saved.'); } else toast('Update the app to use this.'); break; }
     case 'resetZoom': if (N && N.resetZoom) { N.resetZoom(); toast('Zoom reset. Reopen CUIMS.'); } break;
