@@ -599,7 +599,7 @@ function vSet() {
   if (pg === 'pdf') {
     h += '<div class="card pad col"><label class="f">Store name (PDF title)<input type="text" data-set="me.storeName" value="' + esc(S.me.storeName) + '"></label></div>';
   h += '<div class="card pad col"><h3>Manager signature on PDFs</h3><label class="chk"><input type="checkbox" data-a="mgrToggle"' + (S.mgr.on ? ' checked' : '') + '> Add manager signature line</label>' +
-    (S.mgr.on ? '<div class="grid2"><label class="f">Manager name<input type="text" data-set="mgr.name" value="' + esc(S.mgr.name) + '"></label><label class="f">Designation<input type="text" data-set="mgr.desig" value="' + esc(S.mgr.desig) + '"></label></div>' : '') + '</div>';
+    (S.mgr.on ? '<div class="grid2"><label class="f">Manager name<input type="text" data-set="mgr.name" value="' + esc(S.mgr.name) + '"></label><label class="f">Emp code<input type="text" data-set="mgr.emp" value="' + esc(S.mgr.emp || '') + '" autocapitalize="characters"></label></div><label class="f">Designation<input type="text" data-set="mgr.desig" value="' + esc(S.mgr.desig) + '"></label>' : '') + '</div>';
   }
   if (pg === 'stores') {
     const allSt = [...new Set([...(S.storeOrder || []), ...Object.keys(S.stores), ...S.lines.map(l => l.store)])].sort(byStore);
@@ -730,7 +730,7 @@ function pdfSign(doc, showMe, showMgr) {
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(107, 111, 118); doc.text(sub || ' ', x + 5, y + 26.2);
   };
   if (showMe) box(12, 'Prepared & checked by', S.me.name || '', [S.me.emp, S.me.desig].filter(Boolean).join(' · '));
-  if (showMgr) box(showMe ? W - 92 : 12, 'Manager', S.mgr.name || '', S.mgr.desig || '');
+  if (showMgr) box(showMe ? W - 92 : 12, 'Manager', S.mgr.name || '', [S.mgr.emp, S.mgr.desig].filter(Boolean).join(' · '));
 }
 function pdfFoot(doc, label) {
   const n = doc.getNumberOfPages(), W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight();
@@ -815,7 +815,9 @@ const REPORTS = {
 function rptPref(type) {
   S.rp = S.rp || {};
   const R = REPORTS[type];
-  const p = S.rp[type] = Object.assign({ title: R.name, sub: S.me.storeName || '', orient: R.landscape ? 'l' : 'p', font: 'n', details: !!R.details && type === 'ret', sign: true, mgr: S.mgr.on, sort: 'custom', cols: {} }, S.rp[type] || {});
+  const d = { title: R.name, sub: S.me.storeName || '', orient: R.landscape ? 'l' : 'p', font: 'n', details: !!R.details && type === 'ret', sign: true, mgr: S.mgr.on, sort: 'custom', cols: {} };
+  const p = S.rp[type] = S.rp[type] || {};
+  for (const k in d) if (!(k in p)) p[k] = d[k];
   return p;
 }
 function sortStores(arr, key, how) { return arr.sort((a, b) => how === 'az' ? String(a[key]).localeCompare(String(b[key])) : byStore(a[key], b[key])); }
@@ -852,25 +854,27 @@ function reqDateOf(req) {
 }
 function searchRows() { const rows = []; searchRecords().forEach(x => x.items.forEach(i => rows.push({ Type: x.type, Date: x.date ? fmtLong(x.date) : '', Time: x.time || '', 'Slip / Return No': x.no, 'Serial No': x.serial, Store: x.store, 'Issued to / Returned by': x.who, 'Request / Against': x.reqs, 'Item code': i.code, Item: i.name || itemName(i.code), Qty: Number(i.qty), UOM: i.uom || '', 'Item remark': i.remark || '', 'Entered by': x.by.name || '', 'Emp code': x.by.emp || '' }))); return rows; }
 function colOn(p, k) { return p.cols[k] !== false; }
+function orderedCols(p, D) { const o = p.order || []; return D.cols.slice().sort((a, b) => { const i = o.indexOf(a[0]), j = o.indexOf(b[0]); return (i < 0 ? 999 + D.cols.indexOf(a) : i) - (j < 0 ? 999 + D.cols.indexOf(b) : j); }); }
 function cellText(v, sep) { return Array.isArray(v) ? v.join(sep) : v == null ? '' : String(v); }
 function openExport(type) { rptPref(type); ui.sheet = { kind: 'export', type }; renderSheet(); }
 function shExport() {
   const type = ui.sheet.type, R = REPORTS[type], p = rptPref(type), D = reportDef(type);
-  const cols = D.cols.filter(c => colOn(p, c[0]));
+  const all = orderedCols(p, D), cols = all.filter(c => colOn(p, c[0]));
   let h = '<div class="row"><h2>' + esc(R.name) + '</h2><button class="btn sm ghost" data-a="closeSheet">Close</button></div>';
   h += '<div class="note">Your choices are saved for next time.</div>';
   h += '<div class="card pad col"><h3>Basics</h3><label class="f">Title<input type="text" data-rp="title" value="' + esc(p.title) + '"></label><label class="f">Subtitle (store name)<input type="text" data-rp="sub" value="' + esc(p.sub) + '"></label>' +
     (R.dated ? '<label class="f">Date<input type="date" data-in="regDate" value="' + esc(ui.reg.date) + '"></label>' : '') +
     (R.sorts ? '<label class="f">Order<select data-rp="sort">' + [['custom', 'My store order'], ['az', 'Store A–Z']].concat(R.dated ? [['time', 'Time']] : []).map(([v, l]) => '<option value="' + v + '"' + (p.sort === v ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></label>' : '') + '</div>';
   if (R.pdf) {
-    h += '<div class="card pad col"><h3>Page</h3><div class="seg">' + [['p', 'Portrait'], ['l', 'Landscape']].map(([v, l]) => '<button data-a="rpSet" data-k="orient" data-v="' + v + '" class="' + (p.orient === v ? 'on' : '') + '">' + l + '</button>').join('') + '</div>' +
+    h += '<div class="card pad col"><h3>Page</h3><div class="seg">' + [['p', 'A4 Portrait'], ['l', 'A4 Landscape']].map(([v, l]) => '<button data-a="rpSet" data-k="orient" data-v="' + v + '" class="' + (p.orient === v ? 'on' : '') + '">' + l + '</button>').join('') + '</div>' +
       '<div class="seg">' + [['s', 'Small text'], ['n', 'Normal'], ['b', 'Large text']].map(([v, l]) => '<button data-a="rpSet" data-k="font" data-v="' + v + '" class="' + (p.font === v ? 'on' : '') + '">' + l + '</button>').join('') + '</div>' +
       (R.details ? '<label class="chk"><input type="checkbox" data-a="rpTog" data-k="details"' + (p.details ? ' checked' : '') + '> Print item details under each ' + (type === 'issue' ? 'request' : 'return') + '</label>' : '') +
       '<label class="chk"><input type="checkbox" data-a="rpTog" data-k="sign"' + (p.sign ? ' checked' : '') + '> Signature box (Prepared & checked by)</label>' +
       '<label class="chk"><input type="checkbox" data-a="rpTog" data-k="mgr"' + (p.mgr ? ' checked' : '') + '> Manager signature box</label></div>';
   }
-  h += '<div class="card pad col"><div class="row"><h3>Columns</h3><span class="note">' + cols.length + ' of ' + D.cols.length + '</span></div><div class="grid2">' +
-    D.cols.map(([k, l]) => '<label class="chk" style="min-height:40px;font-size:14.5px"><input type="checkbox" data-a="rpCol" data-k="' + esc(k) + '"' + (colOn(p, k) ? ' checked' : '') + '> ' + esc(l) + '</label>').join('') + '</div></div>';
+  h += '<div class="card" style="overflow:hidden"><div class="pad row"><h3>Columns and order</h3><span class="note">' + cols.length + ' of ' + D.cols.length + ' printed</span></div>' +
+    all.map(([k, l], i) => '<div class="line" style="flex-direction:row;align-items:center;gap:8px;padding:8px 14px"><label class="chk" style="min-height:40px;font-size:14.5px;flex:1"><input type="checkbox" data-a="rpCol" data-k="' + esc(k) + '"' + (colOn(p, k) ? ' checked' : '') + '> ' + esc(l) + '</label>' +
+      '<button class="xbtn" data-a="rpMove" data-k="' + esc(k) + '" data-d="-1"' + (i ? '' : ' disabled') + ' aria-label="Move up">' + ico('up', 18) + '</button><button class="xbtn" data-a="rpMove" data-k="' + esc(k) + '" data-d="1"' + (i < all.length - 1 ? '' : ' disabled') + ' aria-label="Move down">' + ico('down', 18) + '</button></div>').join('') + '</div>';
   // preview
   const pr = D.rows.slice(0, 8);
   h += '<div class="sect">Preview</div><div class="card" style="overflow:hidden"><div style="background:linear-gradient(160deg,#1B2540,#0B1220);color:#fff;padding:12px 14px;border-bottom:2px solid var(--gold)"><b style="font-size:16px">' + esc(p.title) + '</b><div style="font-size:12px;color:#C9CED6">' + esc([p.sub, D.sub2].filter(Boolean).join(' · ')) + '</div></div>' +
@@ -887,10 +891,10 @@ function rpPdf(type) {
   const p = rptPref(type), D = reportDef(type), R = REPORTS[type];
   const doc = pdfDoc(p.orient === 'l'); if (!doc) return;
   const fs = p.font === 's' ? 7.5 : p.font === 'b' ? 10 : 8.5;
-  const cols = D.cols.filter(c => colOn(p, c[0]));
+  const cols = orderedCols(p, D).filter(c => colOn(p, c[0]));
   const y0 = pdfHead(doc, p.title, [p.sub, D.sub2].filter(Boolean).join(' · '), D.chips);
   const st = Object.assign({}, TSTYLE, { styles: Object.assign({}, TSTYLE.styles, { fontSize: fs }), headStyles: Object.assign({}, TSTYLE.headStyles, { fontSize: fs }) });
-  doc.autoTable(Object.assign({}, st, { startY: y0, head: [cols.map(c => c[1])], body: D.rows.map(r => cols.map(c => cellText(r[c[0]], '\n'))),
+  doc.autoTable(Object.assign({}, st, { startY: y0, tableWidth: 'auto', pageBreak: 'auto', rowPageBreak: 'avoid', head: [cols.map(c => c[1])], body: D.rows.map(r => cols.map(c => cellText(r[c[0]], '\n'))),
     didParseCell: d => { if (d.section === 'body') { const k = cols[d.column.index][0]; if (/req|store|Store|Request/.test(k)) d.cell.styles.fontStyle = 'bold'; if (/slips|Slip/.test(k)) d.cell.styles.textColor = [30, 58, 138]; if (/serial|Serial/.test(k)) d.cell.styles.textColor = [11, 94, 61]; } } }));
   if (p.details && D.detail) D.detail.forEach(b => {
     doc.autoTable(Object.assign({}, st, { startY: doc.lastAutoTable.finalY + 6, headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: 'bold', fontSize: fs }, head: [[{ content: b.head, colSpan: b.cols.length }], b.cols], body: b.rows }));
@@ -900,7 +904,7 @@ function rpPdf(type) {
 }
 function rpXlsx(type) {
   const p = rptPref(type), D = reportDef(type), R = REPORTS[type];
-  const cols = D.cols.filter(c => colOn(p, c[0]));
+  const cols = orderedCols(p, D).filter(c => colOn(p, c[0]));
   const rows = D.rows.map(r => { const o = {}; cols.forEach(c => o[c[1]] = cellText(r[c[0]], ', ')); return o; });
   const sheets = [[R.name.slice(0, 30), rows]];
   if (p.details && D.detail && D.detail.length) { const dr = []; D.detail.forEach(b => b.rows.forEach(x => { const o = { Group: b.head }; b.cols.forEach((c, i) => o[c] = x[i]); dr.push(o); })); sheets.push(['Item details', dr]); }
@@ -1198,6 +1202,8 @@ document.addEventListener('click', async ev => {
     case 'rpSet': rptPref(ui.sheet.type)[t.dataset.k] = v; save(true); renderSheet(); break;
     case 'rpTog': rptPref(ui.sheet.type)[t.dataset.k] = t.checked; save(true); renderSheet(); break;
     case 'rpCol': rptPref(ui.sheet.type).cols[t.dataset.k] = t.checked; save(true); renderSheet(); break;
+    case 'rpMove': { const p = rptPref(ui.sheet.type), D = reportDef(ui.sheet.type); const keys = orderedCols(p, D).map(c => c[0]); const i = keys.indexOf(t.dataset.k), j = i + (+t.dataset.d);
+      if (j >= 0 && j < keys.length) { [keys[i], keys[j]] = [keys[j], keys[i]]; p.order = keys; save(true); renderSheet(); } break; }
     case 'rpPdf': rpPdf(ui.sheet.type); break;
     case 'rpXlsx': rpXlsx(ui.sheet.type); break;
     case 'queueToggle': S.queue = t.checked; save(true); break;
