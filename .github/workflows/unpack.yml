@@ -1,4 +1,4 @@
-```yaml
+yaml
 name: Unpack uploaded ZIP
 on:
   push:
@@ -26,4 +26,3 @@ jobs:
           git add -A
           git commit -m "Unpack uploaded ZIP" || echo "Nothing to commit"
           git push
-```
