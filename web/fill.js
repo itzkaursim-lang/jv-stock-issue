@@ -240,39 +240,58 @@
 
     var next = curItem(j);
     if (!next) return finishCheck(j);
+    j = job(); j.ist = j.ist || {};
+    var st = j.ist[next.code] || {};
+    var age = Date.now() - (st.at || 0);
+    function mark(stage) { var jj = job(); jj.ist = jj.ist || {}; jj.ist[next.code] = { s: stage, at: Date.now(), n: ((jj.ist[next.code] || {}).n || 0) + (stage === st.s ? 1 : 0) }; save(jj); }
+    function tooMany() { var jj = job(); var x = (jj.ist || {})[next.code] || {}; if ((x.n || 0) >= 3) pauseWith(next.code + ': CUIMS did not accept this item after 3 tries. Check the page, then tap Resume or Skip.'); }
 
-    var q0 = $('ContentPlaceHolder1_gvBatch_txtQuantity_0');
+    // batch popup is open: fill first box once, then wait for the row
     if (batchOpen()) {
+      if (st.s === 'batch' && age < 20000) { await sleep(600); return 'wait'; }
+      tooMany();
       var fc = $('ContentPlaceHolder1_gvBatch_lblFinalCode_0');
       if (fc && fc.textContent.trim().toUpperCase() !== next.code.toUpperCase()) pauseWith('Batch popup shows ' + fc.textContent.trim() + ' instead of ' + next.code);
-      await act(j, 'batch' + next.code, 'batch', function () {
-        q0.value = String(next.qty); fire(q0, 'change');
-        if (typeof window.CalculateQty === 'function') { try { CalculateQty(); } catch (e) {} }
-        $('ContentPlaceHolder1_btnAddToGrid').click();
-      });
+      var q0 = $('ContentPlaceHolder1_gvBatch_txtQuantity_0');
+      q0.value = String(next.qty); fire(q0, 'change');
+      if (typeof window.CalculateQty === 'function') { try { CalculateQty(); } catch (e) {} }
+      mark('batch');
+      $('ContentPlaceHolder1_btnAddToGrid').click();
+      await idle(500);
+      for (var w = 0; w < 40 && !gridRow(next.code); w++) await sleep(250);
       var r = gridRow(next.code);
-      if (!r) { for (var w = 0; w < 15 && !r; w++) { await sleep(200); r = gridRow(next.code); } }
       if (r) {
-        if (r.bal < 0) pauseWith(next.code + ': balance below zero on the site (stock ' + r.stock + '). Skip it or check stock.');
+        if (r.bal < 0) pauseWith(next.code + ': balance below zero on CUIMS (stock ' + r.stock + '). Skip it or check stock.');
         log(job(), next.code + ' ' + (r.name || '') + ' × ' + next.qty + ' added' + (next.remark ? ', remark added' : ''));
         ev('progress', { code: next.code, stock: r.stock });
       }
       return;
     }
+    // ADD was tapped: wait for the popup or the row
+    if (st.s === 'add' && age < 15000) { await sleep(500); return 'wait'; }
+    // batch Add was tapped and popup closed: give the row time to appear
+    if (st.s === 'batch' && age < 20000) { await sleep(500); return 'wait'; }
+
     var cb = $('txtFinalCode'), nm = $('txtItem');
     if (!cb) pauseWith('Code box not found');
-    if (cb.value.trim().toUpperCase() !== next.code.toUpperCase() || !nm || !nm.value.trim()) {
-      await act(j, 'code' + next.code, 'Code', function () { cb.value = next.code; fire(cb, 'change'); });
-      var ok = false;
-      for (var t = 0; t < 20; t++) { if (batchOpen() || (($('txtItem') || {}).value || '').trim()) { ok = true; break; } await sleep(200); }
-      if (!ok && job().tries['code' + next.code] >= 3) pauseWith(next.code + ': CUIMS did not find this item code. Skip it or check the code.');
+    var named = nm && nm.value.trim();
+    if (cb.value.trim().toUpperCase() !== next.code.toUpperCase() || !named) {
+      if (st.s === 'code' && age < 9000) { await sleep(500); return 'wait'; }
+      tooMany();
+      mark('code');
+      cb.value = next.code; fire(cb, 'change');
+      await idle(400);
+      for (var t = 0; t < 30; t++) { if (batchOpen() || (($('txtItem') || {}).value || '').trim()) break; await sleep(250); }
+      if (!batchOpen() && !(($('txtItem') || {}).value || '').trim() && (job().ist[next.code] || {}).n >= 2) pauseWith(next.code + ': CUIMS did not find this item code. Skip it or check the code.');
       return;
     }
-    await act(j, 'add' + next.code, 'ADD', function () {
-      $('txtquantity').value = String(next.qty);
-      var rm = $('ContentPlaceHolder1_txtitemremarks'); if (rm) rm.value = next.remark || '';
-      $('ContentPlaceHolder1_btnadd').click();
-    });
+    tooMany();
+    $('txtquantity').value = String(next.qty);
+    var rm = $('ContentPlaceHolder1_txtitemremarks'); if (rm) rm.value = next.remark || '';
+    mark('add');
+    $('ContentPlaceHolder1_btnadd').click();
+    await idle(400);
+    for (var u = 0; u < 40; u++) { if (batchOpen() || gridRow(next.code)) break; await sleep(250); }
   }
 
   async function pickReceiver(j, rc) {
@@ -337,21 +356,28 @@
     if (r && !r.__jv) { r.__jv = true; r.addEventListener('click', function () { var j = job(); if (active(j) && ['fill', 'await'].indexOf(j.phase) >= 0) { j.phase = 'fill'; j.paused = true; j.pauseMsg = 'form was reset. Tap Resume to fill again.'; j.tries = {}; save(j); } }, true); }
   }
 
+  function pageSerial() {
+    var m = (($('ContentPlaceHolder1_lblmsg') || {}).textContent || '');
+    var x = m.match(/(?:serial|issue)\D{0,20}(\d{4,8})/i);
+    return x ? x[1] : '';
+  }
   async function stepCapture(j) {
-    if (!j.capSearched) { j.capSearched = true; save(j); log(j, 'Looking for ' + j.slip + ' in Show Transactions'); await searchSlip(j); return; }
+    var ps = pageSerial(); if (ps && !j.alertSerial) { j.alertSerial = ps; save(j); }
+    if (!j.capSearched) { j.capSearched = true; j.capAt = Date.now(); save(j); log(j, 'Looking for ' + j.slip + ' in Show Transactions'); await searchSlip(j); return; }
     var hit = findSlip(j.slip);
     if (hit && hit.serial) {
       j.phase = 'done'; j.serial = hit.serial; save(j); log(j, 'Submitted. Serial ' + hit.serial);
       ev('submitted', { serial: hit.serial, rname: j.rname || '', items: j.items });
       return 'stop';
     }
+    if (Date.now() - (j.capAt || 0) < 10000) { await sleep(700); return 'wait'; }
     j.capTries = (j.capTries || 0) + 1;
-    if (j.capTries < 3) { j.capSearched = false; save(j); await sleep(1500); return; }
-    if (j.alertSerial) { j.phase = 'done'; j.serial = j.alertSerial; save(j); log(j, 'Serial ' + j.alertSerial + ' taken from the CUIMS message'); ev('submitted', { serial: j.alertSerial, rname: j.rname || '', items: j.items, note: 'serial from popup' }); return 'stop'; }
+    if (j.capTries < 4) { j.capSearched = false; save(j); await sleep(2000); return; }
+    if (j.alertSerial) { j.phase = 'done'; j.serial = j.alertSerial; save(j); log(j, 'Serial ' + j.alertSerial + ' taken from the CUIMS message'); ev('submitted', { serial: j.alertSerial, rname: j.rname || '', items: j.items, note: 'serial from CUIMS message' }); return 'stop'; }
     j.phase = 'await'; j.paused = false; save(j);
-    log(j, j.slip + ' not found in Show Transactions. If the submit failed, fix it and tap SUBMIT again.', true);
+    ui.serialBox = true;
+    log(j, j.slip + ' not found yet in Show Transactions. If you submitted, type the Serial No below.', true);
     ev('notfound');
-    if ($('DivInsert')) $('DivInsert').click();
     hookSubmit();
     return 'stop';
   }
@@ -359,7 +385,7 @@
   async function run() {
     if (running) return; running = true;
     try {
-      for (var k = 0; k < 120; k++) {
+      for (var k = 0; k < 700; k++) {
         var j = job();
         if (!active(j) || j.paused || isLogin) break;
         if (!isIssue) break;
@@ -369,7 +395,7 @@
         else if (j.phase === 'fill') r = await stepFill(j);
         else if (j.phase === 'capture') r = await stepCapture(j);
         else break;
-        paint();
+        if (r !== 'wait') paint();
         if (r === 'stop') break;
       }
     } catch (e) {

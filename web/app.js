@@ -76,6 +76,18 @@ function plan() {
 }
 const STATUS = { issue: ['Can issue', 'c-ok'], short: ['Not enough stock', 'c-pt'], missing: ['Not in stock sheet', 'c-gy'], hold: ['On hold', 'c-pt'], issued: ['Issued', 'c-in'] };
 const chip = k => '<span class="chip ' + STATUS[k][1] + '">' + STATUS[k][0] + '</span>';
+const pill = (txt, cls) => '<span class="chip ' + (cls || 'c-gy') + '">' + esc(txt) + '</span>';
+function linePills(l, k) {
+  const s = S.stock[l.code], u = itemUom(l.code), out = [];
+  if (k === 'issued') { l.issued.forEach(x => out.push(pill('Slip ' + x.slip + (x.serial ? ' · #' + x.serial : ''), 'c-in'))); return out.join(' '); }
+  if (k === 'issue') { out.push(pill('Can issue', 'c-ok')); if (s) out.push(pill(num(s.qty) + ' ' + u + ' in stock', 'c-gy')); }
+  else if (k === 'short') { out.push(pill('Short', 'c-pt')); if (s) out.push(pill('Have ' + num(s.qty) + ' ' + u, 'c-gy')); }
+  else if (k === 'missing') out.push(pill('Not in stock sheet', 'c-no'));
+  else if (k === 'hold') out.push(pill('On hold', 'c-pt'));
+  const d = days(l.date); if (d > 0) out.push(pill(d + (d === 1 ? ' day' : ' days') + ' old', d > 2 ? 'c-no' : 'c-pt'));
+  if (l.date !== today() && k === 'issue') out.push(pill('Remark added', 'c-gy'));
+  return out.join(' ');
+}
 
 function requests() {
   const by = groupBy(S.lines.filter(l => l.status !== 'dropped'), l => l.req);
@@ -122,7 +134,7 @@ function slipProblem(s) {
 function readWorkbook(file) {
   return new Promise((ok, bad) => {
     const fr = new FileReader();
-    fr.onload = () => { try { ok(XLSX.read(new Uint8Array(fr.result), { type: 'array', cellDates: false })); } catch (e) { bad(e); } };
+    fr.onload = () => { try { ok(XLSX.read(new Uint8Array(fr.result), { type: 'array', cellDates: false, raw: true })); } catch (e) { bad(e); } };
     fr.onerror = bad; fr.readAsArrayBuffer(file);
   });
 }
@@ -220,6 +232,12 @@ const ICON = {
 };
 const TABS = [['home', 'Home'], ['pend', 'Pending'], ['reg', 'Registers'], ['find', 'Search'], ['set', 'Settings']];
 
+function reqCard(r) {
+  const tag = r.st === 'full' ? pill('All ' + r.w.length + ' can issue', 'c-ok') : r.st === 'part' ? pill(r.can.length + ' of ' + r.w.length + ' can issue', 'c-pt') : r.st === 'done' ? pill('Done', 'c-in') : pill('Nothing in stock', 'c-no');
+  const slip = (r.w.find(l => l.slip) || {}).slip, rcv = (r.lines.find(l => l.rcv) || {}).rcv || (S.stores[r.store] || {}).rcv || '';
+  return '<button class="card pad tap col" style="gap:8px" data-a="openReq" data-v="' + esc(r.req) + '"><div class="row"><b style="font-size:17px">' + esc(r.store) + '</b>' + tag + '</div>' +
+    '<div class="wrap" style="gap:6px">' + pill('Req ' + r.req, 'c-gy') + pill(fmtShort(r.date), r.date === today() ? 'c-gy' : 'c-pt') + (slip ? pill('Slip ' + slip, 'c-in') : pill('No slip', 'c-no')) + (rcv ? pill('GA' + rcv, 'c-gy') : pill('No receiver', 'c-no')) + (r.iss.length ? pill(r.iss.length + ' issued', 'c-in') : '') + '</div></button>';
+}
 function stockAge() { return S.stockAt ? 'Stock from ' + fmtDT(S.stockAt) : 'No stock uploaded yet'; }
 
 /* ---------------- Home ---------------- */
@@ -243,16 +261,14 @@ function vHome() {
       '<button class="btn main" data-a="upload">Upload a file</button><button class="btn" data-a="template">Download data template</button></div></main>';
   }
   h += '<div class="grid2"><button class="btn main" data-a="upload">Upload</button><button class="btn" data-a="openSite">Open CUIMS</button></div>';
+  h += '<button class="btn full" data-a="bulkEdit">Edit all requests: Slip No, Request No, date, receiver</button>';
   const c = { full: todays.filter(r => r.st === 'full').length, part: todays.filter(r => r.st === 'part').length, wait: todays.filter(r => r.st === 'wait').length };
   h += '<div class="card pad col"><div class="row"><h3>Today\'s requests</h3><span class="note">' + todays.length + ' open · ' + issuedToday + ' entries done</span></div>' +
     '<div class="grid3"><div class="tile t-ok"><b>' + c.full + '</b><span>Fully possible</span></div><div class="tile t-pt"><b>' + c.part + '</b><span>Partly possible</span></div><div class="tile t-no"><b>' + c.wait + '</b><span>Waiting</span></div></div></div>';
   if (todays.length) {
     h += '<div class="row" style="margin-top:4px"><span class="sect">' + (so === 'priority' ? 'Do these now, in this order' : 'Today\'s requests') + '</span>' + sortSel('home', [['priority', 'Priority'], ['store', 'Store A–Z'], ['req', 'Request No'], ['size', 'Most articles']]) + '</div>';
-    h += '<button class="btn ghost full" data-a="bulkEdit">Edit Slip No, date, receiver for all requests</button>';
     todays.forEach(r => {
-      const tag = r.st === 'full' ? '<span class="chip c-ok">All ' + r.w.length + ' can issue</span>' : r.st === 'part' ? '<span class="chip c-pt">' + r.can.length + ' of ' + r.w.length + ' can issue</span>' : '<span class="chip c-no">Nothing in stock</span>';
-      h += '<button class="card pad tap col" style="gap:6px" data-a="openReq" data-v="' + esc(r.req) + '"><div class="row"><b style="font-size:16px">' + esc(r.store) + '</b>' + tag + '</div>' +
-        '<div class="note">Request ' + esc(r.req) + ' · ' + r.lines.length + ' articles' + (r.iss.length ? ' · ' + r.iss.length + ' already issued' : '') + (r.w[0] && r.w[0].slip ? ' · Slip ' + esc(r.w[0].slip) : '') + '</div></button>';
+      h += reqCard(r);
     });
   } else if (S.lines.length) h += '<div class="card pad note">No open requests for today. Upload today\'s requests, or check Pending.</div>';
   h += '<button class="card pad tap row" data-a="tab" data-v="pend"><span><b>Older pending</b><div class="note">' + pend.length + ' articles waiting · ' + pendCan + ' in stock now</div></span><span class="chip ' + (pendCan ? 'c-ok' : 'c-gy') + '">Open</span></button>';
@@ -273,21 +289,15 @@ function vReq() {
   const st = reqState(r, PL);
   const rcv = (r.lines.find(l => l.rcv) || {}).rcv || (S.stores[r.store] || {}).rcv || '';
   let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:8px">' + esc(r.store) + '</h1><div class="sub">Request ' + esc(r.req) + ' · ' + fmtLong(r.date) + ' · Receiver ' + (rcv ? 'GA' + esc(rcv) : 'not set') + '</div></div></header><main>';
-  h += '<div class="wrap"><span class="chip c-ok">' + st.can.length + ' can issue</span><span class="chip c-pt">' + (st.w.length - st.can.length) + ' waiting</span><span class="chip c-in">' + st.iss.length + ' issued</span></div>';
+  h += '<div class="wrap">' + pill(st.can.length + ' can issue', 'c-ok') + pill((st.w.length - st.can.length) + ' waiting', st.w.length - st.can.length ? 'c-pt' : 'c-gy') + pill(st.iss.length + ' issued', 'c-in') + pill(r.lines.length + ' articles', 'c-gy') + ((st.w.find(l => l.slip) || {}).slip ? pill('Next slip ' + st.w.find(l => l.slip).slip, 'c-in') : pill('No slip set', 'c-no')) + '</div>';
   h += '<div class="card">';
   const ordr = { issue: 0, short: 1, hold: 2, missing: 3 };
   const lines = r.lines.slice().sort((a, b) => (a.status === 'issued') - (b.status === 'issued') || (ordr[PL[a.id]] || 0) - (ordr[PL[b.id]] || 0));
   lines.forEach(l => {
     const k = l.status === 'issued' ? 'issued' : PL[l.id];
-    const s = S.stock[l.code];
-    let note = '';
-    if (k === 'short') note = 'Stock ' + num(s.qty) + ' ' + esc(s.uom) + ' is reserved for higher-priority requests or too low. No partial issue.';
-    if (k === 'missing') note = 'Not in the stock sheet. Check on CUIMS.';
-    if (k === 'issued') note = 'Slip ' + l.issued.map(x => esc(x.slip) + (x.serial ? ' (Serial ' + esc(x.serial) + ')' : '')).join(', ');
-    if (k === 'issue' && remarkFor(l.date)) note = 'Remark: ' + remarkFor(l.date);
-    h += '<div class="line"><div class="row"><b>' + esc(itemName(l.code)) + '</b>' + chip(k) + '</div><div class="row note"><span class="mono">' + esc(l.code) + ' · ' + num(l.qty) + ' ' + esc(itemUom(l.code)) + '</span><span>' + (s ? 'stock ' + num(s.qty) : '') + '</span></div>' +
-      (note ? '<div class="note">' + note + '</div>' : '') +
-      (l.status === 'waiting' && k !== 'missing' ? '<label class="chk" style="min-height:32px;font-size:13px;color:var(--mute)"><input type="checkbox" data-a="hold" data-v="' + l.id + '"' + (S.hold[l.id] ? ' checked' : '') + '> Hold this article</label>' : '') + '</div>';
+    h += '<div class="line"><div class="row" style="align-items:flex-start"><span><b>' + esc(itemName(l.code)) + '</b><div class="note mono">' + esc(l.code) + '</div></span><b class="mono" style="white-space:nowrap">' + num(l.qty) + ' ' + esc(itemUom(l.code)) + '</b></div>' +
+      '<div class="wrap" style="gap:6px">' + linePills(l, k) + '</div>' +
+      (l.status === 'waiting' && k !== 'missing' ? '<label class="chk" style="min-height:36px;font-size:14px;color:var(--mute)"><input type="checkbox" data-a="hold" data-v="' + l.id + '"' + (S.hold[l.id] ? ' checked' : '') + '> Hold this article</label>' : '') + '</div>';
   });
   h += '</div>';
   h += '<button class="btn main full" data-a="fillReq" data-v="' + esc(r.req) + '"' + (st.can.length ? '' : ' disabled') + '>Fill on CUIMS · ' + st.can.length + ' articles</button>';
@@ -305,6 +315,7 @@ function vPend() {
   const oldest = pend.reduce((m, l) => Math.max(m, days(l.date)), 0);
   let h = '<header class="top"><div><h1>Pending</h1><div class="sub">Older and partly issued requests. Gets stock only after today\'s requests.</div></div></header><main>';
   h += '<div class="grid3"><div class="tile t-pt"><b>' + pend.length + '</b><span>Articles pending</span></div><div class="tile t-ok"><b>' + can.length + '</b><span>In stock now</span></div><div class="tile t-no"><b>' + oldest + ' d</b><span>Oldest</span></div></div>';
+  h += '<button class="btn full" data-a="bulkEdit">Edit all requests: Slip No, Request No, date, receiver</button>';
   h += '<div class="grid2"><button class="btn sm" data-a="expPendPdf"' + (pend.length ? '' : ' disabled') + '>Pending PDF</button><button class="btn sm" data-a="expPendXlsx"' + (pend.length ? '' : ' disabled') + '>Pending Excel</button></div>';
   if (!pend.length) return h + '<div class="card pad note">Nothing pending.</div></main>';
   const g = groupBy(pend, l => l.store);
@@ -314,9 +325,13 @@ function vPend() {
     const L = g[store].sort((a, b) => a.date.localeCompare(b.date));
     const c = L.filter(l => PL[l.id] === 'issue');
     h += '<div class="card"><div class="pad row" style="background:var(--soft);border-bottom:1px solid var(--line);border-radius:16px 16px 0 0"><b>' + esc(store) + '</b><span class="note">' + L.length + ' pending</span></div>';
-    L.forEach(l => {
-      h += '<div class="line"><div class="row"><b>' + esc(itemName(l.code)) + ', ' + num(l.qty) + ' ' + esc(itemUom(l.code)) + '</b><span class="chip ' + (PL[l.id] === 'issue' ? 'c-ok' : 'c-pt') + '">' + (PL[l.id] === 'issue' ? 'In stock' : (days(l.date) ? days(l.date) + ' days' : 'today')) + '</span></div>' +
-        '<div class="note"><span class="mono">' + esc(l.code) + '</span> · Request ' + esc(l.req) + ' · ' + fmtLong(l.date) + (l.earlier ? ' · earlier slips ' + esc(l.earlier) : '') + '</div></div>';
+    const byR = groupBy(L, l => l.req);
+    Object.keys(byR).forEach(rq => {
+      const f = byR[rq][0];
+      h += '<div class="pad" style="padding-top:10px;padding-bottom:6px;background:var(--soft)"><div class="wrap" style="gap:6px">' + pill('Req ' + rq, 'c-gy') + pill(fmtShort(f.date), 'c-pt') + ((byR[rq].find(l => l.slip) || {}).slip ? pill('Slip ' + byR[rq].find(l => l.slip).slip, 'c-in') : '') + '</div></div>';
+      byR[rq].forEach(l => {
+        h += '<div class="line"><div class="row" style="align-items:flex-start"><span><b>' + esc(itemName(l.code)) + '</b><div class="note mono">' + esc(l.code) + '</div></span><b class="mono" style="white-space:nowrap">' + num(l.qty) + ' ' + esc(itemUom(l.code)) + '</b></div><div class="wrap" style="gap:6px">' + linePills(l, PL[l.id]) + '</div></div>';
+      });
     });
     h += '<div class="pad">' + (c.length ? '<button class="btn main full" data-a="fillStore" data-v="' + esc(store) + '">Clear ' + c.length + ' in-stock article' + (c.length > 1 ? 's' : '') + ' on CUIMS</button>' : '<div class="note">Nothing in stock yet. Upload fresh stock to recheck.</div>') + '</div></div>';
   });
@@ -327,7 +342,7 @@ function vPend() {
 function openStart(store, lineIds, title) {
   const ls = S.lines.filter(l => lineIds.includes(l.id));
   const rcv = (ls.find(l => l.rcv) || {}).rcv || (S.stores[store] || {}).rcv || '';
-  ui.sheet = { kind: 'start', store, lineIds, title, slip: plannedSlip(lineIds) || nextSlip(), rcv };
+  ui.sheet = { kind: 'start', store, lineIds, title, slip: plannedSlip(lineIds) || nextSlip(), rcv, off: {}, qty: {}, req: (ls[0] || {}).req };
   renderSheet();
 }
 function shStart() {
@@ -341,7 +356,11 @@ function shStart() {
   h += '<label class="f">Receiver (6 digits, this entry only)<input type="text" inputmode="numeric" maxlength="6" data-in="rcv" value="' + esc(s.rcv) + '" class="mono' + (rp ? ' bad' : '') + '"></label>' + (rp ? '<div class="err">' + rp + '</div>' : '<div class="note">CUIMS will pick GA' + esc(s.rcv) + ' … (GA) from the list.</div>');
   if (!areaOk) h += '<div class="err">"' + esc(s.store) + '" is not in the CUIMS Project Area list. Fix the store name in Settings or the request.</div>';
   if (old) h += '<div class="banner t-pt">Your CUIMS login is over 2 hours old. It may log out soon; the app will pause and restart the entry if it does.</div>';
-  h += '<div class="card">' + ls.map(l => '<div class="line"><div class="row"><b>' + esc(itemName(l.code)) + '</b><span class="mono">' + num(l.qty) + ' ' + esc(itemUom(l.code)) + '</span></div><div class="note"><span class="mono">' + esc(l.code) + '</span> · Request ' + esc(l.req) + (remarkFor(l.date) ? ' · remark added' : '') + '</div></div>').join('') + '</div>';
+  h += '<div class="row"><span class="sect">Articles for this entry</span><span class="note">' + s.lineIds.filter(id => !s.off[id]).length + ' selected</span></div>';
+  h += '<div class="card">' + ls.map(l => '<div class="line"><div class="row" style="align-items:center"><label class="chk" style="min-height:0;gap:10px;flex:1"><input type="checkbox" data-a="stOn" data-v="' + l.id + '"' + (s.off[l.id] ? '' : ' checked') + '><span><b>' + esc(itemName(l.code)) + '</b><div class="note mono">' + esc(l.code) + ' · Req ' + esc(l.req) + '</div></span></label>' +
+    '<input type="number" inputmode="decimal" data-stq="' + l.id + '" value="' + esc(s.qty[l.id] != null ? s.qty[l.id] : l.qty) + '" style="width:96px;text-align:right"><span class="note" style="width:38px">' + esc(itemUom(l.code)) + '</span></div>' +
+    (S.stock[l.code] ? '<div class="wrap" style="gap:6px">' + pill(num(S.stock[l.code].qty) + ' in stock', 'c-gy') + (remarkFor(l.date) ? pill('Remark added', 'c-gy') : '') + '</div>' : '') + '</div>').join('') + '</div>';
+  h += '<div class="card pad col"><b>Add an article to this entry</b><div class="grid2"><input type="text" data-stadd="code" value="' + esc(s.addCode || '') + '" placeholder="Item code e.g. GR-198" autocapitalize="characters" class="mono"><input type="number" inputmode="decimal" data-stadd="qty" value="' + esc(s.addQty || '') + '" placeholder="Qty"></div><button class="btn" data-a="stAdd">+ Add article</button></div>';
   h += '<label class="chk"><input type="checkbox" data-a="queueToggle"' + (S.queue ? ' checked' : '') + '> Queue mode: after I submit, fill the next request automatically</label>';
   h += '<button class="btn main full" data-a="startFill"' + (sp || rp ? ' disabled' : '') + '>Start filling on CUIMS</button>';
   h += '<div class="note" style="text-align:center">The app never taps SUBMIT. You check and submit yourself.</div>';
@@ -530,10 +549,10 @@ function vSet() {
   });
   h += '<div class="pad col"><input type="text" id="newStore" list="areaList" placeholder="Add store: type or pick Project Area" autocapitalize="characters">' + areaDatalist() + '<button class="btn" data-a="addStore">+ Add store</button></div></div>';
   h += '<div class="card pad col"><h3>Filling</h3><label class="chk"><input type="checkbox" data-a="queueToggle"' + (S.queue ? ' checked' : '') + '> Queue mode: after each submit, fill the next request automatically</label></div>';
-  h += '<div class="card pad col"><h3>Google Sheet backup</h3><label class="f">Apps Script web app URL<input type="text" data-set="sync.url" value="' + esc(S.sync.url) + '" placeholder="https://script.google.com/macros/s/…/exec"></label>' +
+  h += '<div class="card pad col"><h3>Cloud backup (Google Drive + Sheet)</h3><label class="f">Apps Script web app URL<input type="text" data-set="sync.url" value="' + esc(S.sync.url) + '" placeholder="https://script.google.com/macros/s/…/exec"></label>' +
     '<label class="chk"><input type="checkbox" data-a="syncAuto"' + (S.sync.auto ? ' checked' : '') + '> Back up automatically after changes</label>' +
     '<div class="note">' + (S.sync.at ? 'Last backup ' + fmtDT(S.sync.at) : 'Not backed up yet') + '</div>' +
-    '<div class="grid2"><button class="btn" data-a="syncNow"' + (S.sync.url ? '' : ' disabled') + '>Back up now</button><button class="btn" data-a="restore"' + (S.sync.url ? '' : ' disabled') + '>Restore</button></div></div>';
+    '<div class="grid2"><button class="btn" data-a="syncNow"' + (S.sync.url ? '' : ' disabled') + '>Back up now</button><button class="btn main" data-a="backups"' + (S.sync.url ? '' : ' disabled') + '>Manage backups</button></div></div>';
   h += '<div class="card pad col"><h3>Downloads</h3><div class="grid2">' +
     [['expRequests', 'Requests register'], ['expEntries', 'Entries log'], ['expItems', 'Entry items'], ['expPendXlsx', 'Pending (Excel)'], ['expPendPdf', 'Pending (PDF)'], ['expStock', 'Stock now'], ['expReturns', 'Returns'], ['expAll', 'Full backup']].map(([a, l]) => '<button class="btn sm" data-a="' + a + '">' + l + '</button>').join('') +
     '</div><button class="btn sm ghost" data-a="template">Download data template</button></div>';
@@ -658,9 +677,9 @@ function pdfPending() {
 }
 
 /* ---------------- Google Sheet sync ---------------- */
-async function syncNow(quiet) {
+async function syncNow(quiet, kind, note) {
   if (!S.sync.url) return;
-  const payload = { action: 'sync', at: new Date().toISOString(), by: meTag(),
+  const payload = { action: 'sync', kind: kind || 'auto', note: note || '', counts: { requests: requests().length, articles: S.lines.length, entries: S.entries.length, returns: S.returns.length }, at: new Date().toISOString(), by: meTag(),
     tabs: { 'Requests': rowsRequests(), 'Request lines': rowsAllLines(), 'Entries': rowsEntries(), 'Entry items': rowsItems(), 'Pending': rowsPending(), 'Returns': rowsReturns(), 'Stock': rowsStock(),
       'Stores': Object.entries(S.stores).map(([s, v]) => ({ Store: s, Receiver: v.rcv ? 'GA' + v.rcv : '', Name: v.rname || '' })) },
     backup: JSON.stringify(S) };
@@ -669,8 +688,35 @@ async function syncNow(quiet) {
     const j = await r.json();
     if (!j.ok) throw new Error(j.error || 'failed');
     S.sync.at = new Date().toISOString(); save(true);
-    if (!quiet) { toast('Backed up to Google Sheet.'); render(); }
+    if (!quiet) { toast('Backed up to Google Drive and Sheet.'); render(); if (ui.sheet && ui.sheet.kind === 'backups') loadBackups(); }
   } catch (e) { if (!quiet) toast('Backup failed: ' + e.message); }
+}
+async function apiGet(q) { const r = await fetch(S.sync.url + (S.sync.url.includes('?') ? '&' : '?') + q); const j = await r.json(); if (!j.ok) throw new Error(j.error || 'failed'); return j; }
+async function apiPost(o) { const r = await fetch(S.sync.url, { method: 'POST', body: JSON.stringify(o) }); const j = await r.json(); if (!j.ok) throw new Error(j.error || 'failed'); return j; }
+async function loadBackups() {
+  ui.sheet = Object.assign(ui.sheet || {}, { kind: 'backups', loading: true, err: '' }); renderSheet();
+  try { const j = await apiGet('action=list'); ui.sheet.items = j.items; ui.sheet.folder = j.folder; ui.sheet.sheetUrl = j.sheet; }
+  catch (e) { ui.sheet.err = 'Could not load backups: ' + e.message + '. If you just updated Code.gs, deploy it as a New version.'; }
+  ui.sheet.loading = false; renderSheet();
+}
+function shBackups() {
+  const s = ui.sheet;
+  let h = '<div class="row"><h2>Cloud backups</h2><button class="btn sm ghost" data-a="closeSheet">Close</button></div>';
+  h += '<div class="note">Every change is backed up automatically (a new copy every 30 minutes, newest 60 kept). Tap Keep on any copy to protect it forever.</div>';
+  h += '<div class="card pad col"><b>Save a backup now</b><input type="text" data-bk="note" value="' + esc(s.note || '') + '" placeholder="Note, e.g. Before month-end cleanup"><button class="btn main" data-a="bkSave">Save backup (kept)</button></div>';
+  if (s.loading) return h + '<div class="card pad note">Loading backups…</div>';
+  if (s.err) return h + '<div class="err">' + esc(s.err) + '</div>';
+  const items = s.items || [];
+  h += '<div class="row"><span class="sect">' + items.length + ' backups</span>' + (s.folder ? '<button class="btn sm ghost" data-a="openUrl" data-v="' + esc(s.folder) + '">Open Drive folder</button>' : '') + '</div>';
+  items.forEach(b => {
+    const c = b.counts || {};
+    h += '<div class="card pad col" style="gap:8px"><div class="row"><b>' + fmtDT(b.updated) + '</b>' + pill(b.keep ? 'Kept' : b.kind === 'manual' ? 'Manual' : 'Auto', b.keep ? 'c-ok' : 'c-gy') + '</div>' +
+      '<div class="wrap" style="gap:6px">' + (c.requests != null ? pill(c.requests + ' requests', 'c-gy') + pill(c.entries + ' entries', 'c-in') + pill(c.returns + ' returns', 'c-gy') : '') + pill(Math.round(b.size / 1024) + ' KB', 'c-gy') + (b.by ? pill(b.by, 'c-gy') : '') + '</div>' +
+      (s.editing === b.id ? '<input type="text" data-bk="rename" value="' + esc(s.rename || '') + '" placeholder="Note"><div class="grid2"><button class="btn sm" data-a="bkNoteSave" data-v="' + b.id + '">Save note</button><button class="btn sm ghost" data-a="bkNoteCancel">Cancel</button></div>' : (b.note ? '<div class="note">' + esc(b.note) + '</div>' : '')) +
+      '<div class="grid3"><button class="btn sm main" data-a="bkRestore" data-v="' + b.id + '">Restore</button><button class="btn sm" data-a="bkKeep" data-v="' + b.id + '" data-k="' + (b.keep ? '0' : '1') + '">' + (b.keep ? 'Unkeep' : 'Keep') + '</button><button class="btn sm warn" data-a="bkDel" data-v="' + b.id + '">Delete</button></div>' +
+      (s.editing === b.id ? '' : '<button class="btn sm ghost" data-a="bkNote" data-v="' + b.id + '">Add / edit note</button>') + '</div>';
+  });
+  return h;
 }
 async function restoreNow() {
   if (!confirm('Replace all data on this phone with the last Google Sheet backup?')) return;
@@ -757,7 +803,7 @@ function renderSheet() {
   const el = document.getElementById('sheet');
   if (!ui.sheet) { el.innerHTML = ''; return; }
   const k = ui.sheet.kind;
-  const body = k === 'start' ? shStart() : k === 'upload' ? shUpload() : k === 'entry' ? shEntry() : k === 'return' ? shReturn() : k === 'editReq' ? shEditReq() : k === 'bulk' ? shBulk() : k === 'mark' ? shMark() : '';
+  const body = k === 'backups' ? shBackups() : k === 'start' ? shStart() : k === 'upload' ? shUpload() : k === 'entry' ? shEntry() : k === 'return' ? shReturn() : k === 'editReq' ? shEditReq() : k === 'bulk' ? shBulk() : k === 'mark' ? shMark() : '';
   const sc = el.querySelector('.sheet') ? el.querySelector('.sheet').scrollTop : 0;
   el.innerHTML = '<div class="sheetbg" data-a="bgClose"><div class="sheet" role="dialog" aria-modal="true">' + body + '</div></div>';
   el.querySelector('.sheet').scrollTop = sc;
@@ -771,10 +817,12 @@ function shBulk() {
   const f = ui.form;
   let h = '<div class="row"><h2>Edit all requests</h2><button class="btn sm ghost" data-a="closeSheet">Close</button></div>';
   h += '<div class="note">Set Slip No, date and receiver for every open request at once. Slip No is used for the next entry of that request.</div>';
+  h += '<div class="card pad col"><b>Same date for all</b><div class="grid2"><input type="date" data-bulkdate="1" value="' + esc(f.allDate || today()) + '"><button class="btn" data-a="bulkDate">Apply to all</button></div></div>';
   h += '<div class="card pad col"><b>Auto-number Slip Nos</b><div class="grid2"><input type="text" data-bulkstart="1" value="' + esc(f.start) + '" class="mono" placeholder="First slip, e.g. JV/920" autocapitalize="characters"><button class="btn" data-a="bulkAuto">Fill in order</button></div><div class="note">Fills empty Slip boxes below, top to bottom, counting up.</div></div>';
   f.rows.forEach((r, i) => {
     h += '<div class="card pad col" style="gap:8px"><div class="row"><b>' + esc(r.store) + '</b><span class="note">Request ' + esc(r.req) + ' · ' + r.n + ' open</span></div>' +
-      '<div class="grid3"><label class="f">Slip No<input type="text" data-br="' + i + '|slip" value="' + esc(r.slip) + '" class="mono" autocapitalize="characters"></label><label class="f">Date<input type="date" data-br="' + i + '|date" value="' + esc(r.date) + '"></label><label class="f">Receiver<input type="text" data-br="' + i + '|rcv" value="' + esc(r.rcv) + '" class="mono" inputmode="numeric" maxlength="6"></label></div></div>';
+      '<div class="grid2"><label class="f">Slip No<input type="text" data-br="' + i + '|slip" value="' + esc(r.slip) + '" class="mono" autocapitalize="characters"></label><label class="f">Request No<input type="text" data-br="' + i + '|newReq" value="' + esc(r.newReq) + '" class="mono"></label></div>' +
+      '<div class="grid2"><label class="f">Request date<input type="date" data-br="' + i + '|date" value="' + esc(r.date) + '"></label><label class="f">Receiver (6 digits)<input type="text" data-br="' + i + '|rcv" value="' + esc(r.rcv) + '" class="mono" inputmode="numeric" maxlength="6"></label></div></div>';
   });
   h += '<button class="btn main full" data-a="bulkSave">Save all</button>';
   return h;
@@ -812,7 +860,7 @@ document.addEventListener('click', async ev => {
   const t = ev.target.closest('[data-a]'); if (!t) return;
   const a = t.dataset.a, v = t.dataset.v;
   if (a === 'bgClose') { if (ev.target === t) { ui.sheet = null; renderSheet(); } return; }
-  if (t.type === 'checkbox' && !['hold', 'queueToggle', 'regItems', 'mgrToggle', 'syncAuto', 'lockToggle', 'markPick'].includes(a)) return;
+  if (t.type === 'checkbox' && !['hold', 'queueToggle', 'regItems', 'mgrToggle', 'syncAuto', 'lockToggle', 'markPick', 'stOn'].includes(a)) return;
   switch (a) {
     case 'tab': ui.tab = v; ui.view = null; render(); window.scrollTo(0, 0); break;
     case 'openSite': if (N) N.openSite(); else toast('Open this inside the app.'); break;
@@ -834,17 +882,21 @@ document.addEventListener('click', async ev => {
       S.lines.forEach(l => { if (l.req !== f.req) return; l.store = f.store.trim().toUpperCase(); l.date = f.date || l.date; l.rcv = f.rcv || ''; if (l.status === 'waiting') l.slip = sl; if (l.status === 'waiting' && !keep.has(l.id)) l.status = 'dropped'; });
       items.forEach(i => { if (i.lineId) { const l = S.lines.find(x => x.id === i.lineId); l.code = i.code; l.qty = i.qty; } else S.lines.push({ id: nid(), req: f.req, store: f.store.trim().toUpperCase(), date: f.date, code: i.code, qty: i.qty, rcv: f.rcv || '', slip: sl, src: 'new', earlier: '', status: 'waiting', issued: [] }); });
       save(); ui.sheet = null; renderSheet(); render(); toast('Request saved.'); break; }
-    case 'bulkEdit': ui.form = { start: nextSlip(), rows: bulkList().map(r => ({ req: r.req, store: r.store, n: r.w.length, slip: (r.w.find(l => l.slip) || {}).slip || '', date: r.date, rcv: (r.lines.find(l => l.rcv) || {}).rcv || (S.stores[r.store] || {}).rcv || '' })) }; ui.sheet = { kind: 'bulk' }; renderSheet(); break;
+    case 'bulkEdit': ui.form = { start: nextSlip(), allDate: today(), rows: bulkList().map(r => ({ req: r.req, newReq: r.req, store: r.store, n: r.w.length, slip: (r.w.find(l => l.slip) || {}).slip || '', date: r.date, rcv: (r.lines.find(l => l.rcv) || {}).rcv || (S.stores[r.store] || {}).rcv || '' })) }; ui.sheet = { kind: 'bulk' }; renderSheet(); break;
     case 'bulkAuto': { const f = ui.form; const m = String(f.start || '').trim().toUpperCase().match(/^(.*?)(\d+)$/); if (!m) { toast('Type the first Slip No, ending in a number, e.g. JV/920'); break; }
       const used = allSlips(); f.rows.forEach(r => used.has((r.slip || '').toUpperCase()) || r.slip ? used.add(r.slip.toUpperCase()) : 0);
       let n = parseInt(m[2], 10);
       f.rows.forEach(r => { if (r.slip) return; let sl; do { sl = m[1] + String(n).padStart(m[2].length, '0'); n++; } while (used.has(sl.toUpperCase())); used.add(sl.toUpperCase()); r.slip = sl; });
       renderSheet(); break; }
-    case 'bulkSave': { const f = ui.form; const bad = f.rows.find(r => (r.slip && !SLIP_RE.test(r.slip)) || (r.rcv && !/^\d{6}$/.test(r.rcv)));
+    case 'bulkDate': ui.form.rows.forEach(r => r.date = ui.form.allDate || today()); renderSheet(); break;
+    case 'bulkSave': { const f = ui.form; const bad = f.rows.find(r => (r.slip && !SLIP_RE.test(r.slip)) || (r.rcv && !/^\d{6}$/.test(r.rcv)) || !String(r.newReq || '').trim());
+      const reqClash = f.rows.find(r => r.newReq.trim() !== r.req && S.lines.some(l => l.req === r.newReq.trim()));
+      if (reqClash) { toast('Request No ' + reqClash.newReq + ' already exists. Use another.'); break; }
       if (bad) { toast('Check ' + bad.store + ': Slip 2–10 chars with a digit, receiver 6 digits.'); break; }
       const seen = {}; const used = allSlips(); const clash = f.rows.find(r => r.slip && (seen[r.slip] || used.has(r.slip)) ? true : (seen[r.slip] = 1, false));
       if (clash) { toast('Slip ' + clash.slip + ' is used twice or already used. Change it.'); break; }
-      f.rows.forEach(r => S.lines.forEach(l => { if (l.req !== r.req) return; if (r.date) l.date = r.date; l.rcv = r.rcv || ''; if (l.status === 'waiting') l.slip = r.slip || ''; }));
+      f.rows.forEach(r => S.lines.forEach(l => { if (l.req !== r.req) return; if (r.date) l.date = r.date; l.rcv = r.rcv || ''; if (l.status === 'waiting') l.slip = r.slip || ''; l.req = r.newReq.trim(); }));
+      S.entries.forEach(e => e.items.forEach(i => { const r = f.rows.find(x => x.req === i.req); if (r) i.req = r.newReq.trim(); }));
       save(); ui.sheet = null; renderSheet(); render(); toast('All requests updated.'); break; }
     case 'markDone': { const PL = plan(); const r = requests().find(x => x.req === v); const w = r.lines.filter(l => l.status === 'waiting'); const pick = {}; w.forEach(l => { if (PL[l.id] === 'issue') pick[l.id] = 1; });
       ui.form = { req: v, store: r.store, slip: plannedSlip(w.map(l => l.id)) || '', serial: '', rcv: (r.lines.find(l => l.rcv) || {}).rcv || (S.stores[r.store] || {}).rcv || '', date: today(), lines: w, pick };
@@ -864,7 +916,16 @@ document.addEventListener('click', async ev => {
     case 'queueToggle': S.queue = t.checked; save(true); break;
     case 'startFill': { const s = ui.sheet; if (slipProblem(s.slip) || !/^\d{6}$/.test(s.rcv)) break;
       if (!S.stores[s.store]) S.stores[s.store] = { rcv: s.rcv, rname: '' }; else if (!S.stores[s.store].rcv) S.stores[s.store].rcv = s.rcv;
-      save(true); ui.sheet = null; renderSheet(); startJob(s.store, s.slip, s.rcv, s.lineIds); break; }
+      const ids = s.lineIds.filter(id => !s.off[id]);
+      if (!ids.length) { toast('Select at least one article.'); break; }
+      for (const id of ids) { if (s.qty[id] == null) continue; const q = parseFloat(s.qty[id]); const l = S.lines.find(x => x.id === id); if (!(q > 0)) { toast('Qty must be above 0 for ' + l.code); return; } l.qty = q; }
+      save(true); ui.sheet = null; renderSheet(); startJob(s.store, s.slip, s.rcv, ids); break; }
+    case 'stOn': if (t.checked) delete ui.sheet.off[v]; else ui.sheet.off[v] = 1; renderSheet(); break;
+    case 'stAdd': { const s = ui.sheet; const code = String(s.addCode || '').trim().toUpperCase(), q = parseFloat(s.addQty);
+      if (!code || !(q > 0)) { toast('Enter item code and qty.'); break; }
+      const base = S.lines.find(l => l.id === s.lineIds[0]);
+      const nl = { id: nid(), req: base ? base.req : s.req || 'MANUAL', store: s.store, date: base ? base.date : today(), code, qty: q, rcv: base ? base.rcv : '', slip: base ? base.slip : '', src: 'new', earlier: '', status: 'waiting', issued: [] };
+      S.lines.push(nl); s.lineIds.push(nl.id); s.addCode = ''; s.addQty = ''; save(true); renderSheet(); if (!S.stock[code]) toast(code + ' is not in the stock sheet; CUIMS will check it.'); break; }
     case 'pick': ui.upload = { kind: v }; document.getElementById('fileIn').click(); break;
     case 'uploadCancel': ui.upload = null; renderSheet(); break;
     case 'uploadOk': doImport(); break;
@@ -906,6 +967,16 @@ document.addEventListener('click', async ev => {
     case 'syncAuto': S.sync.auto = t.checked; save(true); break;
     case 'syncNow': syncNow(false); break;
     case 'restore': restoreNow(); break;
+    case 'backups': ui.sheet = { kind: 'backups' }; loadBackups(); break;
+    case 'openUrl': if (N) N.openUrl(v); else window.open(v); break;
+    case 'bkSave': { const note = ui.sheet.note || ''; await syncNow(false, 'manual', note); ui.sheet.note = ''; loadBackups(); break; }
+    case 'bkRestore': { if (!confirm('Replace ALL data on this phone with this backup? (Tip: save a backup of the current data first.)')) break;
+      try { const j = await apiGet('action=get&id=' + encodeURIComponent(v)); const url = S.sync.url; S = Object.assign(blank(), JSON.parse(j.backup)); S.sync.url = url; save(true); ui.sheet = null; renderSheet(); render(); toast('Backup restored.'); } catch (e) { toast('Restore failed: ' + e.message); } break; }
+    case 'bkKeep': try { await apiPost({ action: 'meta', id: v, keep: t.dataset.k === '1' }); loadBackups(); } catch (e) { toast('Failed: ' + e.message); } break;
+    case 'bkDel': if (confirm('Delete this backup copy from Drive?')) { try { await apiPost({ action: 'delete', id: v }); loadBackups(); } catch (e) { toast('Failed: ' + e.message); } } break;
+    case 'bkNote': { const b = (ui.sheet.items || []).find(x => x.id === v); ui.sheet.editing = v; ui.sheet.rename = b ? b.note : ''; renderSheet(); break; }
+    case 'bkNoteCancel': ui.sheet.editing = null; renderSheet(); break;
+    case 'bkNoteSave': try { await apiPost({ action: 'meta', id: v, note: ui.sheet.rename || '' }); ui.sheet.editing = null; loadBackups(); } catch (e) { toast('Failed: ' + e.message); } break;
     case 'expRequests': saveWb([['Requests register', rowsRequests()]], 'Requests-register-' + today() + '.xlsx'); break;
     case 'expEntries': saveWb([['Entries log', rowsEntries()]], 'Entries-log-' + today() + '.xlsx'); break;
     case 'expItems': saveWb([['Entry items', rowsItems()]], 'Entry-items-' + today() + '.xlsx'); break;
@@ -924,9 +995,13 @@ document.addEventListener('input', ev => {
   const el = ev.target;
   if (el.dataset.in === 'slip' || el.dataset.in === 'rcv') { const k = focusKey(el); ui.sheet[el.dataset.in] = el.dataset.in === 'slip' ? el.value.trim().toUpperCase() : el.value.replace(/\D/g, ''); renderSheet(); refocus(k); return; }
   if (el.dataset.in === 'q') { const k = focusKey(el); ui.search.q = el.value; render(); refocus(k); return; }
+  if (el.dataset.bk) { ui.sheet[el.dataset.bk] = el.value; return; }
+  if (el.dataset.stq) { ui.sheet.qty[el.dataset.stq] = el.value; return; }
+  if (el.dataset.stadd) { ui.sheet[el.dataset.stadd === 'code' ? 'addCode' : 'addQty'] = el.value; return; }
   if (el.dataset.f) { ui.form[el.dataset.f] = el.value; return; }
   if (el.dataset.br) { const [i, f] = el.dataset.br.split('|'); ui.form.rows[+i][f] = f === 'slip' ? el.value.trim().toUpperCase() : f === 'rcv' ? el.value.replace(/\D/g, '') : el.value; return; }
   if (el.dataset.bulkstart) { ui.form.start = el.value; return; }
+  if (el.dataset.bulkdate) { ui.form.allDate = el.value; return; }
   if (el.dataset.it) { const [i, f] = el.dataset.it.split('|'); ui.form.items[+i][f] = el.value; return; }
 });
 document.addEventListener('change', async ev => {
