@@ -221,7 +221,7 @@ function parseStock(wb) {
 }
 
 /* ================= UI state ================= */
-let ui = { setPage: null, openStore: {}, sort: { home: 'priority', pend: 'store', reg: 'time' }, tab: 'home', view: null, req: null, store: null, sheet: null, reg: { type: 'issue', date: today(), items: false }, search: { q: '', type: 'all', from: '', to: '', store: '', open: null }, upload: null, form: null };
+let ui = { locked: true, setPage: null, openStore: {}, sort: { home: 'priority', pend: 'custom', reg: 'time' }, tab: 'home', view: null, req: null, store: null, sheet: null, reg: { type: 'issue', date: today(), items: false }, search: { q: '', type: 'all', from: '', to: '', store: '', open: null }, upload: null, form: null };
 
 const ICON = {
   home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg>',
@@ -235,12 +235,16 @@ const TABS = [['home', 'Home'], ['pend', 'Pending'], ['reg', 'Registers'], ['fin
 function reqCard(r) {
   const tag = r.st === 'full' ? pill('All ' + r.w.length + ' can issue', 'c-ok') : r.st === 'part' ? pill(r.can.length + ' of ' + r.w.length + ' can issue', 'c-pt') : r.st === 'done' ? pill('Done', 'c-in') : pill('Nothing in stock', 'c-no');
   const slip = (r.w.find(l => l.slip) || {}).slip, rcv = (r.lines.find(l => l.rcv) || {}).rcv || (S.stores[r.store] || {}).rcv || '';
-  return '<div class="card scard"><button class="main" data-a="openReq" data-v="' + esc(r.req) + '"><div class="row"><b style="font-size:17px">' + esc(r.store) + '</b>' + tag + '</div>' +
+  return '<div class="card"><div class="scard"><button class="main" data-a="openReq" data-v="' + esc(r.req) + '"><div class="row"><b style="font-size:17px">' + esc(r.store) + '</b>' + tag + '</div>' +
     '<div class="wrap" style="gap:6px">' + pill('Req ' + r.req, 'c-gy') + pill(fmtShort(r.date), r.date === today() ? 'c-gy' : 'c-pt') + (slip ? pill('Slip ' + slip, 'c-in') : pill('No slip', 'c-no')) + (rcv ? pill('GA' + rcv, 'c-gy') : pill('No receiver', 'c-no')) + pill(r.lines.length + ' articles', 'c-gy') + (r.iss.length ? pill(r.iss.length + ' issued', 'c-in') : '') + '</div></button>' +
-    '<div class="side"><button class="xbtn" data-a="dropReq" data-v="' + esc(r.req) + '" aria-label="Remove ' + esc(r.store) + ' from the list">✕</button></div></div>';
+    '<div class="side"><button class="xbtn" data-a="dropReq" data-v="' + esc(r.req) + '" aria-label="Remove ' + esc(r.store) + ' from the list">✕</button></div></div>' +
+    (r.can && r.can.length ? '<div style="padding:0 18px 16px;margin-top:-6px"><button class="btn main full" data-a="fillReq" data-v="' + esc(r.req) + '">Fill on CUIMS · ' + r.can.length + ' available</button></div>' : '') + '</div>';
 }
 function appBar() {
-  return '<div class="appbar"><img class="logo" src="icon.png" alt="JV Stock Issue logo"><div class="t"><b>JV Stock Issue</b><span>Built by <i>' + esc(S.me.builder || S.me.name || 'JV') + '</i>' + (S.me.storeName ? ' · ' + esc(S.me.storeName) : '') + '</span></div><button data-a="goProfile" aria-label="Profile" style="border:0;background:none;padding:0">' + avatar(false) + '</button></div>';
+  const lk = ui.locked ? '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>' : '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="M8 11V7a4 4 0 0 1 7.5-1.8"/></svg>';
+  return '<div class="appbar"><img class="logo" src="icon.png" alt="JV Stock Issue logo"><div class="t"><b>JV Stock Issue</b><span>Built by <i>' + esc(S.me.builder || S.me.name || 'JV') + '</i></span>' + (S.me.storeName ? '<em>' + esc(S.me.storeName) + '</em>' : '') + '</div>' +
+    '<button class="lockbtn' + (ui.locked ? '' : ' open') + '" data-a="lockTap" aria-label="' + (ui.locked ? 'Unlock editing' : 'Lock editing') + '">' + lk + '</button>' +
+    '<button data-a="goProfile" aria-label="Profile" style="border:0;background:none;padding:0">' + avatar(false) + '</button></div>';
 }
 function stockAge() { return S.stockAt ? 'Stock from ' + fmtDT(S.stockAt) : 'No stock uploaded yet'; }
 
@@ -252,7 +256,7 @@ function vHome() {
   const todays = R.filter(r => r.date === t && r.src !== 'old').map(r => Object.assign(r, reqState(r, PL))).filter(r => r.st !== 'done');
   const order = { full: 0, part: 1, wait: 2 };
   const so = ui.sort.home;
-  todays.sort((a, b) => so === 'store' ? a.store.localeCompare(b.store) : so === 'req' ? a.req.localeCompare(b.req, undefined, { numeric: true }) : so === 'size' ? b.lines.length - a.lines.length : (order[a.st] - order[b.st] || b.can.length - a.can.length));
+  todays.sort((a, b) => so === 'custom' ? byStore(a.store, b.store) || a.req.localeCompare(b.req, undefined, { numeric: true }) : so === 'store' ? a.store.localeCompare(b.store) : so === 'req' ? a.req.localeCompare(b.req, undefined, { numeric: true }) : so === 'size' ? b.lines.length - a.lines.length : (order[a.st] - order[b.st] || b.can.length - a.can.length));
   const pend = S.lines.filter(isPending);
   const pendCan = pend.filter(l => PL[l.id] === 'issue').length;
   const issuedToday = S.entries.filter(e => (e.at || '').slice(0, 10) === t).length;
@@ -264,13 +268,13 @@ function vHome() {
     return h + '<div class="card pad col"><h2>Start here</h2><div class="note">Upload the CUIMS stock report and your requests sheet. Download the template first if you need the format.</div>' +
       '<button class="btn main" data-a="upload">Upload a file</button><button class="btn" data-a="template">Download data template</button></div></main>';
   }
-  h += '<div class="grid2"><button class="btn main" data-a="upload">Upload</button><button class="btn" data-a="openSite">Open CUIMS</button></div>';
+  h += '<div class="grid3"><button class="btn main" data-a="upload">Upload</button><button class="btn" data-a="openSite">Issue CUIMS</button><button class="btn gold" data-a="openMgr">Live stock</button></div>';
   h += '<button class="btn full" data-a="bulkEdit">Edit all requests: Slip No, Request No, date, receiver</button>';
   const c = { full: todays.filter(r => r.st === 'full').length, part: todays.filter(r => r.st === 'part').length, wait: todays.filter(r => r.st === 'wait').length };
-  h += '<div class="card pad col"><div class="row"><h3>Today\'s requests</h3><span class="note">' + todays.length + ' open · ' + issuedToday + ' entries done</span></div>' +
+  h += '<div class="card pad col"><div class="row"><h3>Today\'s requests</h3><span class="note">' + todays.length + ' open · ' + issuedToday + (issuedToday === 1 ? ' entry' : ' entries') + ' done</span></div>' +
     '<div class="grid3"><div class="tile t-ok"><b>' + c.full + '</b><span>Fully possible</span></div><div class="tile t-pt"><b>' + c.part + '</b><span>Partly possible</span></div><div class="tile t-no"><b>' + c.wait + '</b><span>Waiting</span></div></div></div>';
   if (todays.length) {
-    h += '<div class="row" style="margin-top:4px"><span class="sect">' + (so === 'priority' ? 'Do these now, in this order' : 'Today\'s requests') + '</span>' + sortSel('home', [['priority', 'Priority'], ['store', 'Store A–Z'], ['req', 'Request No'], ['size', 'Most articles']]) + '</div>';
+    h += '<div class="row" style="margin-top:4px"><span class="sect">' + (so === 'priority' ? 'Do these now, in this order' : 'Today\'s requests') + '</span>' + sortSel('home', [['priority', 'Priority'], ['custom', 'My order'], ['store', 'Store A–Z'], ['req', 'Request No'], ['size', 'Most articles']]) + '</div>';
     todays.forEach(r => {
       h += reqCard(r);
     });
@@ -323,28 +327,17 @@ function vPend() {
   h += '<div class="grid2"><button class="btn sm" data-a="expPendPdf"' + (pend.length ? '' : ' disabled') + '>Pending PDF</button><button class="btn sm" data-a="expPendXlsx"' + (pend.length ? '' : ' disabled') + '>Pending Excel</button></div>';
   if (!pend.length) return h + '<div class="card pad note">Nothing pending.</div></main>';
   const g = groupBy(pend, l => l.store);
-  h += '<div class="row"><span class="sect">By store</span>' + sortSel('pend', [['store', 'Store A–Z'], ['most', 'Most pending'], ['oldest', 'Oldest first'], ['ready', 'Most in stock']]) + '</div>';
+  h += '<div class="row"><span class="sect">By store</span>' + sortSel('pend', [['custom', 'My order'], ['store', 'Store A–Z'], ['most', 'Most pending'], ['oldest', 'Oldest first'], ['ready', 'Most in stock']]) + '</div>';
   const ps = ui.sort.pend;
-  Object.keys(g).sort((a, b) => ps === 'most' ? g[b].length - g[a].length : ps === 'oldest' ? oldestOf(g[a]).localeCompare(oldestOf(g[b])) : ps === 'ready' ? g[b].filter(l => PL[l.id] === 'issue').length - g[a].filter(l => PL[l.id] === 'issue').length : a.localeCompare(b)).forEach(store => {
+  Object.keys(g).sort((a, b) => ps === 'most' ? g[b].length - g[a].length : ps === 'oldest' ? oldestOf(g[a]).localeCompare(oldestOf(g[b])) : ps === 'ready' ? g[b].filter(l => PL[l.id] === 'issue').length - g[a].filter(l => PL[l.id] === 'issue').length : ps === 'custom' ? byStore(a, b) : a.localeCompare(b)).forEach(store => {
     const L = g[store].sort((a, b) => a.date.localeCompare(b.date));
     const c = L.filter(l => PL[l.id] === 'issue');
     const reqs = [...new Set(L.map(l => l.req))];
     const old = days(oldestOf(L));
-    const open = !!ui.openStore[store];
-    h += '<div class="card" style="overflow:hidden"><div class="scard"><button class="main" data-a="togStore" data-v="' + esc(store) + '"><div class="row"><b style="font-size:17px">' + esc(store) + '</b><span class="chev" style="transform:rotate(' + (open ? 90 : 0) + 'deg)">›</span></div>' +
-      '<div class="wrap" style="gap:6px">' + pill(L.length + ' pending', 'c-pt') + pill(c.length + ' in stock now', c.length ? 'c-ok' : 'c-gy') + pill(reqs.length + (reqs.length === 1 ? ' request' : ' requests'), 'c-gy') + pill(old ? 'Oldest ' + old + ' d' : 'Today', old > 2 ? 'c-no' : 'c-gd') + '</div></button>' +
-      '<div class="side"><button class="xbtn" data-a="dropStore" data-v="' + esc(store) + '" aria-label="Remove ' + esc(store) + ' pending">✕</button></div></div>';
-    if (open) {
-      const byR = groupBy(L, l => l.req);
-      Object.keys(byR).forEach(rq => {
-        const f = byR[rq][0];
-        h += '<div class="pad" style="padding-top:10px;padding-bottom:6px;background:var(--soft);border-top:1px solid var(--line)"><div class="wrap" style="gap:6px">' + pill('Req ' + rq, 'c-gy') + pill(fmtShort(f.date), 'c-pt') + ((byR[rq].find(l => l.slip) || {}).slip ? pill('Slip ' + byR[rq].find(l => l.slip).slip, 'c-in') : '') + '</div></div>';
-        byR[rq].forEach(l => {
-          h += '<div class="line"><div class="row" style="align-items:flex-start"><span><b>' + esc(itemName(l.code)) + '</b><div class="note mono">' + esc(l.code) + '</div></span><b class="mono" style="white-space:nowrap">' + num(l.qty) + ' ' + esc(itemUom(l.code)) + '</b></div><div class="wrap" style="gap:6px">' + linePills(l, PL[l.id]) + '</div></div>';
-        });
-      });
-      h += '<div class="pad">' + (c.length ? '<button class="btn main full" data-a="fillStore" data-v="' + esc(store) + '">Clear ' + c.length + ' in-stock article' + (c.length > 1 ? 's' : '') + ' on CUIMS</button>' : '<div class="note">Nothing in stock yet. Upload fresh stock to recheck.</div>') + '</div>';
-    }
+    h += '<div class="card" style="overflow:hidden"><div class="scard"><div class="main" style="cursor:default"><div class="row"><b style="font-size:17px">' + esc(store) + '</b>' + pill(L.length + ' pending', 'c-pt') + '</div>' +
+      '<div class="wrap" style="gap:6px">' + pill(c.length + ' available now', c.length ? 'c-ok' : 'c-gy') + pill(reqs.length + (reqs.length === 1 ? ' request' : ' requests'), 'c-gy') + pill(old ? 'Oldest ' + old + ' d' : 'Today', old > 2 ? 'c-no' : 'c-gd') + '</div></div>' +
+      '<div class="side"><button class="xbtn" data-a="dropStore" data-v="' + esc(store) + '" aria-label="Remove ' + esc(store) + ' pending">✕</button></div></div>' +
+      '<div style="padding:0 18px 16px">' + (c.length ? '<button class="btn main full" data-a="fillStore" data-v="' + esc(store) + '">Fill on CUIMS · ' + c.length + ' available</button>' : '<button class="btn full" disabled>Nothing available yet</button>') + '</div>';
     h += '</div>';
   });
   return h + '</main>';
@@ -436,8 +429,8 @@ function vReg() {
   h += '<label class="f">Date<input type="date" data-in="regDate" value="' + esc(r.date) + '"></label>';
   if (r.type === 'issue') {
     const rs = ui.sort.reg;
-    const list = S.entries.filter(e => entryDate(e) === r.date).sort((a, b) => rs === 'store' ? a.store.localeCompare(b.store) : rs === 'slip' ? String(a.slip).localeCompare(String(b.slip), undefined, { numeric: true }) : entryTime(a).localeCompare(entryTime(b)));
-    h += '<div class="row"><span class="sect">' + list.length + ' entries</span>' + sortSel('reg', [['time', 'Time'], ['store', 'Store A–Z'], ['slip', 'Slip No']]) + '</div>';
+    const list = S.entries.filter(e => entryDate(e) === r.date).sort((a, b) => rs === 'custom' ? byStore(a.store, b.store) : rs === 'store' ? a.store.localeCompare(b.store) : rs === 'slip' ? String(a.slip).localeCompare(String(b.slip), undefined, { numeric: true }) : entryTime(a).localeCompare(entryTime(b)));
+    h += '<div class="row"><span class="sect">' + list.length + ' entries</span>' + sortSel('reg', [['time', 'Time'], ['custom', 'My order'], ['store', 'Store A–Z'], ['slip', 'Slip No']]) + '</div>';
     h += '<div class="grid2"><button class="btn main" data-a="pdfIssue"' + (list.length ? '' : ' disabled') + '>Make PDF</button><button class="btn" data-a="newManual">+ Manual entry</button></div>';
     h += '<label class="chk"><input type="checkbox" data-a="regItems"' + (r.items ? ' checked' : '') + '> Include item lines in the PDF</label>';
     if (!list.length) h += '<div class="card pad note">No issue entries on ' + fmtLong(r.date) + '.</div>';
@@ -548,6 +541,7 @@ const SETPAGES = [
   ['pdf', 'PDF and signatures', 'Store name, manager signature', '#F7EFD9', '#8A6A1F', '<path d="M6 3h9l3 3v15H6z"/><path d="M9 13h6M9 17h4"/>'],
   ['stores', 'Stores and receivers', 'Project Areas, 6-digit codes', '#E3F4EC', '#0B5E3D', '<path d="M3 10l9-6 9 6v10H3z"/><path d="M9 20v-6h6v6"/>'],
   ['fill', 'Filling and automation', 'Queue mode', '#FCF1DA', '#8A5A00', '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>'],
+  ['cuims', 'CUIMS logins and pages', 'Issue ID, manager ID, desktop zoom', '#E3F4EC', '#0B5E3D', '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/>'],
   ['cloud', 'Cloud backup', 'Google Drive + Sheet, restore', '#E5EDFD', '#1E3A8A', '<path d="M7 18a5 5 0 1 1 1-9.9A6 6 0 0 1 19 10a4 4 0 0 1-1 8z"/>'],
   ['data', 'Downloads and data', 'Excel exports, template, clear data', '#EFEDE8', '#3A3E45', '<path d="M12 3v12M7 10l5 5 5-5M4 21h16"/>'],
   ['security', 'Security', 'Fingerprint / PIN lock', '#FBE6E9', '#8E1B2A', '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>'],
@@ -561,7 +555,7 @@ function vSet() {
   if (!pg) {
     h += '<header class="top"><div><h1>Settings</h1></div></header><main>';
     h += '<button class="card pad tap" data-a="setPage" data-v="profile" style="display:flex;align-items:center;gap:14px">' + avatar(true) + '<span style="flex:1"><b style="font-size:19px">' + esc(S.me.name || 'Add your name') + '</b><div class="note">' + esc([S.me.desig, S.me.emp].filter(Boolean).join(' · ') || 'Tap to set up your profile') + '</div></span><span class="chev">›</span></button>';
-    const groups = [['Account', ['profile', 'pdf']], ['Work', ['stores', 'fill']], ['Data', ['cloud', 'data']], ['App', ['security', 'app']]];
+    const groups = [['Account', ['profile', 'pdf']], ['Work', ['stores', 'fill', 'cuims']], ['Data', ['cloud', 'data']], ['App', ['security', 'app']]];
     groups.forEach(([g, keys]) => {
       h += '<div class="sect">' + g + '</div><div class="card" style="overflow:hidden">';
       keys.forEach(k => { const p = SETPAGES.find(x => x[0] === k);
@@ -573,6 +567,8 @@ function vSet() {
   }
   const P0 = SETPAGES.find(x => x[0] === pg);
   h += '<header class="top"><div><button class="btn sm ghost" data-a="setBack">‹ Settings</button><h1 style="margin-top:10px">' + P0[1] + '</h1></div></header><main>';
+  if (ui.locked) h += '<button class="banner tap" data-a="lockTap" style="border:0;background:var(--goldBg);color:var(--goldInk)"><b>🔒 View only.</b> Tap to unlock with fingerprint to make changes.</button>';
+  h += '<fieldset ' + (ui.locked ? 'disabled ' : '') + 'style="border:0;padding:0;margin:0;min-width:0;display:flex;flex-direction:column;gap:16px">';
   if (pg === 'profile') {
     h += '<div class="card pad col" style="align-items:center;text-align:center">' + avatar(true) + '<div class="grid2" style="width:100%"><button class="btn sm" data-a="photo">Change photo</button><button class="btn sm ghost" data-a="photoDel"' + (S.me.photo ? '' : ' disabled') + '>Remove photo</button></div></div>';
     h += '<div class="card pad col"><h3>My details</h3><div class="note">Entries made through the app get these. Also printed on PDFs.</div>' +
@@ -580,12 +576,23 @@ function vSet() {
       '<div class="grid2"><label class="f">Emp code<input type="text" data-set="me.emp" value="' + esc(S.me.emp) + '" autocapitalize="characters"></label><label class="f">Designation<input type="text" data-set="me.desig" value="' + esc(S.me.desig) + '"></label></div>' +
       '<label class="f">"Built by" name in the top bar<input type="text" data-set="me.builder" value="' + esc(S.me.builder || '') + '" placeholder="' + esc(S.me.name || 'Your name') + '"></label></div>';
   }
+  if (pg === 'cuims') {
+    h += '<div class="card pad col"><h3>Two CUIMS logins</h3><div class="note">Issue CUIMS uses your emp ID to fill entries. Manager CUIMS has its own separate login for the live stock report.' + (INFO.mgrSeparate === false ? ' <b>Your phone\'s WebView is too old for separate logins; both share one login until Android System WebView is updated.</b>' : '') + '</div>' +
+      '<label class="f">Issue page (opens after login)<input type="text" data-url="emp" value="' + esc(ui.urlEmp != null ? ui.urlEmp : INFO.urlEmp || 'https://staff.cuchd.in/frmStoreIssueReceiveLC.aspx') + '"></label>' +
+      '<label class="f">Manager page: live stock report<input type="text" data-url="mgr" value="' + esc(ui.urlMgr != null ? ui.urlMgr : INFO.urlMgr || 'https://staff.cuchd.in/frmItemStatementLC.aspx') + '"></label>' +
+      '<button class="btn main" data-a="saveUrls">Save pages</button><div class="note">After every login, the app goes straight to these pages. No extra clicks.</div></div>';
+    h += '<div class="card pad col"><h3>Open</h3><div class="grid2"><button class="btn" data-a="openSite" type="button">Issue CUIMS</button><button class="btn" data-a="openMgr" type="button">Manager CUIMS</button></div></div>';
+    h += '<div class="card pad col"><h3>Desktop view and zoom</h3><div class="note">CUIMS always opens in desktop view. Your zoom level is remembered after reloads. Pinch to set it once.</div><button class="btn" data-a="resetZoom">Reset zoom to default</button></div>';
+  }
   if (pg === 'pdf') {
     h += '<div class="card pad col"><label class="f">Store name (PDF title)<input type="text" data-set="me.storeName" value="' + esc(S.me.storeName) + '"></label></div>';
   h += '<div class="card pad col"><h3>Manager signature on PDFs</h3><label class="chk"><input type="checkbox" data-a="mgrToggle"' + (S.mgr.on ? ' checked' : '') + '> Add manager signature line</label>' +
     (S.mgr.on ? '<div class="grid2"><label class="f">Manager name<input type="text" data-set="mgr.name" value="' + esc(S.mgr.name) + '"></label><label class="f">Designation<input type="text" data-set="mgr.desig" value="' + esc(S.mgr.desig) + '"></label></div>' : '') + '</div>';
   }
   if (pg === 'stores') {
+    const allSt = [...new Set([...(S.storeOrder || []), ...Object.keys(S.stores), ...S.lines.map(l => l.store)])].sort(byStore);
+    h += '<div class="card"><div class="pad col" style="gap:4px"><h3>My store order</h3><div class="note">Used everywhere when sort is "My order". Move stores up or down.</div></div>' +
+      allSt.map((st, i) => '<div class="line row" style="flex-direction:row"><b style="flex:1">' + (i + 1) + '. ' + esc(st) + '</b><button class="xbtn" data-a="moveStore" data-v="' + esc(st) + '" data-d="-1"' + (i ? '' : ' disabled') + ' aria-label="Move up">↑</button><button class="xbtn" data-a="moveStore" data-v="' + esc(st) + '" data-d="1"' + (i < allSt.length - 1 ? '' : ' disabled') + ' aria-label="Move down">↓</button></div>').join('') + '</div>';
   const stores = Object.keys(S.stores).sort();
   h += '<div class="card"><div class="pad col" style="gap:4px"><h3>Stores and receivers</h3><div class="note">Store = exact CUIMS Project Area. Receiver = 6 digits; change anytime. ' + (S.areas.length ? S.areas.length + ' Project Areas known from CUIMS.' : 'Open CUIMS once to load the Project Area list.') + '</div></div>';
   stores.forEach(s => {
@@ -621,7 +628,7 @@ function vSet() {
     '<div class="note">Screens update by themselves from GitHub. If a new screen version misbehaves, switch to the built-in version.</div>' +
     '<div class="seg"><button data-a="mode" data-v="online" class="' + (INFO.mode !== 'bundled' ? 'on' : '') + '">Latest online</button><button data-a="mode" data-v="bundled" class="' + (INFO.mode === 'bundled' ? 'on' : '') + '">Built-in (rollback)</button></div></div>';
   }
-  return h + '</main>';
+  return h + '</fieldset></main>';
 }
 
 /* ---------------- exports ---------------- */
@@ -670,67 +677,117 @@ function template() {
 }
 
 /* ---------------- PDFs ---------------- */
+let LOGO = null;
+(function loadLogo() { try { const im = new Image(); im.onload = () => { try { const c = document.createElement('canvas'); c.width = c.height = 128; c.getContext('2d').drawImage(im, 0, 0, 128, 128); LOGO = c.toDataURL('image/png'); } catch (e) {} }; im.src = 'icon.png'; } catch (e) {} })();
 function pdfDoc(landscape) {
   if (!window.jspdf) { toast('PDF tools not loaded yet. Check internet and try again.'); return null; }
   return new window.jspdf.jsPDF({ orientation: landscape ? 'landscape' : 'portrait', unit: 'mm', format: 'a4' });
 }
-const INK = [28, 25, 23];
-function pdfHead(doc, title, sub) {
-  doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.setTextColor(...INK); doc.text(title, 14, 15);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(110); doc.text(sub, 14, 21);
+const NAVY = [15, 23, 42], GOLD = [201, 162, 75], INK = [20, 22, 26];
+function pdfHead(doc, title, sub, chips) {
+  const W = doc.internal.pageSize.getWidth();
+  doc.setFillColor(...NAVY); doc.rect(0, 0, W, 26, 'F');
+  doc.setFillColor(...GOLD); doc.rect(0, 26, W, 1.2, 'F');
+  let x = 12;
+  if (LOGO) { try { doc.addImage(LOGO, 'PNG', 12, 5, 16, 16); x = 32; } catch (e) {} }
+  doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(15); doc.text(title, x, 12.5);
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(201, 206, 214); doc.text(sub, x, 19);
+  doc.setTextColor(...GOLD); doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.text('JV STOCK ISSUE', W - 12, 12.5, { align: 'right' });
+  doc.setFont('helvetica', 'normal'); doc.setTextColor(201, 206, 214); doc.text('Built by ' + (S.me.builder || S.me.name || 'JV'), W - 12, 19, { align: 'right' });
+  let cx = 12; const cy = 32;
+  doc.setFontSize(8.5);
+  (chips || []).forEach(([k, v]) => {
+    const t = k + '  ' + v; const w = doc.getTextWidth(t) + 8;
+    doc.setFillColor(247, 239, 217); doc.roundedRect(cx, cy, w, 7, 3.5, 3.5, 'F');
+    doc.setTextColor(138, 106, 31); doc.setFont('helvetica', 'bold'); doc.text(k, cx + 4, cy + 4.8);
+    doc.setTextColor(...INK); doc.setFont('helvetica', 'normal'); doc.text(String(v), cx + 4 + doc.getTextWidth(k + '  '), cy + 4.8);
+    cx += w + 3;
+  });
+  return cy + 12;
 }
 function pdfSign(doc) {
   const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight();
-  let y = (doc.lastAutoTable ? doc.lastAutoTable.finalY : 40) + 22;
-  if (y > H - 30) { doc.addPage(); y = 30; }
-  doc.setFontSize(9); doc.setTextColor(...INK);
-  const me = (S.me.name || '__________') + (S.me.emp ? ' (' + S.me.emp + ')' : '') + (S.me.desig ? ', ' + S.me.desig : '');
-  doc.line(14, y, 90, y); doc.text('Prepared & checked by', 14, y + 5); doc.text(me, 14, y + 10);
-  if (S.mgr.on) { doc.line(W - 90, y, W - 14, y); doc.text('Manager', W - 90, y + 5); doc.text((S.mgr.name || '') + (S.mgr.desig ? ', ' + S.mgr.desig : ''), W - 90, y + 10); }
+  let y = (doc.lastAutoTable ? doc.lastAutoTable.finalY : 40) + 14;
+  if (y > H - 40) { doc.addPage(); y = 24; }
+  const box = (x, label, name, sub) => {
+    doc.setDrawColor(232, 229, 223); doc.setFillColor(250, 249, 246); doc.roundedRect(x, y, 80, 28, 3, 3, 'FD');
+    doc.setFontSize(8); doc.setTextColor(138, 106, 31); doc.setFont('helvetica', 'bold'); doc.text(label.toUpperCase(), x + 5, y + 6);
+    doc.setDrawColor(180); doc.line(x + 5, y + 17, x + 75, y + 17);
+    doc.setTextColor(...INK); doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.text(name || ' ', x + 5, y + 22.5);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(107, 111, 118); doc.text(sub || ' ', x + 5, y + 26.2);
+  };
+  box(12, 'Prepared & checked by', S.me.name || '', [S.me.emp, S.me.desig].filter(Boolean).join(' · '));
+  if (S.mgr.on) box(W - 92, 'Manager', S.mgr.name || '', S.mgr.desig || '');
 }
 function pdfFoot(doc, label) {
   const n = doc.getNumberOfPages(), W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight();
-  for (let i = 1; i <= n; i++) { doc.setPage(i); doc.setFontSize(7.5); doc.setTextColor(120); doc.text('JV Stock Issue · ' + label + ' · generated ' + fmtDT(new Date().toISOString()), 14, H - 7); doc.text('Page ' + i + ' of ' + n, W - 14, H - 7, { align: 'right' }); }
+  for (let i = 1; i <= n; i++) {
+    doc.setPage(i); doc.setDrawColor(...GOLD); doc.setLineWidth(0.4); doc.line(12, H - 11, W - 12, H - 11);
+    doc.setFontSize(7.5); doc.setTextColor(107, 111, 118);
+    doc.text('JV Stock Issue · ' + label + ' · ' + (S.me.storeName || '') + ' · generated ' + fmtDT(new Date().toISOString()), 12, H - 6.5);
+    doc.text('Page ' + i + ' of ' + n, W - 12, H - 6.5, { align: 'right' });
+  }
 }
 function pdfSave(doc, name) { saveBlobB64(doc.output('datauristring').split(',')[1], name, 'application/pdf'); }
-const TH = { fillColor: INK, textColor: 255, fontStyle: 'bold' };
+const TSTYLE = { headStyles: { fillColor: NAVY, textColor: 255, fontStyle: 'bold', fontSize: 8.5, cellPadding: 2.4 }, styles: { fontSize: 8.5, cellPadding: 2.2, lineColor: [232, 229, 223], lineWidth: 0.2, textColor: INK, valign: 'middle' }, alternateRowStyles: { fillColor: [250, 249, 246] }, margin: { left: 12, right: 12 } };
+function issueGroups(list) {
+  const G = new Map();
+  list.forEach(e => {
+    const reqs = [...new Set(e.items.map(i => i.req).filter(Boolean))];
+    const keys = reqs.length ? reqs : (e.reqs ? e.reqs.split(/\s*,\s*/).filter(Boolean) : ['—' + e.slip]);
+    keys.forEach(k => {
+      if (!G.has(k)) G.set(k, { req: k.startsWith('—') ? '' : k, store: e.store, to: new Set(), slips: [], items: [], remarks: new Set(), by: new Set(), date: entryDate(e) });
+      const g = G.get(k);
+      g.to.add('GA' + e.rcv + (e.rname ? ' ' + e.rname : ''));
+      g.slips.push({ slip: e.slip, serial: e.serial || '', time: entryTime(e) });
+      e.items.filter(i => !reqs.length || i.req === k).forEach(i => g.items.push(Object.assign({ slip: e.slip }, i)));
+      if (e.remarks) g.remarks.add(e.remarks); if (e.kind === 'manual') g.remarks.add('Manual');
+      if ((e.by || {}).name) g.by.add(e.by.name + (e.by.emp ? ' (' + e.by.emp + ')' : ''));
+    });
+  });
+  return [...G.values()].sort((a, b) => byStore(a.store, b.store) || a.req.localeCompare(b.req, undefined, { numeric: true }));
+}
 function pdfIssue() {
-  const d = ui.reg.date, list = S.entries.filter(e => entryDate(e) === d).sort((a, b) => entryTime(a).localeCompare(entryTime(b)));
+  const d = ui.reg.date, list = S.entries.filter(e => entryDate(e) === d);
   const doc = pdfDoc(true); if (!doc) return;
+  const G = issueGroups(list);
   const items = list.reduce((s, e) => s + e.items.length, 0);
-  pdfHead(doc, 'Daily Issue Register, ' + (S.me.storeName || 'Store'), 'Date: ' + fmtLong(d) + '   |   Entries: ' + list.length + '   |   Items: ' + items + '   |   Issue · Department · Offline · HOSTEL MESS (GA) · Maintenance No');
-  doc.autoTable({ startY: 26, headStyles: TH, styles: { fontSize: 8, cellPadding: 1.8 }, alternateRowStyles: { fillColor: [250, 250, 249] },
-    head: [['#', 'Slip No', 'Request No', 'Store', 'Issued to', 'Date & time', 'Serial No', 'Items', 'Remarks', 'Entered by']],
-    body: list.map((e, i) => [i + 1, e.slip, e.reqs || [...new Set(e.items.map(x => x.req).filter(Boolean))].join(', '), e.store, 'GA' + e.rcv + (e.rname ? '\n' + e.rname : ''), fmtShort(entryDate(e)) + ' ' + entryTime(e), e.serial || '________', e.items.length, e.remarks || (e.kind === 'manual' ? 'Manual' : '–'), ((e.by || {}).name || '') + ((e.by || {}).emp ? '\n' + e.by.emp : '')]) });
-  if (ui.reg.items) list.forEach(e => {
-    doc.autoTable({ startY: doc.lastAutoTable.finalY + 6, headStyles: { fillColor: [68, 64, 60] }, styles: { fontSize: 8, cellPadding: 1.5 }, margin: { left: 14, right: 14 },
-      head: [[{ content: 'Slip ' + e.slip + '  ·  ' + e.store + '  ·  GA' + e.rcv + '  ·  Serial ' + (e.serial || '____'), colSpan: 6 }], ['S.No', 'Item code', 'Item', 'UOM', 'Qty', 'Item remarks']],
-      body: e.items.map((x, i) => [i + 1, x.code, x.name || itemName(x.code), x.uom || itemUom(x.code), num(x.qty), x.remark || '–']) });
+  const y0 = pdfHead(doc, 'Daily Issue Register', (S.me.storeName || 'Store') + ' · Issue · Department · Offline · HOSTEL MESS (GA)', [['Date', fmtLong(d)], ['Requests', G.length], ['Slips', list.length], ['Items', items]]);
+  doc.autoTable(Object.assign({}, TSTYLE, { startY: y0,
+    head: [['#', 'Request No', 'Store', 'Issued to', 'Slip No', 'Serial No', 'Time', 'Items', 'Remarks', 'Entered by']],
+    body: G.map((g, i) => [i + 1, g.req || '–', g.store, [...g.to].join('\n'), g.slips.map(x => x.slip).join('\n'), g.slips.map(x => x.serial || '______').join('\n'), g.slips.map(x => x.time).join('\n'), g.items.length, [...g.remarks].join(', ') || '–', [...g.by].join('\n')]),
+    columnStyles: { 0: { cellWidth: 8, halign: 'center' }, 1: { fontStyle: 'bold' }, 2: { fontStyle: 'bold' }, 4: { textColor: [30, 58, 138], fontStyle: 'bold' }, 5: { textColor: [11, 94, 61], fontStyle: 'bold' }, 7: { halign: 'center' } } }));
+  if (ui.reg.items) G.forEach(g => {
+    doc.autoTable(Object.assign({}, TSTYLE, { startY: doc.lastAutoTable.finalY + 6, headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: 'bold', fontSize: 8.5 },
+      head: [[{ content: 'Request ' + (g.req || '–') + '   ·   ' + g.store + '   ·   ' + [...g.to].join(', ') + '   ·   Slips ' + g.slips.map(x => x.slip + (x.serial ? ' #' + x.serial : '')).join(', '), colSpan: 7 }], ['S.No', 'Slip No', 'Item code', 'Item', 'UOM', 'Qty', 'Item remarks']],
+      body: g.items.map((x, i) => [i + 1, x.slip, x.code, x.name || itemName(x.code), x.uom || itemUom(x.code), num(x.qty), x.remark || '–']) }));
   });
   pdfSign(doc); pdfFoot(doc, 'Issue Register'); pdfSave(doc, 'Issue-Register-' + d + '.pdf');
 }
 function pdfReturn() {
-  const d = ui.reg.date, list = S.returns.filter(x => x.date === d).sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+  const d = ui.reg.date, list = S.returns.filter(x => x.date === d).sort((a, b) => byStore(a.store, b.store) || (a.time || '').localeCompare(b.time || ''));
   const doc = pdfDoc(false); if (!doc) return;
   const items = list.reduce((s, r) => s + r.items.length, 0);
-  pdfHead(doc, 'Daily Return Register, ' + (S.me.storeName || 'Store'), 'Date: ' + fmtLong(d) + '   |   Returns: ' + list.length + '   |   Items: ' + items);
-  doc.setFontSize(8); doc.setTextColor(110); doc.text('Same for every return: Return · Department · HOSTEL MESS (GA) · Maintenance No · Issue Mode Normal · Against Issue No 1111 (back-date declaration).', 14, 26, { maxWidth: 182 });
-  doc.autoTable({ startY: 31, headStyles: TH, styles: { fontSize: 8, cellPadding: 1.8 }, alternateRowStyles: { fillColor: [250, 250, 249] },
-    head: [['#', 'Return No', 'Store', 'Returned by', 'Date & time', 'Against', 'Serial No', 'Items', 'Remarks', 'Entered by']],
-    body: list.map((r, i) => [i + 1, r.no, r.store, 'GA' + r.by + (r.byName ? '\n' + r.byName : ''), fmtShort(r.date) + ' ' + (r.time || ''), r.against, r.serial || '________', r.items.length, r.remarks || '–', ((r.enteredBy || {}).name || '') + ((r.enteredBy || {}).emp ? '\n' + r.enteredBy.emp : '')]) });
+  const y0 = pdfHead(doc, 'Daily Return Register', (S.me.storeName || 'Store') + ' · Return · Department · Against Issue No 1111', [['Date', fmtLong(d)], ['Returns', list.length], ['Items', items]]);
+  doc.autoTable(Object.assign({}, TSTYLE, { startY: y0,
+    head: [['#', 'Return No', 'Store', 'Returned by', 'Date & time', 'Against', 'Serial No', 'Items', 'Entered by']],
+    body: list.map((r, i) => [i + 1, r.no, r.store, 'GA' + r.by + (r.byName ? '\n' + r.byName : ''), fmtShort(r.date) + ' ' + (r.time || ''), r.against, r.serial || '______', r.items.length, ((r.enteredBy || {}).name || '') + ((r.enteredBy || {}).emp ? '\n' + r.enteredBy.emp : '')]),
+    columnStyles: { 0: { cellWidth: 8, halign: 'center' }, 1: { fontStyle: 'bold' }, 2: { fontStyle: 'bold' }, 6: { textColor: [11, 94, 61], fontStyle: 'bold' }, 7: { halign: 'center' } } }));
   list.forEach(r => {
-    doc.autoTable({ startY: doc.lastAutoTable.finalY + 6, headStyles: { fillColor: [68, 64, 60] }, styles: { fontSize: 8, cellPadding: 1.5 },
-      head: [[{ content: r.no + '  ·  ' + r.store + '  ·  Returned by GA' + r.by + '  ·  Against ' + r.against + '  ·  Serial ' + (r.serial || '____'), colSpan: 6 }], ['S.No', 'Item code', 'Item', 'UOM', 'Qty', 'Item remarks']],
-      body: r.items.map((x, i) => [i + 1, x.code, x.name || itemName(x.code), x.uom || itemUom(x.code), num(x.qty), x.remark || '–']) });
+    doc.autoTable(Object.assign({}, TSTYLE, { startY: doc.lastAutoTable.finalY + 6, headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: 'bold', fontSize: 8.5 },
+      head: [[{ content: r.no + '   ·   ' + r.store + '   ·   Returned by GA' + r.by + '   ·   Serial ' + (r.serial || '____') + (r.remarks ? '   ·   ' + r.remarks : ''), colSpan: 6 }], ['S.No', 'Item code', 'Item', 'UOM', 'Qty', 'Item remarks']],
+      body: r.items.map((x, i) => [i + 1, x.code, x.name || itemName(x.code), x.uom || itemUom(x.code), num(x.qty), x.remark || '–']) }));
   });
   pdfSign(doc); pdfFoot(doc, 'Return Register'); pdfSave(doc, 'Return-Register-' + d + '.pdf');
 }
 function pdfPending() {
   const rows = rowsPending(); const doc = pdfDoc(true); if (!doc) return;
-  pdfHead(doc, 'Pending report, ' + (S.me.storeName || 'Store'), fmtLong(today()) + '   |   ' + rows.length + ' articles pending');
-  doc.autoTable({ startY: 26, headStyles: TH, styles: { fontSize: 8, cellPadding: 1.8 }, alternateRowStyles: { fillColor: [250, 250, 249] },
+  const stores = new Set(rows.map(r => r.Store)).size;
+  const y0 = pdfHead(doc, 'Pending Report', (S.me.storeName || 'Store') + ' · articles waiting for stock', [['Date', fmtLong(today())], ['Stores', stores], ['Articles', rows.length]]);
+  doc.autoTable(Object.assign({}, TSTYLE, { startY: y0,
     head: [['Store', 'Request No', 'Item code', 'Item', 'Qty', 'UOM', 'Requested on', 'Days', 'Earlier slips']],
-    body: rows.map(r => [r.Store, r['Request No'], r['Item code'], r.Item, r.Qty, r.UOM, r['Requested on'], r['Days pending'], r['Earlier slips']]) });
+    body: rows.sort((a, b) => byStore(a.Store, b.Store)).map(r => [r.Store, r['Request No'], r['Item code'], r.Item, r.Qty, r.UOM, r['Requested on'], r['Days pending'], r['Earlier slips']]),
+    columnStyles: { 0: { fontStyle: 'bold' }, 7: { halign: 'center', textColor: [142, 27, 42], fontStyle: 'bold' } } }));
   pdfSign(doc); pdfFoot(doc, 'Pending'); pdfSave(doc, 'Pending-' + today() + '.pdf');
 }
 
@@ -757,6 +814,21 @@ async function loadBackups() {
   catch (e) { ui.sheet.err = 'Could not load backups: ' + e.message + '. If you just updated Code.gs, deploy it as a New version.'; }
   ui.sheet.loading = false; renderSheet();
 }
+function shCrop() {
+  const c = ui.sheet, V = 280, base = Math.max(V / c.img.width, V / c.img.height) * c.zoom;
+  const dw = c.img.width * base, dh = c.img.height * base;
+  return '<div class="row"><h2>Crop photo</h2><button class="btn sm ghost" data-a="closeSheet">Close</button></div>' +
+    '<div class="note">Drag to move. Use the slider to zoom.</div>' +
+    '<div id="cropBox" style="position:relative;width:280px;height:280px;margin:0 auto;overflow:hidden;border-radius:20px;background:#0F172A;touch-action:none">' +
+    '<img src="' + c.src + '" draggable="false" style="position:absolute;left:' + ((V - dw) / 2 + c.x) + 'px;top:' + ((V - dh) / 2 + c.y) + 'px;width:' + dw + 'px;height:' + dh + 'px;max-width:none;user-select:none;pointer-events:none">' +
+    '<div style="position:absolute;inset:0;border-radius:50%;box-shadow:0 0 0 400px rgba(15,23,42,.55);border:2px solid #C9A24B;pointer-events:none"></div></div>' +
+    '<label class="f">Zoom<input type="range" min="1" max="4" step="0.01" value="' + c.zoom + '" data-crop="zoom" style="min-height:40px"></label>' +
+    '<button class="btn main full" data-a="cropSave">Save photo</button>';
+}
+let cropDrag = null;
+document.addEventListener('pointerdown', e => { const b = e.target.closest && e.target.closest('#cropBox'); if (!b || !ui.sheet || ui.sheet.kind !== 'crop') return; cropDrag = { x: e.clientX, y: e.clientY, ox: ui.sheet.x, oy: ui.sheet.y }; b.setPointerCapture && b.setPointerCapture(e.pointerId); });
+document.addEventListener('pointermove', e => { if (!cropDrag) return; ui.sheet.x = cropDrag.ox + e.clientX - cropDrag.x; ui.sheet.y = cropDrag.oy + e.clientY - cropDrag.y; const im = document.querySelector('#cropBox img'); if (im) { const V = 280, c = ui.sheet, base = Math.max(V / c.img.width, V / c.img.height) * c.zoom; im.style.left = ((V - c.img.width * base) / 2 + c.x) + 'px'; im.style.top = ((V - c.img.height * base) / 2 + c.y) + 'px'; } });
+document.addEventListener('pointerup', () => { cropDrag = null; });
 function shBackups() {
   const s = ui.sheet;
   let h = '<div class="row"><h2>Cloud backups</h2><button class="btn sm ghost" data-a="closeSheet">Close</button></div>';
@@ -862,12 +934,14 @@ function renderSheet() {
   const el = document.getElementById('sheet');
   if (!ui.sheet) { el.innerHTML = ''; return; }
   const k = ui.sheet.kind;
-  const body = k === 'backups' ? shBackups() : k === 'start' ? shStart() : k === 'upload' ? shUpload() : k === 'entry' ? shEntry() : k === 'return' ? shReturn() : k === 'editReq' ? shEditReq() : k === 'bulk' ? shBulk() : k === 'mark' ? shMark() : '';
+  const body = k === 'crop' ? shCrop() : k === 'backups' ? shBackups() : k === 'start' ? shStart() : k === 'upload' ? shUpload() : k === 'entry' ? shEntry() : k === 'return' ? shReturn() : k === 'editReq' ? shEditReq() : k === 'bulk' ? shBulk() : k === 'mark' ? shMark() : '';
   const sc = el.querySelector('.sheet') ? el.querySelector('.sheet').scrollTop : 0;
   el.innerHTML = '<div class="sheetbg" data-a="bgClose"><div class="sheet" role="dialog" aria-modal="true">' + body + '</div></div>';
   el.querySelector('.sheet').scrollTop = sc;
 }
 function sortSel(k, opts) { return '<select data-sort="' + k + '" style="width:auto;min-height:38px;font-size:14px;padding:0 8px">' + opts.map(([v, l]) => '<option value="' + v + '"' + (ui.sort[k] === v ? ' selected' : '') + '>Sort: ' + l + '</option>').join('') + '</select>'; }
+function storeRank(st) { const o = S.storeOrder || []; const i = o.indexOf(st); return i < 0 ? 9999 : i; }
+function byStore(a, b) { return storeRank(a) - storeRank(b) || a.localeCompare(b); }
 function oldestOf(L) { return L.reduce((m, l) => l.date < m ? l.date : m, '9999'); }
 function bulkList() {
   const PL = plan();
@@ -908,6 +982,17 @@ function shEditReq() {
   return h;
 }
 
+/* ---------------- lock ---------------- */
+const GUARDED = new Set(['upload', 'bulkEdit', 'bulkSave', 'dropReq', 'dropStore', 'editReq', 'saveReq', 'markDone', 'markSave', 'newManual', 'saveEntry', 'delEntry', 'newReturn', 'saveReturn', 'delReturn',
+  'rmStore', 'addStore', 'wipe', 'restore', 'bkRestore', 'bkDel', 'bkKeep', 'bkSave', 'bkNoteSave', 'photo', 'photoDel', 'mode', 'lockToggle', 'syncAuto', 'mgrToggle', 'moveStore', 'saveUrls', 'resetZoom', 'hold', 'cropSave']);
+let pendingAuth = null;
+function askUnlock(after) {
+  pendingAuth = after || null;
+  if (N && N.authenticate) N.authenticate(); else window.jvAuth(confirm('Unlock editing?'));
+}
+window.jvAuth = ok => { if (ok) { ui.locked = false; render(); renderSheet(); toast('Unlocked. Editing is on.'); const f = pendingAuth; pendingAuth = null; if (f) f(); } else toast('Still locked.'); };
+window.jvRelock = () => { if (!ui.locked) { ui.locked = true; render(); renderSheet(); } };
+
 /* ---------------- actions ---------------- */
 const later = fn => setTimeout(fn, 0);
 function focusKey(el) { if (!el) return null; for (const a of ['data-in', 'data-f', 'data-it', 'data-set', 'data-store-rcv', 'data-store-name']) if (el.hasAttribute && el.hasAttribute(a)) return [a, el.getAttribute(a), el.selectionStart]; return null; }
@@ -919,6 +1004,8 @@ function cleanItems(items) { return items.map(i => { fillItemMeta(i); return { c
 document.addEventListener('click', async ev => {
   const t = ev.target.closest('[data-a]'); if (!t) return;
   const a = t.dataset.a, v = t.dataset.v;
+  if (a === 'lockTap') { if (ui.locked) askUnlock(); else { ui.locked = true; render(); renderSheet(); toast('Locked.'); } return; }
+  if (ui.locked && GUARDED.has(a)) { ev.preventDefault(); if (t.type === 'checkbox') t.checked = !t.checked; askUnlock(); return; }
   if (a === 'bgClose') { if (ev.target === t) { ui.sheet = null; renderSheet(); } return; }
   if (t.type === 'checkbox' && !['hold', 'queueToggle', 'regItems', 'mgrToggle', 'syncAuto', 'lockToggle', 'markPick', 'stOn'].includes(a)) return;
   switch (a) {
@@ -978,6 +1065,17 @@ document.addEventListener('click', async ev => {
     case 'dropStore': { const n = S.lines.filter(l => isPending(l) && l.store === v).length;
       if (confirm('Remove all ' + n + ' pending articles of ' + v + '? Issued records stay. (You can restore from a cloud backup if needed.)')) { S.lines.forEach(l => { if (isPending(l) && l.store === v) l.status = 'dropped'; }); save(); render(); toast(v + ' removed from Pending.'); } break; }
     case 'photo': document.getElementById('photoIn').click(); break;
+    case 'openMgr': if (N && N.openMgr) N.openMgr(); else toast('Update the app (Settings → App and updates) to use Manager CUIMS.'); break;
+    case 'saveUrls': { const e = ui.urlEmp != null ? ui.urlEmp : INFO.urlEmp, m = ui.urlMgr != null ? ui.urlMgr : INFO.urlMgr;
+      if (N && N.setUrls) { N.setUrls(e || '', m || ''); INFO.urlEmp = e; INFO.urlMgr = m; toast('Pages saved.'); } else toast('Update the app to use this.'); break; }
+    case 'resetZoom': if (N && N.resetZoom) { N.resetZoom(); toast('Zoom reset. Reopen CUIMS.'); } break;
+    case 'moveStore': { const allSt = [...new Set([...(S.storeOrder || []), ...Object.keys(S.stores), ...S.lines.map(l => l.store)])].sort(byStore); const i = allSt.indexOf(v), j = i + (+t.dataset.d);
+      if (j < 0 || j >= allSt.length) break; [allSt[i], allSt[j]] = [allSt[j], allSt[i]]; S.storeOrder = allSt; save(); render(); break; }
+    case 'cropSave': { const c = ui.sheet; const out = document.createElement('canvas'); out.width = out.height = 320; const g = out.getContext('2d');
+      const img = c.img; const V = 280; const base = Math.max(V / img.width, V / img.height) * c.zoom;
+      const dw = img.width * base, dh = img.height * base; const dx = (V - dw) / 2 + c.x, dy = (V - dh) / 2 + c.y; const k = 320 / V;
+      g.fillStyle = '#fff'; g.fillRect(0, 0, 320, 320); g.drawImage(img, dx * k, dy * k, dw * k, dh * k);
+      S.me.photo = out.toDataURL('image/jpeg', 0.88); save(); ui.sheet = null; renderSheet(); render(); toast('Photo updated.'); break; }
     case 'photoDel': delete S.me.photo; save(); render(); break;
     case 'expPendXlsx': saveWb([['Pending', rowsPending()]], 'Pending-' + today() + '.xlsx'); break;
     case 'closeSheet': ui.sheet = null; renderSheet(); break;
@@ -1064,6 +1162,8 @@ document.addEventListener('input', ev => {
   if (el.dataset.in === 'slip' || el.dataset.in === 'rcv') { const k = focusKey(el); ui.sheet[el.dataset.in] = el.dataset.in === 'slip' ? el.value.trim().toUpperCase() : el.value.replace(/\D/g, ''); renderSheet(); refocus(k); return; }
   if (el.dataset.in === 'q') { const k = focusKey(el); ui.search.q = el.value; render(); refocus(k); return; }
   if (el.dataset.bk) { ui.sheet[el.dataset.bk] = el.value; return; }
+  if (el.dataset.crop) { ui.sheet.zoom = parseFloat(el.value); const im = document.querySelector('#cropBox img'); if (im) { const V = 280, c = ui.sheet, base = Math.max(V / c.img.width, V / c.img.height) * c.zoom, dw = c.img.width * base, dh = c.img.height * base; im.style.width = dw + 'px'; im.style.height = dh + 'px'; im.style.left = ((V - dw) / 2 + c.x) + 'px'; im.style.top = ((V - dh) / 2 + c.y) + 'px'; } return; }
+  if (el.dataset.url) { ui[el.dataset.url === 'emp' ? 'urlEmp' : 'urlMgr'] = el.value.trim(); return; }
   if (el.dataset.stq) { ui.sheet.qty[el.dataset.stq] = el.value; return; }
   if (el.dataset.stadd) { ui.sheet[el.dataset.stadd === 'code' ? 'addCode' : 'addQty'] = el.value; return; }
   if (el.dataset.f) { ui.form[el.dataset.f] = el.value; return; }
@@ -1074,11 +1174,11 @@ document.addEventListener('input', ev => {
 });
 document.addEventListener('change', async ev => {
   const el = ev.target;
+  if (ui.locked && (el.dataset.set || el.dataset.storeRcv || el.dataset.storeName)) { render(); askUnlock(); return; }
   if (el.id === 'photoIn') {
     const f = el.files[0]; el.value = ''; if (!f) return;
     const img = new Image(); const fr = new FileReader();
-    fr.onload = () => { img.onload = () => { const c = document.createElement('canvas'); c.width = c.height = 220; const k = Math.min(img.width, img.height); const g = c.getContext('2d');
-      g.drawImage(img, (img.width - k) / 2, (img.height - k) / 2, k, k, 0, 0, 220, 220); S.me.photo = c.toDataURL('image/jpeg', 0.85); save(); render(); toast('Photo updated.'); }; img.src = fr.result; };
+    fr.onload = () => { img.onload = () => { ui.sheet = { kind: 'crop', img, src: fr.result, zoom: 1, x: 0, y: 0 }; renderSheet(); }; img.src = fr.result; };
     fr.readAsDataURL(f); return;
   }
   if (el.id === 'fileIn') {

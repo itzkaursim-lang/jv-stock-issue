@@ -23,10 +23,12 @@ import android.view.ViewGroup;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.JsResult;
+import android.webkit.URLUtil;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -39,6 +41,9 @@ import androidx.biometric.BiometricManager;
 import androidx.biometric.BiometricPrompt;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
+import androidx.webkit.ProfileStore;
+import androidx.webkit.WebViewCompat;
+import androidx.webkit.WebViewFeature;
 
 import org.json.JSONObject;
 
@@ -54,20 +59,19 @@ import java.nio.charset.StandardCharsets;
 
 public class MainActivity extends AppCompatActivity {
 
-    static final String SITE_ISSUE = "https://staff.cuchd.in/frmStoreIssueReceiveLC.aspx";
+    static final String DEF_ISSUE = "https://staff.cuchd.in/frmStoreIssueReceiveLC.aspx";
+    static final String DEF_MGR = "https://staff.cuchd.in/frmItemStatementLC.aspx";
     static final String ASSET_URL = "file:///android_asset/www/index.html";
+    static final String DESKTOP_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
     FrameLayout root;
-    WebView appView, siteView;
+    WebView appView, siteView, mgrView;
     SharedPreferences prefs;
     File dataFile, jobFile, fillCache;
     ValueCallback<Uri[]> fileCb;
     String lastAlert = "";
-    boolean unlocked = false;
-    long pausedAt = 0;
-    boolean usingBundled = false;
-    long updateDownloadId = -1;
-    boolean dlRegistered = false;
+    boolean unlocked = false, usingBundled = false, mgrSeparate = false, dlRegistered = false;
+    long pausedAt = 0, updateDownloadId = -1;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -79,20 +83,24 @@ public class MainActivity extends AppCompatActivity {
         fillCache = new File(getFilesDir(), "fill.js");
 
         root = new FrameLayout(this);
-        appView = makeView();
-        siteView = makeView();
-        root.addView(siteView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        appView = makeView(null);
+        siteView = makeView(null);
+        mgrView = makeView("manager");
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
+        root.addView(siteView, lp);
+        root.addView(mgrView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         root.addView(appView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         siteView.setVisibility(View.GONE);
+        mgrView.setVisibility(View.GONE);
         setContentView(root);
 
         CookieManager cm = CookieManager.getInstance();
         cm.setAcceptCookie(true);
         cm.setAcceptThirdPartyCookies(siteView, true);
 
-        Bridge bridge = new Bridge();
-        appView.addJavascriptInterface(bridge, "JVS");
-        siteView.addJavascriptInterface(bridge, "JVS");
+        appView.addJavascriptInterface(new Bridge("app"), "JVS");
+        siteView.addJavascriptInterface(new Bridge("emp"), "JVS");
+        mgrView.addJavascriptInterface(new Bridge("mgr"), "JVS");
 
         appView.setWebViewClient(new WebViewClient() {
             @Override
@@ -104,17 +112,11 @@ public class MainActivity extends AppCompatActivity {
             }
             @Override
             public void onReceivedError(WebView v, WebResourceRequest r, WebResourceError e) {
-                if (r.isForMainFrame() && !usingBundled) {
-                    usingBundled = true;
-                    v.loadUrl(ASSET_URL);
-                }
+                if (r.isForMainFrame() && !usingBundled) { usingBundled = true; v.loadUrl(ASSET_URL); }
             }
             @Override
-            public void onReceivedHttpError(WebView v, WebResourceRequest r, android.webkit.WebResourceResponse resp) {
-                if (r.isForMainFrame() && !usingBundled && resp.getStatusCode() >= 400) {
-                    usingBundled = true;
-                    v.loadUrl(ASSET_URL);
-                }
+            public void onReceivedHttpError(WebView v, WebResourceRequest r, WebResourceResponse resp) {
+                if (r.isForMainFrame() && !usingBundled && resp.getStatusCode() >= 400) { usingBundled = true; v.loadUrl(ASSET_URL); }
             }
         });
         appView.setWebChromeClient(new WebChromeClient() {
@@ -139,55 +141,101 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        siteView.setWebViewClient(new WebViewClient() {
-            @Override
-            public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
-                String host = r.getUrl().getHost();
-                if (host != null && host.endsWith("cuchd.in")) return false;
-                openExternal(r.getUrl().toString());
-                return true;
-            }
-            @Override
-            public void onPageFinished(WebView v, String url) {
-                injectFill();
-            }
-        });
-        siteView.setWebChromeClient(new WebChromeClient() {
-            @Override
-            public boolean onJsAlert(WebView v, String url, String msg, JsResult res) {
-                lastAlert = msg == null ? "" : msg;
-                new AlertDialog.Builder(MainActivity.this)
-                        .setTitle("CUIMS says")
-                        .setMessage(lastAlert)
-                        .setCancelable(false)
-                        .setPositiveButton("OK", (d, w) -> {
-                            res.confirm();
-                            v.evaluateJavascript("window.JVFill&&window.JVFill.onAlertClosed&&window.JVFill.onAlertClosed()", null);
-                        })
-                        .show();
-                return true;
-            }
-        });
+        setupSite(siteView, "emp");
+        setupSite(mgrView, "mgr");
 
         fetchFillScript();
         loadApp();
     }
 
-    WebView makeView() {
+    WebView makeView(String profile) {
         WebView w = new WebView(this);
+        if (profile != null) {
+            try {
+                if (WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)) {
+                    ProfileStore.getInstance().getOrCreateProfile(profile);
+                    WebViewCompat.setProfile(w, profile);
+                    mgrSeparate = true;
+                }
+            } catch (Throwable t) { mgrSeparate = false; }
+        }
         WebSettings s = w.getSettings();
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
         s.setDatabaseEnabled(true);
         s.setAllowFileAccess(true);
-        s.setLoadWithOverviewMode(true);
-        s.setUseWideViewPort(true);
         s.setSupportZoom(true);
         s.setBuiltInZoomControls(true);
         s.setDisplayZoomControls(false);
         s.setMediaPlaybackRequiresUserGesture(true);
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
         return w;
+    }
+
+    void setupSite(WebView v, String who) {
+        WebSettings s = v.getSettings();
+        s.setUserAgentString(DESKTOP_UA);
+        s.setUseWideViewPort(true);
+        s.setLoadWithOverviewMode(true);
+        s.setTextZoom(100);
+        s.setLayoutAlgorithm(WebSettings.LayoutAlgorithm.NORMAL);
+        float sc = prefs.getFloat("scale_" + who, 0f);
+        if (sc > 0) v.setInitialScale(Math.round(sc * 100));
+        v.setWebViewClient(new WebViewClient() {
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView wv, WebResourceRequest r) {
+                String host = r.getUrl().getHost();
+                if (host != null && host.endsWith("cuchd.in")) return false;
+                openExternal(r.getUrl().toString());
+                return true;
+            }
+            @Override
+            public void onPageStarted(WebView wv, String url, android.graphics.Bitmap fav) {
+                float sc2 = prefs.getFloat("scale_" + who, 0f);
+                if (sc2 > 0) wv.setInitialScale(Math.round(sc2 * 100));
+            }
+            @Override
+            public void onPageFinished(WebView wv, String url) { injectFill(wv); }
+            @Override
+            public void onScaleChanged(WebView wv, float oldScale, float newScale) {
+                prefs.edit().putFloat("scale_" + who, newScale).apply();
+            }
+        });
+        v.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onJsAlert(WebView wv, String url, String msg, JsResult res) {
+                lastAlert = msg == null ? "" : msg;
+                new AlertDialog.Builder(MainActivity.this)
+                        .setTitle("CUIMS says")
+                        .setMessage(lastAlert)
+                        .setCancelable(false)
+                        .setPositiveButton("OK", (d, w2) -> {
+                            res.confirm();
+                            wv.evaluateJavascript("window.JVFill&&window.JVFill.onAlertClosed&&window.JVFill.onAlertClosed()", null);
+                        })
+                        .show();
+                return true;
+            }
+        });
+        v.setDownloadListener((url, ua, cd, mime, len) -> {
+            try {
+                String name = URLUtil.guessFileName(url, cd, mime);
+                DownloadManager.Request r = new DownloadManager.Request(Uri.parse(url));
+                CookieManager c = CookieManager.getInstance();
+                try {
+                    if ("mgr".equals(who) && mgrSeparate) c = ProfileStore.getInstance().getProfile("manager").getCookieManager();
+                } catch (Throwable ignored) { }
+                String ck = c.getCookie(url);
+                if (ck != null) r.addRequestHeader("Cookie", ck);
+                r.addRequestHeader("User-Agent", DESKTOP_UA);
+                r.setMimeType(mime);
+                r.setTitle(name);
+                r.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+                r.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name);
+                ((DownloadManager) getSystemService(DOWNLOAD_SERVICE)).enqueue(r);
+                toast("Downloading " + name + " to Downloads…");
+            } catch (Exception e) { toast("Download failed: " + e.getMessage()); }
+        });
     }
 
     boolean online() {
@@ -199,23 +247,19 @@ public class MainActivity extends AppCompatActivity {
     }
 
     String mode() { return prefs.getString("mode", "online"); }
+    String url(String who) { return "mgr".equals(who) ? prefs.getString("url_mgr", DEF_MGR) : prefs.getString("url_emp", DEF_ISSUE); }
 
     void loadApp() {
         usingBundled = !"online".equals(mode()) || !online();
-        if (usingBundled) {
-            appView.loadUrl(ASSET_URL);
-        } else {
-            long bucket = System.currentTimeMillis() / 300000L;
-            appView.loadUrl(BuildConfig.PAGES_URL + "index.html?b=" + bucket);
-        }
+        if (usingBundled) appView.loadUrl(ASSET_URL);
+        else appView.loadUrl(BuildConfig.PAGES_URL + "index.html?b=" + (System.currentTimeMillis() / 300000L));
     }
 
     void fetchFillScript() {
         if (!"online".equals(mode())) return;
         new Thread(() -> {
             try {
-                URL u = new URL(BuildConfig.PAGES_URL + "fill.js?t=" + System.currentTimeMillis());
-                HttpURLConnection c = (HttpURLConnection) u.openConnection();
+                HttpURLConnection c = (HttpURLConnection) new URL(BuildConfig.PAGES_URL + "fill.js?t=" + System.currentTimeMillis()).openConnection();
                 c.setConnectTimeout(8000);
                 c.setReadTimeout(8000);
                 if (c.getResponseCode() == 200) {
@@ -234,15 +278,20 @@ public class MainActivity extends AppCompatActivity {
         } catch (Exception e) { return ""; }
     }
 
-    void injectFill() {
+    void injectFill(WebView v) {
         String src = fillSource();
-        if (src.isEmpty()) return;
-        siteView.evaluateJavascript(src, null);
+        if (!src.isEmpty()) v.evaluateJavascript(src, null);
     }
 
-    void showSite(boolean on) {
-        siteView.setVisibility(on ? View.VISIBLE : View.GONE);
-        appView.setVisibility(on ? View.GONE : View.VISIBLE);
+    void show(String which) {
+        siteView.setVisibility("emp".equals(which) ? View.VISIBLE : View.GONE);
+        mgrView.setVisibility("mgr".equals(which) ? View.VISIBLE : View.GONE);
+        appView.setVisibility("app".equals(which) ? View.VISIBLE : View.GONE);
+    }
+
+    void backToApp() {
+        show("app");
+        appView.evaluateJavascript("window.jvOnReturnFromSite&&window.jvOnReturnFromSite()", null);
     }
 
     void openExternal(String u) {
@@ -272,6 +321,20 @@ public class MainActivity extends AppCompatActivity {
 
     void toast(String m) { runOnUiThread(() -> Toast.makeText(this, m, Toast.LENGTH_LONG).show()); }
 
+    void authenticate(Runnable ok, Runnable fail) {
+        int auth = BiometricManager.Authenticators.BIOMETRIC_WEAK | BiometricManager.Authenticators.DEVICE_CREDENTIAL;
+        if (BiometricManager.from(this).canAuthenticate(auth) != BiometricManager.BIOMETRIC_SUCCESS) { ok.run(); return; }
+        BiometricPrompt p = new BiometricPrompt(this, ContextCompat.getMainExecutor(this), new BiometricPrompt.AuthenticationCallback() {
+            @Override public void onAuthenticationSucceeded(@NonNull BiometricPrompt.AuthenticationResult r) { ok.run(); }
+            @Override public void onAuthenticationError(int code, @NonNull CharSequence s) { fail.run(); }
+        });
+        p.authenticate(new BiometricPrompt.PromptInfo.Builder()
+                .setTitle("JV Stock Issue")
+                .setSubtitle("Confirm it's you")
+                .setAllowedAuthenticators(auth)
+                .build());
+    }
+
     @Override
     protected void onActivityResult(int req, int res, Intent data) {
         super.onActivityResult(req, res, data);
@@ -285,11 +348,7 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     public void onBackPressed() {
-        if (siteView.getVisibility() == View.VISIBLE) {
-            showSite(false);
-            appView.evaluateJavascript("window.jvOnReturnFromSite&&window.jvOnReturnFromSite()", null);
-            return;
-        }
+        if (siteView.getVisibility() == View.VISIBLE || mgrView.getVisibility() == View.VISIBLE) { backToApp(); return; }
         appView.evaluateJavascript("(window.jvBack&&window.jvBack())?'1':'0'", v -> {
             if (!"\"1\"".equals(v)) finish();
         });
@@ -305,27 +364,16 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        if (pausedAt > 0 && System.currentTimeMillis() - pausedAt > 120000) {
+            appView.evaluateJavascript("window.jvRelock&&window.jvRelock()", null);
+        }
         if (!prefs.getBoolean("lock", false)) { unlocked = true; root.setVisibility(View.VISIBLE); return; }
         if (unlocked && System.currentTimeMillis() - pausedAt < 60000) return;
         unlocked = false;
         int auth = BiometricManager.Authenticators.BIOMETRIC_WEAK | BiometricManager.Authenticators.DEVICE_CREDENTIAL;
-        if (BiometricManager.from(this).canAuthenticate(auth) != BiometricManager.BIOMETRIC_SUCCESS) {
-            unlocked = true; return;
-        }
+        if (BiometricManager.from(this).canAuthenticate(auth) != BiometricManager.BIOMETRIC_SUCCESS) { unlocked = true; return; }
         root.setVisibility(View.INVISIBLE);
-        BiometricPrompt p = new BiometricPrompt(this, ContextCompat.getMainExecutor(this), new BiometricPrompt.AuthenticationCallback() {
-            @Override public void onAuthenticationSucceeded(@NonNull BiometricPrompt.AuthenticationResult r) {
-                unlocked = true; root.setVisibility(View.VISIBLE);
-            }
-            @Override public void onAuthenticationError(int code, @NonNull CharSequence s) {
-                if (!unlocked) finish();
-            }
-        });
-        p.authenticate(new BiometricPrompt.PromptInfo.Builder()
-                .setTitle("JV Stock Issue")
-                .setSubtitle("Unlock to continue")
-                .setAllowedAuthenticators(auth)
-                .build());
+        authenticate(() -> { unlocked = true; root.setVisibility(View.VISIBLE); }, () -> { if (!unlocked) finish(); });
     }
 
     final BroadcastReceiver dlReceiver = new BroadcastReceiver() {
@@ -343,35 +391,57 @@ public class MainActivity extends AppCompatActivity {
     };
 
     public class Bridge {
+        final String who;
+        Bridge(String w) { who = w; }
+
+        @JavascriptInterface public String who() { return who; }
+        @JavascriptInterface public String targetUrl() { return url(who); }
         @JavascriptInterface public String storeGet() { return readFile(dataFile); }
         @JavascriptInterface public void storeSet(String s) { writeFile(dataFile, s); }
-        @JavascriptInterface public String jobGet() { return readFile(jobFile); }
-        @JavascriptInterface public void jobSet(String s) { writeFile(jobFile, s == null ? "" : s); }
+        @JavascriptInterface public String jobGet() { return "mgr".equals(who) ? "" : readFile(jobFile); }
+        @JavascriptInterface public void jobSet(String s) { if (!"mgr".equals(who)) writeFile(jobFile, s == null ? "" : s); }
 
         @JavascriptInterface public void startJob(String j) {
             writeFile(jobFile, j);
-            runOnUiThread(() -> { showSite(true); siteView.loadUrl(SITE_ISSUE); });
+            runOnUiThread(() -> { show("emp"); siteView.loadUrl(url("emp")); });
         }
         @JavascriptInterface public void openSite() {
             runOnUiThread(() -> {
-                showSite(true);
+                show("emp");
                 String u = siteView.getUrl();
-                if (u == null || !u.contains("cuchd.in")) siteView.loadUrl(SITE_ISSUE);
+                if (u == null || !u.contains("cuchd.in")) siteView.loadUrl(url("emp"));
             });
         }
-        @JavascriptInterface public void siteGo(String url) { runOnUiThread(() -> siteView.loadUrl(url)); }
-        @JavascriptInterface public void showApp() {
+        @JavascriptInterface public void openMgr() {
             runOnUiThread(() -> {
-                showSite(false);
-                appView.evaluateJavascript("window.jvOnReturnFromSite&&window.jvOnReturnFromSite()", null);
+                show("mgr");
+                String u = mgrView.getUrl();
+                if (u == null || !u.contains("cuchd.in")) mgrView.loadUrl(url("mgr"));
             });
         }
+        @JavascriptInterface public void setUrls(String emp, String mgr) {
+            SharedPreferences.Editor e = prefs.edit();
+            if (emp != null && emp.startsWith("https://")) e.putString("url_emp", emp);
+            if (mgr != null && mgr.startsWith("https://")) e.putString("url_mgr", mgr);
+            e.apply();
+        }
+        @JavascriptInterface public void resetZoom() {
+            prefs.edit().remove("scale_emp").remove("scale_mgr").apply();
+            runOnUiThread(() -> { siteView.setInitialScale(0); mgrView.setInitialScale(0); });
+        }
+        @JavascriptInterface public void siteGo(String u) { runOnUiThread(() -> ("mgr".equals(who) ? mgrView : siteView).loadUrl(u)); }
+        @JavascriptInterface public void showApp() { runOnUiThread(MainActivity.this::backToApp); }
         @JavascriptInterface public void siteEvent(String json) {
-            runOnUiThread(() -> appView.evaluateJavascript(
-                    "window.onSiteEvent&&window.onSiteEvent(" + JSONObject.quote(json) + ")", null));
+            runOnUiThread(() -> appView.evaluateJavascript("window.onSiteEvent&&window.onSiteEvent(" + JSONObject.quote(json) + ")", null));
         }
         @JavascriptInterface public String lastAlert() { return lastAlert; }
         @JavascriptInterface public void clearAlert() { lastAlert = ""; }
+
+        @JavascriptInterface public void authenticate() {
+            runOnUiThread(() -> MainActivity.this.authenticate(
+                    () -> appView.evaluateJavascript("window.jvAuth&&window.jvAuth(true)", null),
+                    () -> appView.evaluateJavascript("window.jvAuth&&window.jvAuth(false)", null)));
+        }
 
         @JavascriptInterface public String saveFile(String b64, String name, String mime) {
             try {
@@ -387,7 +457,7 @@ public class MainActivity extends AppCompatActivity {
                     os.write(data);
                     os.close();
                 } else {
-                    File dir = new File(getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS), "");
+                    File dir = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
                     dir.mkdirs();
                     File f = new File(dir, name);
                     FileOutputStream os = new FileOutputStream(f);
@@ -403,7 +473,7 @@ public class MainActivity extends AppCompatActivity {
                             Intent i = new Intent(Intent.ACTION_VIEW);
                             i.setDataAndType(fu, mime);
                             i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                            try { startActivity(i); } catch (Exception e) { toast("No app found to open this file."); }
+                            try { startActivity(i); } catch (Exception e) { MainActivity.this.toast("No app found to open this file."); }
                         })
                         .setNeutralButton("Share", (d, w) -> {
                             Intent i = new Intent(Intent.ACTION_SEND);
@@ -423,7 +493,7 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface public String info() {
             try {
                 JSONObject o = new JSONObject();
-                o.put("native", 1);
+                o.put("native", 2);
                 o.put("version", getPackageManager().getPackageInfo(getPackageName(), 0).versionName);
                 o.put("code", getPackageManager().getPackageInfo(getPackageName(), 0).versionCode);
                 o.put("pages", BuildConfig.PAGES_URL);
@@ -431,6 +501,9 @@ public class MainActivity extends AppCompatActivity {
                 o.put("mode", mode());
                 o.put("bundled", usingBundled);
                 o.put("lock", prefs.getBoolean("lock", false));
+                o.put("urlEmp", url("emp"));
+                o.put("urlMgr", url("mgr"));
+                o.put("mgrSeparate", mgrSeparate);
                 return o.toString();
             } catch (Exception e) { return "{}"; }
         }
@@ -444,10 +517,10 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface public void openUrl(String u) { openExternal(u); }
         @JavascriptInterface public void toast(String m) { MainActivity.this.toast(m); }
 
-        @JavascriptInterface public void installUpdate(String url) {
+        @JavascriptInterface public void installUpdate(String u) {
             runOnUiThread(() -> {
                 if (Build.VERSION.SDK_INT >= 26 && !getPackageManager().canRequestPackageInstalls()) {
-                    toast("Allow 'Install unknown apps' for JV Stock Issue, then tap Update again.");
+                    MainActivity.this.toast("Allow 'Install unknown apps' for JV Stock Issue, then tap Update again.");
                     startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + getPackageName())));
                     return;
                 }
@@ -456,7 +529,7 @@ public class MainActivity extends AppCompatActivity {
                 File f = new File(dir, "jv-stock-issue.apk");
                 if (f.exists()) f.delete();
                 DownloadManager dm = (DownloadManager) getSystemService(DOWNLOAD_SERVICE);
-                DownloadManager.Request r = new DownloadManager.Request(Uri.parse(url));
+                DownloadManager.Request r = new DownloadManager.Request(Uri.parse(u));
                 r.setTitle("JV Stock Issue update");
                 r.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE);
                 r.setDestinationUri(Uri.fromFile(f));
@@ -466,7 +539,7 @@ public class MainActivity extends AppCompatActivity {
                     dlRegistered = true;
                 }
                 updateDownloadId = dm.enqueue(r);
-                toast("Downloading update…");
+                MainActivity.this.toast("Downloading update…");
             });
         }
     }

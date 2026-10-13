@@ -49,7 +49,7 @@
   /* ---------- control bar ---------- */
   var bar = document.createElement('div');
   bar.id = 'jvbar';
-  bar.style.cssText = 'position:absolute;left:0;top:0;z-index:2147483647;background:#fff;color:#1C1917;border:2px solid #1C1917;border-radius:16px;padding:12px 14px;font:16px/1.45 system-ui,sans-serif;box-shadow:0 8px 28px rgba(0,0,0,.28);max-height:60vh;overflow:auto;transform-origin:0 0;box-sizing:border-box';
+  bar.style.cssText = 'position:absolute;left:0;top:0;z-index:2147483647;background:#fff;color:#14161A;border-radius:20px;padding:0;font:16px/1.45 system-ui,sans-serif;box-shadow:0 12px 40px rgba(15,23,42,.35),0 0 0 1px rgba(201,162,75,.45);max-height:62vh;overflow:auto;transform-origin:0 0;box-sizing:border-box';
   document.body.appendChild(bar);
   var mini = false; try { mini = localStorage.getItem('jvBarMini') === '1'; } catch (e) {}
   function place() {
@@ -67,9 +67,10 @@
   if (window.visualViewport) { visualViewport.addEventListener('resize', place); visualViewport.addEventListener('scroll', place); }
   window.addEventListener('scroll', place); window.addEventListener('resize', place);
   setInterval(place, 800);
-  var BTN = 'min-height:46px;padding:0 14px;border-radius:12px;font:600 15px system-ui,sans-serif;cursor:pointer;';
+  var BTN = 'min-height:46px;padding:0 16px;border-radius:999px;font:600 15px system-ui,sans-serif;cursor:pointer;';
+  var WHO = (B.who && B.who()) || 'emp';
   function btn(id, label, kind) {
-    var st = kind === 'main' ? 'background:#1C1917;color:#fff;border:0;' : kind === 'warn' ? 'background:#fff;color:#B91C1C;border:1.5px solid #B91C1C;' : 'background:#fff;color:#1C1917;border:1.5px solid #A8A29E;';
+    var st = kind === 'main' ? 'background:linear-gradient(135deg,#0F172A,#1E293B);color:#fff;border:0;box-shadow:0 2px 8px rgba(15,23,42,.3);' : kind === 'gold' ? 'background:#C9A24B;color:#1B1405;border:0;' : kind === 'warn' ? 'background:#fff;color:#B42335;border:1.5px solid #E8B4BC;' : kind === 'ghost' ? 'background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.25);min-height:38px;padding:0 12px;font-size:13.5px;' : 'background:#fff;color:#0F172A;border:1.5px solid #D9D5CC;';
     return '<button type="button" data-jv="' + id + '" style="' + BTN + st + '">' + label + '</button>';
   }
   function curItem(j) {
@@ -78,54 +79,67 @@
     return null;
   }
   function paint() { paintInner(); place(); }
+  function head(title, sub, right) {
+    return '<div style="background:linear-gradient(135deg,#0F172A 0%,#1E293B 100%);color:#fff;padding:12px 14px;display:flex;align-items:center;gap:12px;border-bottom:2px solid #C9A24B">' +
+      '<span style="width:38px;height:38px;border-radius:11px;background:#C9A24B;color:#0F172A;font:800 15px system-ui;display:flex;align-items:center;justify-content:center;flex-shrink:0">JV</span>' +
+      '<span style="flex:1;min-width:0"><span style="display:block;font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:#C9A24B;font-weight:700">' + esc(title) + '</span><b style="display:block;font-size:16.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + sub + '</b></span>' + (right || '') + '</div>';
+  }
   function paintInner() {
     var j = job();
     var h = '';
     if (mini) {
       var tt = j && j.items ? j.items.filter(function (x) { return !x.skip; }).length : 0;
       var dd = j && j.items ? j.items.filter(function (x) { return !x.skip && inGrid(x.code); }).length : 0;
-      var st = !active(j) ? 'JV' : j.paused ? 'JV ⏸ ' + dd + '/' + tt : 'JV ▶ ' + dd + '/' + tt;
-      bar.innerHTML = '<button type="button" data-jv="expand" style="' + BTN + 'background:' + (active(j) && j.paused ? '#B45309' : '#1C1917') + ';color:#fff;border:0">' + st + ' ▲</button>';
-      bar.style.padding = '4px'; return;
+      var lab = WHO === 'mgr' ? 'JV · Manager' : !active(j) ? 'JV Stock Issue' : (j.paused ? '⏸ ' : '▶ ') + dd + '/' + tt;
+      bar.innerHTML = '<button type="button" data-jv="expand" style="' + BTN + 'background:linear-gradient(135deg,#0F172A,#1E293B);color:#fff;border:2px solid #C9A24B;display:flex;align-items:center;gap:8px"><span style="background:#C9A24B;color:#0F172A;border-radius:7px;padding:1px 6px;font-weight:800;font-size:12px">JV</span>' + esc(lab) + ' ▲</button>';
+      bar.style.borderRadius = '999px'; bar.style.boxShadow = '0 8px 24px rgba(15,23,42,.35)'; return;
     }
-    bar.style.padding = '12px 14px';
+    bar.style.borderRadius = '20px'; bar.style.boxShadow = '0 12px 40px rgba(15,23,42,.35),0 0 0 1px rgba(201,162,75,.45)';
+    var hideBtn = btn('hide', '▼ Hide', 'ghost');
+    var body = 'padding:12px 14px';
+    if (WHO === 'mgr') {
+      bar.innerHTML = head('Manager CUIMS', 'Live stock report', hideBtn) + '<div style="' + body + '"><div style="font-size:14px;color:#6B6F76">Separate login for the manager ID. Download the Item Stock Statement here, then upload it in the app.</div><div style="display:flex;gap:8px;margin-top:10px">' + btn('app', 'Back to app', 'main') + '</div></div>';
+      return;
+    }
     if (!active(j)) {
-      var last = j && j.phase === 'done' ? '<div style="color:#15803D;font-weight:700">Saved: ' + esc(j.slip) + ', Serial ' + esc(j.serial || '') + '</div>' : '';
-      h = '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><div><b>JV Stock Issue</b> ' + btn('hide', '▼ Hide', '') + '<div style="font-size:12px;color:#57534E">' + (last ? '' : 'No entry running. Start one from the app.') + '</div>' + last + '</div>' + btn('app', 'Back to app', 'main') + '</div>';
-      bar.innerHTML = h; return;
+      var last = j && j.phase === 'done' ? '<div style="margin-top:6px;padding:8px 10px;border-radius:12px;background:#E3F4EC;color:#0B5E3D;font-weight:700">✓ Saved ' + esc(j.slip) + ' · Serial ' + esc(j.serial || '') + '</div>' : '';
+      bar.innerHTML = head('JV Stock Issue', isLogin ? 'Please log in' : 'Ready', hideBtn) + '<div style="' + body + '">' + (last || '<div style="font-size:14px;color:#6B6F76">' + (isLogin ? 'Log in once. The app opens your working page by itself.' : 'No entry running. Start one from the app.') + '</div>') + '<div style="display:flex;gap:8px;margin-top:10px">' + btn('app', 'Back to app', 'main') + '</div></div>';
+      return;
     }
     var total = (j.items || []).filter(function (x) { return !x.skip; }).length;
     var done = (j.items || []).filter(function (x) { return !x.skip && inGrid(x.code); }).length;
-    var status = '';
-    if (isLogin) status = 'Logged out. Log in; the entry restarts by itself.';
-    else if (j.paused) status = 'Paused: ' + (j.pauseMsg || '');
+    var status = '', tone = '#14161A', bg = '#F6F5F2';
+    if (isLogin) { status = 'Logged out. Log in; the entry restarts by itself.'; tone = '#8A5A00'; bg = '#FCF1DA'; }
+    else if (j.paused) { status = 'Paused: ' + (j.pauseMsg || ''); tone = '#8A5A00'; bg = '#FCF1DA'; }
     else if (j.phase === 'dup') status = 'Checking Show Transactions for ' + j.slip + '…';
-    else if (j.phase === 'dupfound') status = j.slip + ' already exists on CUIMS (Serial ' + (j.dupSerial || '?') + ').';
+    else if (j.phase === 'dupfound') { status = j.slip + ' already exists on CUIMS (Serial ' + (j.dupSerial || '?') + ').'; tone = '#8E1B2A'; bg = '#FBE6E9'; }
     else if (j.phase === 'fill') status = 'Filling… ' + done + ' of ' + total + ' items added';
-    else if (j.phase === 'await') status = 'All ' + total + ' items added and checked. Review Selected Items, then tap SUBMIT.';
+    else if (j.phase === 'await') { status = 'All ' + total + ' items added and checked. Review, then tap SUBMIT.'; tone = '#0B5E3D'; bg = '#E3F4EC'; }
     else if (j.phase === 'capture') status = 'Finding the Serial No for ' + j.slip + '…';
-    h += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b>' + esc(j.store) + ', Slip ' + esc(j.slip) + '</b><span style="display:flex;gap:6px;align-items:center"><span style="font-size:13px;color:#57534E">' + done + '/' + total + '</span>' + btn('hide', '▼ Hide', '') + '</span></div>';
-    h += '<div style="height:6px;border-radius:3px;background:#E7E5E4;margin:6px 0;overflow:hidden"><div style="height:6px;width:' + (total ? Math.round(done / total * 100) : 0) + '%;background:#16A34A"></div></div>';
-    h += '<div style="font-weight:600;color:' + (j.paused ? '#B45309' : '#1C1917') + '">' + esc(status) + '</div>';
-    var L = (j.log || []).slice(-4);
-    if (L.length) h += '<div style="font-size:12px;color:#57534E;margin-top:4px">' + L.map(function (x) { return (x[1] ? '✗ ' : '✓ ') + esc(x[0]); }).join('<br>') + '</div>';
-    h += '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">';
+    var pct = total ? Math.round(done / total * 100) : 0;
+    h += head(j.store, 'Slip ' + esc(j.slip) + ' · ' + done + '/' + total, hideBtn);
+    h += '<div style="' + body + '">';
+    h += '<div style="height:8px;border-radius:99px;background:#EFEDE8;overflow:hidden"><div style="height:8px;width:' + pct + '%;background:linear-gradient(90deg,#C9A24B,#E4C77A);border-radius:99px"></div></div>';
+    h += '<div style="margin-top:10px;padding:9px 12px;border-radius:12px;background:' + bg + ';color:' + tone + ';font-weight:650;font-size:15px">' + esc(status) + '</div>';
+    var L = (j.log || []).slice(-3);
+    if (L.length) h += '<div style="font-size:13px;color:#6B6F76;margin-top:8px;line-height:1.55">' + L.map(function (x) { return '<span style="color:' + (x[1] ? '#B42335' : '#0E7A4F') + ';font-weight:700">' + (x[1] ? '✕' : '✓') + '</span> ' + esc(x[0]); }).join('<br>') + '</div>';
+    h += '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:12px">';
     if (ui.confirmCancel) {
-      h += '<span style="width:100%;font-size:13px">Cancel this entry?</span>' + btn('cancelReset', 'Cancel + clear form', 'warn') + btn('cancelKeep', 'Cancel, leave form', 'warn') + btn('noCancel', 'Keep going', '');
+      h += '<span style="width:100%;font-size:14px;font-weight:600">Cancel this entry?</span>' + btn('cancelReset', 'Cancel + clear form', 'warn') + btn('cancelKeep', 'Cancel, leave form', 'warn') + btn('noCancel', 'Keep going', 'main');
     } else if (j.phase === 'dupfound') {
       h += btn('dupDone', 'Mark as done', 'main') + btn('dupIgnore', 'Fill anyway', '') + btn('app', 'Back to app', '');
     } else if (j.phase === 'await' && ui.serialBox) {
-      h += '<input id="jvserial" inputmode="numeric" placeholder="Serial No from CUIMS" style="flex:1;min-width:150px;min-height:46px;border:1.5px solid #A8A29E;border-radius:12px;padding:0 10px;font:16px system-ui">' + btn('serialSave', 'Save', 'main') + btn('serialNo', 'Back', '');
+      h += '<input id="jvserial" inputmode="numeric" placeholder="Serial No from CUIMS" style="flex:1;min-width:150px;min-height:46px;border:1.5px solid #D9D5CC;border-radius:999px;padding:0 14px;font:16px system-ui">' + btn('serialSave', 'Save', 'gold') + btn('serialNo', 'Back', '');
     } else if (j.phase === 'await') {
-      h += btn('app', 'Back to app', '') + btn('serialAsk', 'Submitted? Enter Serial', '') + btn('cancel', 'Cancel', 'warn');
+      h += btn('serialAsk', 'Submitted? Enter Serial', 'gold') + btn('app', 'Back to app', '') + btn('cancel', 'Cancel', 'warn');
     } else if (!isLogin) {
-      h += (j.paused ? btn('resume', 'Resume', 'main') : btn('pause', 'Pause', 'main'));
+      h += (j.paused ? btn('resume', '▶ Resume', 'main') : btn('pause', '⏸ Pause', 'main'));
       if (j.phase === 'fill' && curItem(j)) h += btn('skip', 'Skip ' + esc(curItem(j).code), '');
-      h += btn('cancel', 'Cancel', 'warn') + btn('app', 'Back to app', '');
+      h += btn('cancel', 'Cancel', 'warn') + btn('app', 'App', '');
     } else {
-      h += btn('app', 'Back to app', '');
+      h += btn('app', 'Back to app', 'main');
     }
-    h += '</div>';
+    h += '</div></div>';
     bar.innerHTML = h;
   }
   bar.addEventListener('click', function (e) {
@@ -413,10 +427,18 @@
   };
 
   /* ---------- start ---------- */
+  var target = '';
+  try { target = B.targetUrl ? B.targetUrl() : ISSUE_URL; } catch (e) { target = ISSUE_URL; }
+  var onTarget = target && location.href.split('?')[0].toLowerCase() === target.split('?')[0].toLowerCase();
   try {
-    if (isLogin) { localStorage.setItem('jvSawLogin', '1'); ev('loggedout'); }
-    else if (localStorage.getItem('jvSawLogin') === '1') { localStorage.removeItem('jvSawLogin'); ev('login'); }
+    if (isLogin) { localStorage.setItem('jvSawLogin_' + WHO, '1'); if (WHO === 'emp') ev('loggedout'); }
+    else if (localStorage.getItem('jvSawLogin_' + WHO) === '1') {
+      localStorage.removeItem('jvSawLogin_' + WHO);
+      if (WHO === 'emp') ev('login');
+      if (!onTarget && /cuchd\.in/.test(location.host)) { setTimeout(function () { location.href = target; }, 300); }
+    }
   } catch (e) {}
+  if (WHO === 'mgr') { paint(); return; }
   if (isIssue) {
     var pa = $('ContentPlaceHolder1_ddlProject');
     if (pa) { var areas = Array.prototype.map.call(pa.options, function (o) { return o.text.trim(); }).filter(function (t) { return t && t !== 'Select'; }); ev('areas', { areas: areas }); }
@@ -424,7 +446,7 @@
   paint();
   var j0 = job();
   if (active(j0) && !isLogin && !isIssue && /cuchd\.in/.test(location.host)) {
-    setTimeout(function () { location.href = ISSUE_URL; }, 900);
+    setTimeout(function () { location.href = target || ISSUE_URL; }, 900);
   } else if (isIssue) {
     if (active(j0) && j0.phase === 'await') hookSubmit();
     run();
