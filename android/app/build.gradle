@@ -1,0 +1,52 @@
+plugins { id 'com.android.application' }
+
+def runNo = (System.getenv('GITHUB_RUN_NUMBER') ?: '1') as Integer
+def repo = System.getenv('GITHUB_REPOSITORY') ?: 'owner/jv-stock-issue'
+def owner = repo.split('/')[0].toLowerCase()
+def repoName = repo.split('/')[1]
+def pagesUrl = "https://${owner}.github.io/${repoName}/"
+
+android {
+    namespace 'com.jv.stockissue'
+    compileSdk 34
+    defaultConfig {
+        applicationId 'com.jv.stockissue'
+        minSdk 26
+        targetSdk 34
+        versionCode runNo
+        versionName "3.0.${runNo}"
+        buildConfigField 'String', 'PAGES_URL', "\"${pagesUrl}\""
+        buildConfigField 'String', 'REPO', "\"${repo}\""
+    }
+    buildFeatures { buildConfig true }
+    signingConfigs {
+        release {
+            def ks = System.getenv('KEYSTORE_FILE')
+            if (ks) {
+                storeFile file(ks)
+                storePassword System.getenv('KEYSTORE_PASSWORD')
+                keyAlias 'jv'
+                keyPassword System.getenv('KEYSTORE_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+    implementation 'androidx.biometric:biometric:1.1.0'
+}
