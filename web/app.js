@@ -294,6 +294,8 @@ function vHome() {
     return h + '<div class="card pad col"><h2>Start here</h2><div class="note">Upload the CUIMS stock report and your requests sheet. Download the template first if you need the format.</div>' +
       '<button class="btn main" data-a="upload">Upload a file</button><button class="btn" data-a="template">Download data template</button></div></main>';
   }
+  const ex = expiryRows().filter(r => r.left <= expDays());
+  if (ex.length) { const e0 = ex.filter(r => r.left < 0).length; h += '<button class="card pad tap" data-a="expOpen" style="display:flex;align-items:center;gap:12px;border-color:#FBCFD8"><span class="dic" style="width:42px;height:42px;border-radius:12px;background:var(--noBg);color:var(--noInk);display:flex;align-items:center;justify-content:center">' + ico('alert', 22) + '</span><span style="flex:1"><b class="ttl" style="font-size:16.5px">Expiry Tracker</b><div class="meta"><span>' + ex.length + ' batches within ' + expDays() + ' days</span>' + (e0 ? '<i></i><span><em>' + e0 + ' expired</em></span>' : '') + '</div></span>' + ico('right', 18) + '</button>'; }
   h += tasksCard();
   h += '<div class="grid3"><button class="btn main" data-a="upload">Upload</button><button class="btn" data-a="openSite">Issue CUIMS</button><button class="btn gold" data-a="openMgr">Live stock</button></div>';
   h += '<button class="btn full" data-a="bulkEdit">Edit all requests: Slip No, Request No, date, receiver</button>';
@@ -915,8 +917,13 @@ function vCount() {
   c.items.forEach((i, idx) => {
     const d = diffOf(i);
     const tag = d === null ? '' : d === 0 ? pill('Match', 'c-ok') : d > 0 ? pill('Excess +' + num(d), 'c-in') : pill('Short ' + num(d), 'c-no');
+    const V = i.variants || [];
     h += '<div class="line"><div class="row"><b>' + (idx + 1) + '. ' + esc(i.name) + '</b>' + tag + '</div><div class="row" style="align-items:center">' + meta([esc(i.code), 'System ' + num(i.system) + ' ' + esc(i.uom)]) +
-      (open ? '<input type="number" inputmode="decimal" data-cnt="' + idx + '" value="' + esc(i.physical) + '" placeholder="Physical" style="width:120px;text-align:right">' : '<b class="qty">' + (i.physical === '' ? '–' : num(i.physical)) + ' ' + esc(i.uom) + '</b>') + '</div></div>';
+      (open && !V.length ? '<input type="number" inputmode="decimal" data-cnt="' + idx + '" value="' + esc(i.physical) + '" placeholder="Physical" style="width:120px;text-align:right">' : '<b class="qty">' + (i.physical === '' ? '–' : num(i.physical)) + ' ' + esc(i.uom) + '</b>') + '</div>' +
+      (V.length ? '<div class="vbox">' + V.map((v, k) => { const dl = v.exp ? days(v.exp) * -1 : null;
+        return '<div class="vrow"><div class="vhead"><b>Batch ' + (k + 1) + '</b>' + (v.exp ? pill(dl < 0 ? 'Expired' : dl + ' days left', dl < 0 ? 'c-no' : dl <= 15 ? 'c-no' : dl <= expDays() ? 'c-gd' : 'c-ok') : '') + '<button class="xbtn" data-a="varDel" data-v="' + idx + '|' + k + '" aria-label="Remove batch">' + ico('x', 16) + '</button></div>' +
+          '<div class="grid3"><label class="f">Qty<input type="number" inputmode="decimal" data-var="' + idx + '|' + k + '|qty" value="' + esc(v.qty) + '"></label><label class="f">MFD<input type="date" data-var="' + idx + '|' + k + '|mfd" value="' + esc(v.mfd || '') + '"></label><label class="f">Expiry<input type="date" data-var="' + idx + '|' + k + '|exp" value="' + esc(v.exp || '') + '"></label></div></div>'; }).join('') + '<div class="note">Physical count = total of all batches.</div></div>' : '') +
+      '<button class="btn sm ghost" data-a="varAdd" data-v="' + idx + '" style="align-self:flex-start">+ Add batch (MFD / expiry)</button></div>';
   });
   h += '</div>';
   if (open) h += '<button class="btn main full" data-a="countDone"' + (sm.left ? ' disabled' : '') + '>' + (sm.left ? 'Count all ' + sm.left + ' remaining to finish' : 'Finish count') + '</button>';
@@ -926,6 +933,33 @@ function vCount() {
     '<label class="f">Code starts with (comma separated)<input type="text" data-cx="prefixes" value="' + esc(ex.prefixes.join(', ')) + '"></label>' +
     '<label class="f">Name contains (comma separated)<input type="text" data-cx="words" value="' + esc(ex.words.join(', ')) + '"></label>' +
     (open && none ? '<button class="btn" data-a="countRepick">Pick a new list with these rules</button>' : '') + '</div>';
+  return h + '</main>';
+}
+function expDays() { return S.expiryDays || 45; }
+function curCount() { return (S.counts || []).find(x => String(x.id) === String(ui.countId)); }
+function syncPhysical(it) { if (it.variants && it.variants.length) { const t = it.variants.reduce((n, v) => n + (parseFloat(v.qty) || 0), 0); it.physical = String(Math.round(t * 1000) / 1000); } }
+function expiryRows() {
+  const latest = {};
+  (S.counts || []).slice().sort((a, b) => a.date.localeCompare(b.date)).forEach(c => c.items.forEach(i => { if (i.variants && i.variants.length) latest[i.code] = { c, i }; }));
+  const out = [];
+  Object.values(latest).forEach(({ c, i }) => i.variants.forEach((v, k) => { if (!v.exp || v.cleared) return; const left = -days(v.exp);
+    out.push({ code: i.code, name: i.name, uom: i.uom, qty: v.qty, mfd: v.mfd, exp: v.exp, left, countDate: c.date, cid: c.id, idx: c.items.indexOf(i), k }); }));
+  return out.sort((a, b) => a.left - b.left);
+}
+function vExpiry() {
+  const all = expiryRows(), lim = expDays();
+  const due = all.filter(r => r.left <= lim);
+  const expd = due.filter(r => r.left < 0), soon = due.filter(r => r.left >= 0 && r.left <= 15), later = due.filter(r => r.left > 15);
+  let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Expiry Tracker</h1><div class="sub">Batches from your Daily Count Cycle expiring within ' + lim + ' days.</div></div></header><main>';
+  h += '<div class="grid3"><div class="tile t-no"><b>' + expd.length + '</b><span>Expired</span></div><div class="tile t-pt"><b>' + soon.length + '</b><span>Within 15 days</span></div><div class="tile t-in"><b>' + later.length + '</b><span>16 to ' + lim + ' days</span></div></div>';
+  h += '<div class="grid2"><label class="f">Alert window (days)<input type="number" inputmode="numeric" data-expdays="1" value="' + lim + '"></label><button class="btn" data-a="expExport" style="align-self:end">Download</button></div>';
+  const sec = (title, list, cls) => { if (!list.length) return ''; let x = '<div class="sect">' + title + '</div><div class="card" style="overflow:hidden">';
+    list.forEach(r => { x += '<div class="line"><div class="row"><b>' + esc(r.name) + '</b>' + pill(r.left < 0 ? 'Expired ' + (-r.left) + ' d ago' : r.left === 0 ? 'Expires today' : r.left + ' days left', cls) + '</div>' +
+      '<div class="row" style="align-items:center">' + meta([esc(r.code), num(r.qty) + ' ' + esc(r.uom), r.mfd ? 'MFD ' + fmtShort(r.mfd) : '', 'EXP ' + fmtLong(r.exp)]) + '<button class="btn sm ghost" data-a="expClear" data-v="' + r.cid + '|' + r.idx + '|' + r.k + '">Cleared</button></div>' +
+      '<div class="meta"><span>Counted ' + fmtShort(r.countDate) + '</span></div></div>'; });
+    return x + '</div>'; };
+  if (!due.length) h += '<div class="card pad note">Nothing expiring within ' + lim + ' days. Add batches with expiry dates in the Daily Count Cycle.</div>';
+  h += sec('Expired', expd, 'c-no') + sec('Within 15 days', soon, 'c-no') + sec('16 to ' + lim + ' days', later, 'c-gd');
   return h + '</main>';
 }
 function vCountLog() {
@@ -939,7 +973,7 @@ function vCountLog() {
   return h + '</main>';
 }
 function countRows(list) {
-  const rows = []; list.forEach(c => c.items.forEach(i => { const d = diffOf(i); rows.push({ Date: fmtLong(c.date), Code: i.code, Item: i.name, UOM: i.uom, System: i.system, Physical: i.physical === '' ? '' : Number(i.physical), Difference: d === null ? '' : d, Result: d === null ? 'Not counted' : d === 0 ? 'Match' : d > 0 ? 'Excess' : 'Short', Status: c.status === 'done' ? 'Done' : 'Open', 'Counted by': (c.by || {}).name || '' }); }));
+  const rows = []; list.forEach(c => c.items.forEach(i => { const d = diffOf(i); rows.push({ Date: fmtLong(c.date), Code: i.code, Item: i.name, UOM: i.uom, System: i.system, Physical: i.physical === '' ? '' : Number(i.physical), Difference: d === null ? '' : d, Result: d === null ? 'Not counted' : d === 0 ? 'Match' : d > 0 ? 'Excess' : 'Short', Batches: (i.variants || []).map(v => num(v.qty) + (v.mfd ? ' MFD ' + fmtShort(v.mfd) : '') + (v.exp ? ' EXP ' + fmtShort(v.exp) : '')), Status: c.status === 'done' ? 'Done' : 'Open', 'Counted by': (c.by || {}).name || '' }); }));
   return rows;
 }
 
@@ -951,6 +985,7 @@ function renderDrawer() {
   el.innerHTML = '<div class="dbg" data-a="drawerClose"></div><aside class="dpanel" role="dialog" aria-label="Menu"><div class="dhead"><img src="icon.png" alt=""><div><b>JV Stock Issue</b><span>Built by ' + esc(S.me.builder || S.me.name || 'JV') + '</span></div></div>' +
     '<div class="dsect">Tools</div>' +
     item('dCount', 'Daily Count Cycle', '20 random articles, physical vs system', '<path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/>') +
+    item('expOpen', 'Expiry Tracker', 'Batches expiring within ' + expDays() + ' days', '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6"/>') +
     item('countLog', 'Count history', 'All past counts and differences', '<path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/>') +
     item('taskLog', 'Task log', 'Daily tasks: done, pending, not done', '<path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/>') +
     '<div class="dsect">Work</div>' +
@@ -970,7 +1005,7 @@ const REPORTS = {
   ret: { name: 'Daily Return Register', pdf: true, landscape: false, dated: 'reg', details: true, sorts: true },
   pending: { name: 'Pending Report', pdf: true, landscape: true, sorts: true },
   requests: { name: 'Requests Register' }, entries: { name: 'Entries Log' }, items: { name: 'Entry Items' },
-  stock: { name: 'Stock Now' }, returns: { name: 'Returns (all)' }, search: { name: 'Search Results' }, counts: { name: 'Daily Count Cycle', pdf: true, landscape: false }
+  stock: { name: 'Stock Now' }, returns: { name: 'Returns (all)' }, search: { name: 'Search Results' }, counts: { name: 'Daily Count Cycle', pdf: true, landscape: true }, expiry: { name: 'Expiry Tracker', pdf: true, landscape: false }
 };
 function rptPref(type) {
   S.rp = S.rp || {};
@@ -1002,7 +1037,7 @@ function reportDef(type) {
       detail: list.map(r => ({ head: r.no + '   ·   ' + r.store + '   ·   Returned by GA' + r.by + '   ·   Serial ' + (r.serial || '____'), cols: ['S.No', 'Item code', 'Item', 'UOM', 'Qty', 'Item remarks'], rows: r.items.map((x, i) => [i + 1, x.code, x.name || itemName(x.code), x.uom || itemUom(x.code), num(x.qty), x.remark || '–']) })),
       file: 'Return-Register-' + d, sub2: 'Return · Department · Against Issue No 1111' };
   }
-  const objRows = type === 'pending' ? sortStores(rowsPending(), 'Store', p.sort) : type === 'requests' ? rowsRequests() : type === 'entries' ? rowsEntries() : type === 'items' ? rowsItems() : type === 'stock' ? rowsStock() : type === 'returns' ? rowsReturns() : type === 'search' ? searchRows() : type === 'counts' ? countRows((S.counts || []).filter(c => !ui.countExportId || String(c.id) === String(ui.countExportId))) : [];
+  const objRows = type === 'pending' ? sortStores(rowsPending(), 'Store', p.sort) : type === 'requests' ? rowsRequests() : type === 'entries' ? rowsEntries() : type === 'items' ? rowsItems() : type === 'stock' ? rowsStock() : type === 'returns' ? rowsReturns() : type === 'search' ? searchRows() : type === 'expiry' ? expiryRows().filter(r => r.left <= expDays()).map(r => ({ Item: r.name, Code: r.code, Qty: r.qty, UOM: r.uom, MFD: r.mfd ? fmtLong(r.mfd) : '', Expiry: fmtLong(r.exp), 'Days left': r.left, Status: r.left < 0 ? 'Expired' : r.left <= 15 ? 'Within 15 days' : 'Within ' + expDays() + ' days', 'Counted on': fmtLong(r.countDate) })) : type === 'counts' ? countRows((S.counts || []).filter(c => !ui.countExportId || String(c.id) === String(ui.countExportId))) : [];
   const keys = objRows.length ? Object.keys(objRows[0]) : [];
   const chips = type === 'pending' ? [['Date', fmtLong(today())], ['Stores', new Set(objRows.map(r => r.Store)).size], ['Articles', objRows.length]] : [['Date', fmtLong(today())], ['Rows', objRows.length]];
   return { cols: keys.map(k => [k, k]), rows: objRows, chips, file: REPORTS[type].name.replace(/[^A-Za-z]+/g, '-') + '-' + today(), sub2: '' };
@@ -1210,7 +1245,7 @@ window.jvBack = () => {
 function render() {
   const app = document.getElementById('app');
   const y = window.scrollY;
-  app.innerHTML = appBar() + (ui.view === 'count' ? vCount() : ui.view === 'countLog' ? vCountLog() : ui.view === 'taskLog' ? vTaskLog() : ui.view === 'req' ? vReq() : ({ home: vHome, pend: vPend, reg: vReg, find: vFind, set: vSet })[ui.tab]());
+  app.innerHTML = appBar() + (ui.view === 'expiry' ? vExpiry() : ui.view === 'count' ? vCount() : ui.view === 'countLog' ? vCountLog() : ui.view === 'taskLog' ? vTaskLog() : ui.view === 'req' ? vReq() : ({ home: vHome, pend: vPend, reg: vReg, find: vFind, set: vSet })[ui.tab]());
   document.querySelector('#tabs .in').innerHTML = TABS.map(([k, l]) => k === 'find' ? '<button data-a="tab" data-v="find" class="center' + (ui.tab === k && !ui.view ? ' on' : '') + '" aria-label="Search"><span class="fab">' + ICON.find + '</span>' + l + '</button>' : '<button data-a="tab" data-v="' + k + '" class="' + (ui.tab === k && !ui.view ? 'on' : '') + '">' + ICON[k] + l + '</button>').join('');
   renderDrawer();
   paintSync();
@@ -1385,6 +1420,11 @@ document.addEventListener('click', async ev => {
     case 'countDone': { const c = (S.counts || []).find(x => String(x.id) === String(ui.countId)); if (!c) break; c.status = 'done'; c.doneAt = new Date().toISOString(); S.taskLog = S.taskLog || {}; S.taskLog[c.date] = S.taskLog[c.date] || {}; S.taskLog[c.date].count = { status: 'done', at: c.doneAt, by: S.me.name || '' }; save(); render(); toast('Count finished and logged.'); break; }
     case 'countExport': ui.countExportId = v; openExport('counts'); break;
     case 'countExportAll': ui.countExportId = null; openExport('counts'); break;
+    case 'varAdd': { const c = curCount(); if (!c) break; const it = c.items[+v]; it.variants = it.variants || []; if (!it.variants.length && it.physical !== '' && it.physical != null) it.variants.push({ qty: it.physical, mfd: '', exp: '' }); else it.variants.push({ qty: '', mfd: '', exp: '' }); syncPhysical(it); save(); render(); break; }
+    case 'varDel': { const c = curCount(); if (!c) break; const [a1, k] = v.split('|').map(Number); const it = c.items[a1]; it.variants.splice(k, 1); syncPhysical(it); if (!it.variants.length) it.physical = ''; save(); render(); break; }
+    case 'expOpen': ui.drawer = false; ui.view = 'expiry'; render(); window.scrollTo(0, 0); break;
+    case 'expExport': openExport('expiry'); break;
+    case 'expClear': { const [cid, idx, k] = v.split('|'); const c = (S.counts || []).find(x => String(x.id) === cid); if (c && confirm('Mark this batch as cleared (used, issued or removed)? It leaves the tracker.')) { c.items[+idx].variants[+k].cleared = true; save(); render(); } break; }
     case 'countRepick': { const c = (S.counts || []).find(x => String(x.id) === String(ui.countId)); if (c && c.items.every(i => i.physical === '' || i.physical == null)) { S.counts = S.counts.filter(x => x !== c); const n = todayCount(true); if (n) ui.countId = n.id; save(); render(); toast('New list picked.'); } break; }
     case 'tasksTog': S.uiPrefs = S.uiPrefs || {}; S.uiPrefs.tasksOpen = !S.uiPrefs.tasksOpen; writeLocal(); render(); break;
     case 'syncTap': if (S.sync.url) syncNow(false); else { ui.tab = 'set'; ui.setPage = 'cloud'; ui.view = null; render(); } break;
@@ -1480,6 +1520,8 @@ document.addEventListener('input', ev => {
   if (el.dataset.in === 'q') { const k = focusKey(el); ui.search.q = el.value; render(); refocus(k); return; }
   if (el.dataset.bk) { ui.sheet[el.dataset.bk] = el.value; return; }
   if (el.dataset.tk) { ui.newTask = el.value; return; }
+  if (el.dataset.var) { const c = curCount(); if (c) { const [a1, k, f] = el.dataset.var.split('|'); const it = c.items[+a1]; it.variants[+k][f] = el.value; syncPhysical(it); save(true); } return; }
+  if (el.dataset.expdays) { const n = parseInt(el.value, 10); if (n > 0) { S.expiryDays = n; save(true); } return; }
   if (el.dataset.cx) { countExcl()[el.dataset.cx] = el.value.split(',').map(x => x.trim()).filter(Boolean); save(true); return; }
   if (el.dataset.cnt != null) { const c = (S.counts || []).find(x => String(x.id) === String(ui.countId)); if (c) { c.items[+el.dataset.cnt].physical = el.value; save(true); } return; }
   if (el.dataset.rp) { rptPref(ui.sheet.type)[el.dataset.rp] = el.value; save(true); if (el.tagName === 'SELECT') renderSheet(); return; }
@@ -1514,7 +1556,7 @@ document.addEventListener('change', async ev => {
   }
   if (el.dataset.sort) { ui.sort[el.dataset.sort] = el.value; render(); return; }
   if (el.dataset.rp) { later(() => renderSheet()); return; }
-  if (el.dataset.cnt != null) { later(() => { const k = focusKey(document.activeElement); render(); }); return; }
+  if (el.dataset.cnt != null || el.dataset.var || el.dataset.expdays) { later(() => render()); return; }
   if (el.dataset.in === 'regDate') { ui.reg.date = el.value || today(); render(); if (ui.sheet && ui.sheet.kind === 'export') renderSheet(); return; }
   if (el.dataset.in === 'sFrom') { ui.search.from = el.value; render(); return; }
   if (el.dataset.in === 'sTo') { ui.search.to = el.value; render(); return; }
