@@ -20,11 +20,26 @@ function load() {
 }
 let S = load();
 let syncTimer = null;
+function writeLocal() { const t = JSON.stringify(S); try { if (N) N.storeSet(t); else localStorage.setItem('jvStockIssue', t); } catch (e) {} }
 function save(noSync) {
-  const t = JSON.stringify(S);
-  try { if (N) N.storeSet(t); else localStorage.setItem('jvStockIssue', t); } catch (e) {}
-  if (!noSync && S.sync.url && S.sync.auto) { clearTimeout(syncTimer); syncTimer = setTimeout(() => syncNow(true), 4000); }
+  S.sync.dirty = true; S.sync.changedAt = new Date().toISOString();
+  writeLocal();
+  if (S.sync.url && S.sync.auto) { clearTimeout(syncTimer); syncTimer = setTimeout(() => syncNow(true), noSync ? 15000 : 4000); }
+  paintSync();
 }
+let syncBusy = false, syncErr = '';
+function syncLabel() {
+  if (!S.sync.url) return ['off', 'Cloud not set'];
+  if (syncBusy) return ['busy', 'Syncing…'];
+  if (!navigator.onLine) return ['offline', 'Offline · saved on phone'];
+  if (S.sync.dirty || !S.sync.at) return [syncErr ? 'error' : 'pending', syncErr ? 'Will retry · saved on phone' : 'Saved on phone · uploading soon'];
+  return ['ok', 'Synced ' + (S.sync.at ? ago(S.sync.at) : '')];
+}
+function ago(ts) { const m = Math.round((Date.now() - new Date(ts)) / 60000); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : fmtDT(ts); }
+function paintSync() { const el = document.getElementById('syncline'); if (!el) return; const [k, t] = syncLabel(); el.className = 'sync s-' + k; el.lastChild.textContent = t; }
+window.addEventListener('online', () => { paintSync(); if (S.sync.dirty) syncNow(true); });
+window.addEventListener('offline', paintSync);
+setInterval(() => { paintSync(); if (S.sync.url && S.sync.auto && S.sync.dirty && navigator.onLine && !syncBusy) syncNow(true); }, 45000);
 const nid = () => S.nextId++;
 
 /* ================= utils ================= */
@@ -253,7 +268,7 @@ function reqCard(r) {
 }
 function appBar() {
   const lk = ui.locked ? '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>' : '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="M8 11V7a4 4 0 0 1 7.5-1.8"/></svg>';
-  return '<div class="appbar"><button class="menubtn" data-a="drawer" aria-label="Open menu"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg></button><img class="logo" src="icon.png" alt="JV Stock Issue logo"><div class="t"><b>JV Stock Issue</b><span>Built by <i>' + esc(S.me.builder || S.me.name || 'JV') + '</i></span>' + (S.me.storeName ? '<em>' + esc(S.me.storeName) + '</em>' : '') + '</div>' +
+  return '<div class="appbar"><button class="menubtn" data-a="drawer" aria-label="Open menu"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg></button><img class="logo" src="icon.png" alt="JV Stock Issue logo"><div class="t"><b>JV Stock Issue</b><span>Built by <i>' + esc(S.me.builder || S.me.name || 'JV') + '</i></span><button id="syncline" class="sync" data-a="syncTap"><span class="sd"></span><span></span></button></div>' +
     '<button class="lockbtn' + (ui.locked ? '' : ' open') + '" data-a="lockTap" aria-label="' + (ui.locked ? 'Unlock editing' : 'Lock editing') + '">' + lk + '</button>' +
     '<button data-a="goProfile" aria-label="Profile" style="border:0;background:none;padding:0">' + avatar(false) + '</button></div>';
 }
@@ -831,8 +846,10 @@ const TSTAT = { done: ['Done', 'c-ok'], pending: ['Pending', 'c-gd'], notdone: [
 function tasksCard() {
   const d = today(), L = taskList();
   const done = L.filter(t => taskStatus(t[0], d) === 'done').length;
-  let h = '<div class="card" style="overflow:hidden"><div class="pad row" style="padding-bottom:8px"><span><b class="ttl">Tasks</b><div class="meta"><span>' + done + ' of ' + L.length + ' done today</span></div></span><button class="btn sm ghost" data-a="taskLog">Log</button></div>';
-  h += '<div class="bar" style="margin:0 18px 6px"><div style="width:' + Math.round(done / L.length * 100) + '%;background:var(--gold)"></div></div>';
+  const open = !!(S.uiPrefs || {}).tasksOpen;
+  let h = '<div class="card taskcard" style="overflow:hidden"><div class="row" style="padding:14px 12px 10px 18px"><button class="tmain thead" data-a="tasksTog" aria-expanded="' + open + '"><b class="ttl">Today\'s tasks</b><span>' + done + ' of ' + L.length + ' done' + (done === L.length ? ' · all clear' : '') + '</span></button><button class="btn sm ghost" data-a="taskLog">Log</button><button class="xbtn" data-a="tasksTog" aria-label="' + (open ? 'Collapse' : 'Expand') + ' tasks">' + ico(open ? 'up' : 'down', 18) + '</button></div>';
+  h += '<div class="bar" style="margin:0 18px ' + (open ? '6px' : '16px') + '"><div style="width:' + Math.round(done / L.length * 100) + '%;background:linear-gradient(90deg,#10B981,#34D399)"></div></div>';
+  if (!open) return h + '</div>';
   L.forEach(([id, title, sub]) => {
     const st = taskStatus(id, d);
     h += '<div class="line" style="flex-direction:row;align-items:center;gap:12px"><button class="tcheck' + (st === 'done' ? ' on' : '') + '" data-a="taskTog" data-v="' + esc(id) + '" aria-label="Mark ' + esc(title) + ' done">' + (st === 'done' ? '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>' : '') + '</button>' +
@@ -863,13 +880,20 @@ function seededPick(arr, n, seed) {
   const a = arr.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
   return a.slice(0, n);
 }
+const COUNT_EXCL = { prefixes: ['VEG-'], words: ['CYLINDER', 'LPG', 'GAS', 'MILK', 'CURD', 'DAHI', 'PANEER', 'BUTTER', 'CHEESE', 'CREAM', 'GHEE', 'YOGURT', 'YOGHURT', 'KHOYA', 'LASSI', 'CHAACH', 'CHHACH'] };
+function countExcl() { S.countExcl = S.countExcl || JSON.parse(JSON.stringify(COUNT_EXCL)); return S.countExcl; }
+function excluded(code) {
+  const ex = countExcl(), c = String(code).toUpperCase(), n = String((S.stock[code] || {}).name || '').toUpperCase();
+  return ex.prefixes.some(p => p && c.startsWith(p.toUpperCase())) || ex.words.some(w => w && new RegExp('\\b' + w.toUpperCase().replace(/[^A-Z0-9 ]/g, '') + '\\b').test(n));
+}
 function todayCount(create) {
   S.counts = S.counts || [];
   let c = S.counts.find(x => x.date === today() && x.status !== 'void');
+  if (c && c.status === 'open' && c.items.every(i => i.physical === '' || i.physical == null) && c.items.some(i => excluded(i.code))) { S.counts = S.counts.filter(x => x !== c); c = null; create = true; }
   if (!c && create) {
     const recent = new Set(S.counts.filter(x => days(x.date) < 7).flatMap(x => x.items.map(i => i.code)));
-    let pool = Object.keys(S.stock).filter(k => S.stock[k].qty > 0 && !recent.has(k));
-    if (pool.length < 20) pool = Object.keys(S.stock).filter(k => S.stock[k].qty > 0);
+    let pool = Object.keys(S.stock).filter(k => S.stock[k].qty > 0 && !recent.has(k) && !excluded(k));
+    if (pool.length < 20) pool = Object.keys(S.stock).filter(k => S.stock[k].qty > 0 && !excluded(k));
     if (!pool.length) { toast('Upload a stock report first.'); return null; }
     const pick = seededPick(pool.sort(), 20, today() + '|' + (S.counts.length));
     c = { id: nid(), date: today(), status: 'open', startedAt: new Date().toISOString(), by: meTag(), stockAt: S.stockAt,
@@ -897,6 +921,11 @@ function vCount() {
   h += '</div>';
   if (open) h += '<button class="btn main full" data-a="countDone"' + (sm.left ? ' disabled' : '') + '>' + (sm.left ? 'Count all ' + sm.left + ' remaining to finish' : 'Finish count') + '</button>';
   h += '<div class="grid2"><button class="btn" data-a="countExport" data-v="' + c.id + '">Download</button><button class="btn" data-a="countLog">Count history</button></div>';
+  const ex = countExcl(), none = c.items.every(i => i.physical === '' || i.physical == null);
+  h += '<div class="card pad col"><h3>Not counted in this cycle</h3><div class="note">Items whose code starts with these, or whose name contains these words, are never picked.</div>' +
+    '<label class="f">Code starts with (comma separated)<input type="text" data-cx="prefixes" value="' + esc(ex.prefixes.join(', ')) + '"></label>' +
+    '<label class="f">Name contains (comma separated)<input type="text" data-cx="words" value="' + esc(ex.words.join(', ')) + '"></label>' +
+    (open && none ? '<button class="btn" data-a="countRepick">Pick a new list with these rules</button>' : '') + '</div>';
   return h + '</main>';
 }
 function vCountLog() {
@@ -1049,13 +1078,16 @@ async function syncNow(quiet, kind, note) {
     tabs: { 'Requests': rowsRequests(), 'Request lines': rowsAllLines(), 'Entries': rowsEntries(), 'Entry items': rowsItems(), 'Pending': rowsPending(), 'Returns': rowsReturns(), 'Stock': rowsStock(),
       'Stores': Object.entries(S.stores).map(([s, v]) => ({ Store: s, Receiver: v.rcv ? 'GA' + v.rcv : '', Name: v.rname || '' })) },
     backup: JSON.stringify(S) };
+  if (syncBusy) return; syncBusy = true; paintSync();
+  const startedAt = S.sync.changedAt;
   try {
+    if (!navigator.onLine) throw new Error('offline');
     const r = await fetch(S.sync.url, { method: 'POST', body: JSON.stringify(payload) });
     const j = await r.json();
     if (!j.ok) throw new Error(j.error || 'failed');
-    S.sync.at = new Date().toISOString(); save(true);
+    S.sync.at = new Date().toISOString(); if (S.sync.changedAt === startedAt) S.sync.dirty = false; syncErr = ''; syncBusy = false; writeLocal(); paintSync();
     if (!quiet) { toast('Backed up to Google Drive and Sheet.'); render(); if (ui.sheet && ui.sheet.kind === 'backups') loadBackups(); }
-  } catch (e) { if (!quiet) toast('Backup failed: ' + e.message); }
+  } catch (e) { syncBusy = false; syncErr = e.message; paintSync(); if (!quiet) toast(e.message === 'offline' ? 'Offline. Saved on phone; it uploads by itself when internet is back.' : 'Backup failed: ' + e.message + '. It will retry by itself.'); }
 }
 async function apiGet(q) { const r = await fetch(S.sync.url + (S.sync.url.includes('?') ? '&' : '?') + q); const j = await r.json(); if (!j.ok) throw new Error(j.error || 'failed'); return j; }
 async function apiPost(o) { const r = await fetch(S.sync.url, { method: 'POST', body: JSON.stringify(o) }); const j = await r.json(); if (!j.ok) throw new Error(j.error || 'failed'); return j; }
@@ -1181,6 +1213,7 @@ function render() {
   app.innerHTML = appBar() + (ui.view === 'count' ? vCount() : ui.view === 'countLog' ? vCountLog() : ui.view === 'taskLog' ? vTaskLog() : ui.view === 'req' ? vReq() : ({ home: vHome, pend: vPend, reg: vReg, find: vFind, set: vSet })[ui.tab]());
   document.querySelector('#tabs .in').innerHTML = TABS.map(([k, l]) => k === 'find' ? '<button data-a="tab" data-v="find" class="center' + (ui.tab === k && !ui.view ? ' on' : '') + '" aria-label="Search"><span class="fab">' + ICON.find + '</span>' + l + '</button>' : '<button data-a="tab" data-v="' + k + '" class="' + (ui.tab === k && !ui.view ? 'on' : '') + '">' + ICON[k] + l + '</button>').join('');
   renderDrawer();
+  paintSync();
   window.scrollTo(0, y);
 }
 function renderSheet() {
@@ -1352,6 +1385,9 @@ document.addEventListener('click', async ev => {
     case 'countDone': { const c = (S.counts || []).find(x => String(x.id) === String(ui.countId)); if (!c) break; c.status = 'done'; c.doneAt = new Date().toISOString(); S.taskLog = S.taskLog || {}; S.taskLog[c.date] = S.taskLog[c.date] || {}; S.taskLog[c.date].count = { status: 'done', at: c.doneAt, by: S.me.name || '' }; save(); render(); toast('Count finished and logged.'); break; }
     case 'countExport': ui.countExportId = v; openExport('counts'); break;
     case 'countExportAll': ui.countExportId = null; openExport('counts'); break;
+    case 'countRepick': { const c = (S.counts || []).find(x => String(x.id) === String(ui.countId)); if (c && c.items.every(i => i.physical === '' || i.physical == null)) { S.counts = S.counts.filter(x => x !== c); const n = todayCount(true); if (n) ui.countId = n.id; save(); render(); toast('New list picked.'); } break; }
+    case 'tasksTog': S.uiPrefs = S.uiPrefs || {}; S.uiPrefs.tasksOpen = !S.uiPrefs.tasksOpen; writeLocal(); render(); break;
+    case 'syncTap': if (S.sync.url) syncNow(false); else { ui.tab = 'set'; ui.setPage = 'cloud'; ui.view = null; render(); } break;
     case 'rpSet': rptPref(ui.sheet.type)[t.dataset.k] = v; save(true); renderSheet(); break;
     case 'rpTog': rptPref(ui.sheet.type)[t.dataset.k] = t.checked; save(true); renderSheet(); break;
     case 'rpCol': rptPref(ui.sheet.type).cols[t.dataset.k] = t.checked; save(true); renderSheet(); break;
@@ -1444,6 +1480,7 @@ document.addEventListener('input', ev => {
   if (el.dataset.in === 'q') { const k = focusKey(el); ui.search.q = el.value; render(); refocus(k); return; }
   if (el.dataset.bk) { ui.sheet[el.dataset.bk] = el.value; return; }
   if (el.dataset.tk) { ui.newTask = el.value; return; }
+  if (el.dataset.cx) { countExcl()[el.dataset.cx] = el.value.split(',').map(x => x.trim()).filter(Boolean); save(true); return; }
   if (el.dataset.cnt != null) { const c = (S.counts || []).find(x => String(x.id) === String(ui.countId)); if (c) { c.items[+el.dataset.cnt].physical = el.value; save(true); } return; }
   if (el.dataset.rp) { rptPref(ui.sheet.type)[el.dataset.rp] = el.value; save(true); if (el.tagName === 'SELECT') renderSheet(); return; }
   if (el.dataset.crop) { ui.sheet.zoom = parseFloat(el.value); const im = document.querySelector('#cropBox img'); if (im) { const V = 280, c = ui.sheet, base = Math.max(V / c.img.width, V / c.img.height) * c.zoom, dw = c.img.width * base, dh = c.img.height * base; im.style.width = dw + 'px'; im.style.height = dh + 'px'; im.style.left = ((V - dw) / 2 + c.x) + 'px'; im.style.top = ((V - dh) / 2 + c.y) + 'px'; } return; }
@@ -1504,4 +1541,5 @@ function doImport() {
 
 /* ---------------- start ---------------- */
 render();
+if (S.sync.url && S.sync.auto && (S.sync.dirty || !S.sync.at)) setTimeout(() => syncNow(true), 5000);
 if (Date.now() - (S.lastUpdateCheck || 0) > 12 * 3600e3) setTimeout(() => checkUpdate(false), 3000);
