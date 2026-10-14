@@ -84,9 +84,9 @@ th{color:var(--mute);font-weight:600}
 @media (prefers-reduced-motion: reduce){*{transition:none!important;animation:none!important}}
 
 .appbar{position:sticky;top:0;z-index:15;background:radial-gradient(120% 140% at 0% 0%,#24324d 0%,#0F172A 55%,#0B1120 100%);color:#fff;padding:16px 16px 15px;display:flex;align-items:center;gap:12px;box-shadow:0 6px 20px rgba(15,23,42,.35);border-bottom:2px solid var(--gold)}
-.appbar img.logo{width:54px;height:54px;border-radius:15px;box-shadow:0 0 0 2px var(--gold),0 4px 12px rgba(0,0,0,.35)}
+.appbar img.logo{width:46px;height:46px;border-radius:15px;box-shadow:0 0 0 2px var(--gold),0 4px 12px rgba(0,0,0,.35)}
 .appbar .t{flex:1;min-width:0}
-.appbar .t b{display:block;font-size:22px;font-weight:700;letter-spacing:.01em;line-height:1.15}
+.appbar .t b{display:block;font-size:19px;white-space:nowrap;font-weight:700;letter-spacing:.01em;line-height:1.15}
 .appbar .t span{display:block;font-size:13.5px;color:#C9CED6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
 .appbar .t span i{font-style:normal;color:var(--gold);font-weight:700}
 .appbar .t em{display:inline-block;margin-top:5px;font-style:normal;font-size:11.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#0F172A;background:var(--gold);padding:2px 8px;border-radius:99px}
@@ -117,6 +117,28 @@ th{color:var(--mute);font-weight:600}
 .chev{display:inline-flex;align-items:center}
 .chip{letter-spacing:.01em}
 .sheet>*{flex-shrink:0}
+
+.menubtn{width:44px;height:44px;border-radius:14px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.06);color:#fff;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;margin-right:-2px}
+nav.tabs button.center{position:relative}
+nav.tabs .fab{width:58px;height:58px;margin-top:-30px;border-radius:50%;background:linear-gradient(160deg,#1B2540,#0B1220);color:var(--gold);display:flex;align-items:center;justify-content:center;box-shadow:0 8px 20px rgba(11,18,32,.35),0 0 0 4px var(--bg),0 0 0 5.5px rgba(201,162,75,.6)}
+nav.tabs .fab svg{width:26px;height:26px}
+nav.tabs button.center.on{color:var(--brand)}
+nav.tabs button.center.on .fab{background:linear-gradient(160deg,#E6C873,#C49A3A);color:#0B1220}
+.dbg{position:fixed;inset:0;background:rgba(7,12,26,.5);z-index:50}
+.dpanel{position:fixed;top:0;bottom:0;left:0;width:min(84vw,340px);background:var(--bg);z-index:51;overflow:auto;box-shadow:12px 0 40px rgba(7,12,26,.35);padding-bottom:24px}
+.dhead{display:flex;gap:12px;align-items:center;padding:calc(18px + env(safe-area-inset-top,0px)) 18px 18px;background:linear-gradient(160deg,#1B2540,#0B1220);color:#fff;border-bottom:2px solid var(--gold)}
+.dhead img{width:52px;height:52px;border-radius:14px}
+.dhead b{display:block;font-size:19px}.dhead span{font-size:13px;color:#C9CED6}
+.dsect{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--goldInk);padding:18px 18px 6px}
+.ditem{display:flex;gap:14px;align-items:center;width:100%;padding:12px 18px;border:0;background:none;text-align:left;font:inherit;color:inherit;cursor:pointer}
+.ditem:active{background:var(--soft)}
+.ditem .dic{width:40px;height:40px;border-radius:12px;background:var(--card);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--brand);flex-shrink:0}
+.ditem b{display:block;font-size:15.5px}.ditem span span{font-size:13px;color:var(--mute)}
+.tcheck{width:30px;height:30px;border-radius:9px;border:2px solid #CFC8B8;background:#fff;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;color:#fff}
+.tcheck.on{background:var(--ok);border-color:var(--ok)}
+.tmain{flex:1;min-width:0;border:0;background:none;text-align:left;font:inherit;color:inherit;cursor:pointer;padding:0}
+.tmain b{display:block;font-size:15.5px}.tmain span{font-size:13px;color:var(--mute)}
+.t-in b,.t-in span{color:var(--infoInk)}
 </style>
 </head>
 <body>
@@ -126,6 +148,6 @@ th{color:var(--mute);font-weight:600}
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <input type="file" id="fileIn" accept=".xlsx,.xls,.csv" class="hidden">
 <input type="file" id="photoIn" accept="image/*" class="hidden">
-<script src="app.js?v=3.1.0"></script>
+<script src="app.js?v=3.1.1"></script>
 </body>
 </html>

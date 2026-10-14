@@ -240,7 +240,7 @@ const ICON = {
   find: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg>',
   set: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>'
 };
-const TABS = [['home', 'Home'], ['pend', 'Pending'], ['reg', 'Registers'], ['find', 'Search'], ['set', 'Settings']];
+const TABS = [['home', 'Home'], ['pend', 'Pending'], ['find', 'Search'], ['reg', 'Registers'], ['set', 'Settings']];
 
 function reqCard(r) {
   const PL = plan();
@@ -253,7 +253,7 @@ function reqCard(r) {
 }
 function appBar() {
   const lk = ui.locked ? '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>' : '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="M8 11V7a4 4 0 0 1 7.5-1.8"/></svg>';
-  return '<div class="appbar"><img class="logo" src="icon.png" alt="JV Stock Issue logo"><div class="t"><b>JV Stock Issue</b><span>Built by <i>' + esc(S.me.builder || S.me.name || 'JV') + '</i></span>' + (S.me.storeName ? '<em>' + esc(S.me.storeName) + '</em>' : '') + '</div>' +
+  return '<div class="appbar"><button class="menubtn" data-a="drawer" aria-label="Open menu"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg></button><img class="logo" src="icon.png" alt="JV Stock Issue logo"><div class="t"><b>JV Stock Issue</b><span>Built by <i>' + esc(S.me.builder || S.me.name || 'JV') + '</i></span>' + (S.me.storeName ? '<em>' + esc(S.me.storeName) + '</em>' : '') + '</div>' +
     '<button class="lockbtn' + (ui.locked ? '' : ' open') + '" data-a="lockTap" aria-label="' + (ui.locked ? 'Unlock editing' : 'Lock editing') + '">' + lk + '</button>' +
     '<button data-a="goProfile" aria-label="Profile" style="border:0;background:none;padding:0">' + avatar(false) + '</button></div>';
 }
@@ -279,6 +279,7 @@ function vHome() {
     return h + '<div class="card pad col"><h2>Start here</h2><div class="note">Upload the CUIMS stock report and your requests sheet. Download the template first if you need the format.</div>' +
       '<button class="btn main" data-a="upload">Upload a file</button><button class="btn" data-a="template">Download data template</button></div></main>';
   }
+  h += tasksCard();
   h += '<div class="grid3"><button class="btn main" data-a="upload">Upload</button><button class="btn" data-a="openSite">Issue CUIMS</button><button class="btn gold" data-a="openMgr">Live stock</button></div>';
   h += '<button class="btn full" data-a="bulkEdit">Edit all requests: Slip No, Request No, date, receiver</button>';
   const c = { full: todays.filter(r => r.st === 'full').length, part: todays.filter(r => r.st === 'part').length, wait: todays.filter(r => r.st === 'wait').length };
@@ -804,13 +805,143 @@ function pdfPending() {
   pdfSign(doc); pdfFoot(doc, 'Pending'); pdfSave(doc, 'Pending-' + today() + '.pdf');
 }
 
+/* ---------------- tasks ---------------- */
+const BUILTIN_TASKS = [
+  ['count', 'Daily Count Cycle', 'Count 20 random articles'],
+  ['stock', 'Upload fresh stock', 'CUIMS stock report'],
+  ['requests', "Upload today's requests", 'Requests sheet'],
+  ['backup', 'Cloud backup', 'Back up to Google Drive']
+];
+function taskList() { return BUILTIN_TASKS.concat((S.customTasks || []).map(t => [t.id, t.title, 'Your task'])); }
+function autoDone(id, d) {
+  if (id === 'count') return (S.counts || []).some(c => c.date === d && c.status === 'done');
+  if (id === 'stock') return !!(S.stockAt && isoOf(new Date(S.stockAt)) === d);
+  if (id === 'requests') return S.lines.some(l => l.date === d);
+  if (id === 'backup') return !!(S.sync.at && isoOf(new Date(S.sync.at)) === d);
+  return false;
+}
+function taskStatus(id, d) {
+  const m = ((S.taskLog || {})[d] || {})[id];
+  if (m && m.status === 'done') return 'done';
+  if (m && m.status === 'skip') return 'skip';
+  if (autoDone(id, d)) return 'done';
+  return d < today() ? 'notdone' : 'pending';
+}
+const TSTAT = { done: ['Done', 'c-ok'], pending: ['Pending', 'c-gd'], notdone: ['Not done', 'c-no'], skip: ['Skipped', 'c-gy'] };
+function tasksCard() {
+  const d = today(), L = taskList();
+  const done = L.filter(t => taskStatus(t[0], d) === 'done').length;
+  let h = '<div class="card" style="overflow:hidden"><div class="pad row" style="padding-bottom:8px"><span><b class="ttl">Tasks</b><div class="meta"><span>' + done + ' of ' + L.length + ' done today</span></div></span><button class="btn sm ghost" data-a="taskLog">Log</button></div>';
+  h += '<div class="bar" style="margin:0 18px 6px"><div style="width:' + Math.round(done / L.length * 100) + '%;background:var(--gold)"></div></div>';
+  L.forEach(([id, title, sub]) => {
+    const st = taskStatus(id, d);
+    h += '<div class="line" style="flex-direction:row;align-items:center;gap:12px"><button class="tcheck' + (st === 'done' ? ' on' : '') + '" data-a="taskTog" data-v="' + esc(id) + '" aria-label="Mark ' + esc(title) + ' done">' + (st === 'done' ? '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>' : '') + '</button>' +
+      '<button class="tmain" data-a="taskOpen" data-v="' + esc(id) + '"><b>' + esc(title) + '</b><span>' + esc(sub) + '</span></button>' + pill(TSTAT[st][0], TSTAT[st][1]) + '</div>';
+  });
+  return h + '</div>';
+}
+function vTaskLog() {
+  const L = taskList();
+  const daysSet = new Set(Object.keys(S.taskLog || {})); (S.counts || []).forEach(c => daysSet.add(c.date)); daysSet.add(today());
+  const ds = [...daysSet].sort().reverse().slice(0, 60);
+  let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Task log</h1><div class="sub">Every day, every task: done, pending or not done.</div></div></header><main>';
+  h += '<div class="card pad col"><b>Add your own daily task</b><div class="grid2"><input type="text" data-tk="new" value="' + esc(ui.newTask || '') + '" placeholder="e.g. Check expiry dates"><button class="btn" data-a="taskAdd">Add task</button></div>' +
+    ((S.customTasks || []).length ? (S.customTasks.map(t => '<div class="row" style="padding:4px 0"><span>' + esc(t.title) + '</span><button class="xbtn" data-a="taskDel" data-v="' + esc(t.id) + '" aria-label="Delete task">' + ico('x', 16) + '</button></div>').join('')) : '') + '</div>';
+  ds.forEach(d => {
+    const done = L.filter(t => taskStatus(t[0], d) === 'done').length;
+    h += '<div class="card" style="overflow:hidden"><div class="pad row" style="padding-bottom:6px"><b>' + fmtLong(d) + (d === today() ? ' · Today' : '') + '</b>' + pill(done + ' of ' + L.length, done === L.length ? 'c-ok' : d < today() ? 'c-no' : 'c-gd') + '</div>' +
+      L.map(([id, title]) => { const st = taskStatus(id, d), m = ((S.taskLog || {})[d] || {})[id];
+        return '<div class="line" style="flex-direction:row;align-items:center;justify-content:space-between;padding:10px 18px"><span>' + esc(title) + (m && m.at ? '<div class="meta"><span>' + fmtDT(m.at) + (m.by ? ' · ' + esc(m.by) : '') + '</span></div>' : '') + '</span>' + pill(TSTAT[st][0], TSTAT[st][1]) + '</div>'; }).join('') + '</div>';
+  });
+  return h + '</main>';
+}
+
+/* ---------------- Daily Count Cycle ---------------- */
+function seededPick(arr, n, seed) {
+  let x = 0; for (const ch of seed) x = (x * 31 + ch.charCodeAt(0)) >>> 0;
+  const rnd = () => { x ^= x << 13; x >>>= 0; x ^= x >> 17; x ^= x << 5; x >>>= 0; return x / 4294967296; };
+  const a = arr.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a.slice(0, n);
+}
+function todayCount(create) {
+  S.counts = S.counts || [];
+  let c = S.counts.find(x => x.date === today() && x.status !== 'void');
+  if (!c && create) {
+    const recent = new Set(S.counts.filter(x => days(x.date) < 7).flatMap(x => x.items.map(i => i.code)));
+    let pool = Object.keys(S.stock).filter(k => S.stock[k].qty > 0 && !recent.has(k));
+    if (pool.length < 20) pool = Object.keys(S.stock).filter(k => S.stock[k].qty > 0);
+    if (!pool.length) { toast('Upload a stock report first.'); return null; }
+    const pick = seededPick(pool.sort(), 20, today() + '|' + (S.counts.length));
+    c = { id: nid(), date: today(), status: 'open', startedAt: new Date().toISOString(), by: meTag(), stockAt: S.stockAt,
+      items: pick.map(k => ({ code: k, name: S.stock[k].name, uom: S.stock[k].uom, system: S.stock[k].qty, physical: '' })) };
+    S.counts.push(c); save();
+  }
+  return c;
+}
+function diffOf(i) { if (i.physical === '' || i.physical == null || isNaN(parseFloat(i.physical))) return null; return Math.round((parseFloat(i.physical) - i.system) * 1000) / 1000; }
+function countSummary(c) { let m = 0, ex = 0, sh = 0, left = 0; c.items.forEach(i => { const d = diffOf(i); if (d === null) left++; else if (d === 0) m++; else if (d > 0) ex++; else sh++; }); return { m, ex, sh, left }; }
+function vCount() {
+  const c = (S.counts || []).find(x => String(x.id) === String(ui.countId)) || todayCount(false);
+  if (!c) { ui.view = null; return vHome(); }
+  const sm = countSummary(c), open = c.status === 'open';
+  let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Daily Count Cycle</h1><div class="sub">' + fmtLong(c.date) + ' · ' + c.items.length + ' random articles · system stock from ' + (c.stockAt ? fmtDT(c.stockAt) : '–') + '</div></div></header><main>';
+  h += '<div class="grid3"><div class="tile t-ok"><b>' + sm.m + '</b><span>Match</span></div><div class="tile t-in"><b>' + sm.ex + '</b><span>Excess</span></div><div class="tile t-no"><b>' + sm.sh + '</b><span>Short</span></div></div>';
+  h += meta([sm.left ? sm.left + ' still to count' : 'All counted', c.status === 'done' ? 'Finished ' + fmtDT(c.doneAt) : 'In progress']);
+  h += '<div class="card" style="overflow:hidden">';
+  c.items.forEach((i, idx) => {
+    const d = diffOf(i);
+    const tag = d === null ? '' : d === 0 ? pill('Match', 'c-ok') : d > 0 ? pill('Excess +' + num(d), 'c-in') : pill('Short ' + num(d), 'c-no');
+    h += '<div class="line"><div class="row"><b>' + (idx + 1) + '. ' + esc(i.name) + '</b>' + tag + '</div><div class="row" style="align-items:center">' + meta([esc(i.code), 'System ' + num(i.system) + ' ' + esc(i.uom)]) +
+      (open ? '<input type="number" inputmode="decimal" data-cnt="' + idx + '" value="' + esc(i.physical) + '" placeholder="Physical" style="width:120px;text-align:right">' : '<b class="qty">' + (i.physical === '' ? '–' : num(i.physical)) + ' ' + esc(i.uom) + '</b>') + '</div></div>';
+  });
+  h += '</div>';
+  if (open) h += '<button class="btn main full" data-a="countDone"' + (sm.left ? ' disabled' : '') + '>' + (sm.left ? 'Count all ' + sm.left + ' remaining to finish' : 'Finish count') + '</button>';
+  h += '<div class="grid2"><button class="btn" data-a="countExport" data-v="' + c.id + '">Download</button><button class="btn" data-a="countLog">Count history</button></div>';
+  return h + '</main>';
+}
+function vCountLog() {
+  const L = (S.counts || []).slice().sort((a, b) => b.date.localeCompare(a.date));
+  let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Count history</h1><div class="sub">Every Daily Count Cycle with its differences.</div></div></header><main>';
+  if (!L.length) h += '<div class="card pad note">No counts yet. Start today\'s count from Tasks.</div>';
+  L.forEach(c => { const sm = countSummary(c);
+    h += '<button class="card pad tap col" style="gap:6px" data-a="countOpen" data-v="' + c.id + '"><div class="row"><b class="ttl">' + fmtLong(c.date) + '</b>' + (c.status === 'done' ? pill('Done', 'c-ok') : c.date < today() ? pill('Not finished', 'c-no') : pill('In progress', 'c-gd')) + '</div>' +
+      meta([sm.m + ' match', sm.ex + ' excess', sm.sh + ' short', sm.left ? sm.left + ' not counted' : '', c.by && c.by.name ? esc(c.by.name) : '']) + '</button>'; });
+  if (L.length) h += '<button class="btn" data-a="countExportAll">Download all counts</button>';
+  return h + '</main>';
+}
+function countRows(list) {
+  const rows = []; list.forEach(c => c.items.forEach(i => { const d = diffOf(i); rows.push({ Date: fmtLong(c.date), Code: i.code, Item: i.name, UOM: i.uom, System: i.system, Physical: i.physical === '' ? '' : Number(i.physical), Difference: d === null ? '' : d, Result: d === null ? 'Not counted' : d === 0 ? 'Match' : d > 0 ? 'Excess' : 'Short', Status: c.status === 'done' ? 'Done' : 'Open', 'Counted by': (c.by || {}).name || '' }); }));
+  return rows;
+}
+
+/* ---------------- side drawer ---------------- */
+function renderDrawer() {
+  let el = document.getElementById('drawer'); if (!el) { el = document.createElement('div'); el.id = 'drawer'; document.body.appendChild(el); }
+  if (!ui.drawer) { el.innerHTML = ''; return; }
+  const item = (a, label, sub, d, v) => '<button class="ditem" data-a="' + a + '"' + (v ? ' data-v="' + v + '"' : '') + '><span class="dic"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + d + '</svg></span><span><b>' + label + '</b><span>' + sub + '</span></span></button>';
+  el.innerHTML = '<div class="dbg" data-a="drawerClose"></div><aside class="dpanel" role="dialog" aria-label="Menu"><div class="dhead"><img src="icon.png" alt=""><div><b>JV Stock Issue</b><span>Built by ' + esc(S.me.builder || S.me.name || 'JV') + '</span></div></div>' +
+    '<div class="dsect">Tools</div>' +
+    item('dCount', 'Daily Count Cycle', '20 random articles, physical vs system', '<path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/>') +
+    item('countLog', 'Count history', 'All past counts and differences', '<path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/>') +
+    item('taskLog', 'Task log', 'Daily tasks: done, pending, not done', '<path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/>') +
+    '<div class="dsect">Work</div>' +
+    item('dUpload', 'Upload', 'Requests, earlier pending, stock', '<path d="M12 21V9M7 14l5-5 5 5M4 3h16"/>') +
+    item('dBulk', 'Edit all requests', 'Slip No, Request No, date, receiver', '<path d="M4 20h4L19 9l-4-4L4 16z"/>') +
+    item('dSite', 'Issue CUIMS', 'Your emp ID', '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/>') +
+    item('dMgr', 'Live stock', 'Manager CUIMS', '<path d="M3 12h4l3 7 4-14 3 7h4"/>') +
+    '<div class="dsect">Data</div>' +
+    item('dBackup', 'Cloud backups', 'Restore, keep, delete', '<path d="M7 18a5 5 0 1 1 1-9.9A6 6 0 0 1 19 10a4 4 0 0 1-1 8z"/>') +
+    item('dData', 'Downloads', 'Excel and PDF reports', '<path d="M12 3v12M7 10l5 5 5-5M4 21h16"/>') +
+    '</aside>';
+}
+
 /* ---------------- export preview + settings ---------------- */
 const REPORTS = {
   issue: { name: 'Daily Issue Register', pdf: true, landscape: true, dated: 'reg', details: true, sorts: true },
   ret: { name: 'Daily Return Register', pdf: true, landscape: false, dated: 'reg', details: true, sorts: true },
   pending: { name: 'Pending Report', pdf: true, landscape: true, sorts: true },
   requests: { name: 'Requests Register' }, entries: { name: 'Entries Log' }, items: { name: 'Entry Items' },
-  stock: { name: 'Stock Now' }, returns: { name: 'Returns (all)' }, search: { name: 'Search Results' }
+  stock: { name: 'Stock Now' }, returns: { name: 'Returns (all)' }, search: { name: 'Search Results' }, counts: { name: 'Daily Count Cycle', pdf: true, landscape: false }
 };
 function rptPref(type) {
   S.rp = S.rp || {};
@@ -842,7 +973,7 @@ function reportDef(type) {
       detail: list.map(r => ({ head: r.no + '   ·   ' + r.store + '   ·   Returned by GA' + r.by + '   ·   Serial ' + (r.serial || '____'), cols: ['S.No', 'Item code', 'Item', 'UOM', 'Qty', 'Item remarks'], rows: r.items.map((x, i) => [i + 1, x.code, x.name || itemName(x.code), x.uom || itemUom(x.code), num(x.qty), x.remark || '–']) })),
       file: 'Return-Register-' + d, sub2: 'Return · Department · Against Issue No 1111' };
   }
-  const objRows = type === 'pending' ? sortStores(rowsPending(), 'Store', p.sort) : type === 'requests' ? rowsRequests() : type === 'entries' ? rowsEntries() : type === 'items' ? rowsItems() : type === 'stock' ? rowsStock() : type === 'returns' ? rowsReturns() : type === 'search' ? searchRows() : [];
+  const objRows = type === 'pending' ? sortStores(rowsPending(), 'Store', p.sort) : type === 'requests' ? rowsRequests() : type === 'entries' ? rowsEntries() : type === 'items' ? rowsItems() : type === 'stock' ? rowsStock() : type === 'returns' ? rowsReturns() : type === 'search' ? searchRows() : type === 'counts' ? countRows((S.counts || []).filter(c => !ui.countExportId || String(c.id) === String(ui.countExportId))) : [];
   const keys = objRows.length ? Object.keys(objRows[0]) : [];
   const chips = type === 'pending' ? [['Date', fmtLong(today())], ['Stores', new Set(objRows.map(r => r.Store)).size], ['Articles', objRows.length]] : [['Date', fmtLong(today())], ['Rows', objRows.length]];
   return { cols: keys.map(k => [k, k]), rows: objRows, chips, file: REPORTS[type].name.replace(/[^A-Za-z]+/g, '-') + '-' + today(), sub2: '' };
@@ -1035,6 +1166,7 @@ function recordSubmit(e) {
 }
 window.jvOnReturnFromSite = () => render();
 window.jvBack = () => {
+  if (ui.drawer) { ui.drawer = false; renderDrawer(); return true; }
   if (ui.sheet) { ui.sheet = null; renderSheet(); return true; }
   if (ui.view) { ui.view = null; render(); return true; }
   if (ui.tab === 'set' && ui.setPage) { ui.setPage = null; render(); return true; }
@@ -1046,8 +1178,9 @@ window.jvBack = () => {
 function render() {
   const app = document.getElementById('app');
   const y = window.scrollY;
-  app.innerHTML = appBar() + (ui.view === 'req' ? vReq() : ({ home: vHome, pend: vPend, reg: vReg, find: vFind, set: vSet })[ui.tab]());
-  document.querySelector('#tabs .in').innerHTML = TABS.map(([k, l]) => '<button data-a="tab" data-v="' + k + '" class="' + (ui.tab === k && !ui.view ? 'on' : '') + '">' + ICON[k] + l + '</button>').join('');
+  app.innerHTML = appBar() + (ui.view === 'count' ? vCount() : ui.view === 'countLog' ? vCountLog() : ui.view === 'taskLog' ? vTaskLog() : ui.view === 'req' ? vReq() : ({ home: vHome, pend: vPend, reg: vReg, find: vFind, set: vSet })[ui.tab]());
+  document.querySelector('#tabs .in').innerHTML = TABS.map(([k, l]) => k === 'find' ? '<button data-a="tab" data-v="find" class="center' + (ui.tab === k && !ui.view ? ' on' : '') + '" aria-label="Search"><span class="fab">' + ICON.find + '</span>' + l + '</button>' : '<button data-a="tab" data-v="' + k + '" class="' + (ui.tab === k && !ui.view ? 'on' : '') + '">' + ICON[k] + l + '</button>').join('');
+  renderDrawer();
   window.scrollTo(0, y);
 }
 function renderSheet() {
@@ -1199,6 +1332,26 @@ document.addEventListener('click', async ev => {
     case 'photoDel': delete S.me.photo; save(); render(); break;
     case 'expPendXlsx': openExport('pending'); break;
     case 'closeSheet': ui.sheet = null; renderSheet(); break;
+    case 'drawer': ui.drawer = true; renderDrawer(); break;
+    case 'drawerClose': ui.drawer = false; renderDrawer(); break;
+    case 'dCount': ui.drawer = false; if (todayCount(true)) { ui.countId = todayCount(false).id; ui.view = 'count'; } render(); window.scrollTo(0, 0); break;
+    case 'countLog': ui.drawer = false; ui.view = 'countLog'; render(); window.scrollTo(0, 0); break;
+    case 'countOpen': ui.countId = v; ui.view = 'count'; render(); window.scrollTo(0, 0); break;
+    case 'taskLog': ui.drawer = false; ui.view = 'taskLog'; render(); window.scrollTo(0, 0); break;
+    case 'dUpload': ui.drawer = false; renderDrawer(); ui.upload = null; ui.sheet = { kind: 'upload' }; renderSheet(); break;
+    case 'dBulk': ui.drawer = false; renderDrawer(); document.querySelector('[data-a=bulkEdit]') ? document.querySelector('[data-a=bulkEdit]').click() : (ui.tab = 'home', render()); break;
+    case 'dSite': ui.drawer = false; renderDrawer(); if (N) N.openSite(); break;
+    case 'dMgr': ui.drawer = false; renderDrawer(); if (N && N.openMgr) N.openMgr(); break;
+    case 'dBackup': ui.drawer = false; renderDrawer(); if (S.sync.url) { ui.sheet = { kind: 'backups' }; loadBackups(); } else { ui.tab = 'set'; ui.setPage = 'cloud'; ui.view = null; render(); } break;
+    case 'dData': ui.drawer = false; ui.tab = 'set'; ui.setPage = 'data'; ui.view = null; render(); window.scrollTo(0, 0); break;
+    case 'taskOpen': if (v === 'count') { if (todayCount(true)) { ui.countId = todayCount(false).id; ui.view = 'count'; render(); window.scrollTo(0, 0); } } else if (v === 'stock' || v === 'requests') { ui.upload = null; ui.sheet = { kind: 'upload' }; renderSheet(); } else if (v === 'backup') { if (S.sync.url) syncNow(false); else { ui.tab = 'set'; ui.setPage = 'cloud'; render(); } } break;
+    case 'taskTog': { const d = today(); S.taskLog = S.taskLog || {}; S.taskLog[d] = S.taskLog[d] || {}; const cur = taskStatus(v, d);
+      S.taskLog[d][v] = cur === 'done' ? { status: 'pending', at: new Date().toISOString(), by: S.me.name || '' } : { status: 'done', at: new Date().toISOString(), by: S.me.name || '' }; save(); render(); break; }
+    case 'taskAdd': { const tt = String(ui.newTask || '').trim(); if (!tt) break; S.customTasks = S.customTasks || []; S.customTasks.push({ id: 'c' + nid(), title: tt }); ui.newTask = ''; save(); render(); break; }
+    case 'taskDel': if (confirm('Delete this task? Its history stays.')) { S.customTasks = (S.customTasks || []).filter(x => x.id !== v); save(); render(); } break;
+    case 'countDone': { const c = (S.counts || []).find(x => String(x.id) === String(ui.countId)); if (!c) break; c.status = 'done'; c.doneAt = new Date().toISOString(); S.taskLog = S.taskLog || {}; S.taskLog[c.date] = S.taskLog[c.date] || {}; S.taskLog[c.date].count = { status: 'done', at: c.doneAt, by: S.me.name || '' }; save(); render(); toast('Count finished and logged.'); break; }
+    case 'countExport': ui.countExportId = v; openExport('counts'); break;
+    case 'countExportAll': ui.countExportId = null; openExport('counts'); break;
     case 'rpSet': rptPref(ui.sheet.type)[t.dataset.k] = v; save(true); renderSheet(); break;
     case 'rpTog': rptPref(ui.sheet.type)[t.dataset.k] = t.checked; save(true); renderSheet(); break;
     case 'rpCol': rptPref(ui.sheet.type).cols[t.dataset.k] = t.checked; save(true); renderSheet(); break;
@@ -1290,6 +1443,8 @@ document.addEventListener('input', ev => {
   if (el.dataset.in === 'slip' || el.dataset.in === 'rcv') { const k = focusKey(el); ui.sheet[el.dataset.in] = el.dataset.in === 'slip' ? el.value.trim().toUpperCase() : el.value.replace(/\D/g, ''); renderSheet(); refocus(k); return; }
   if (el.dataset.in === 'q') { const k = focusKey(el); ui.search.q = el.value; render(); refocus(k); return; }
   if (el.dataset.bk) { ui.sheet[el.dataset.bk] = el.value; return; }
+  if (el.dataset.tk) { ui.newTask = el.value; return; }
+  if (el.dataset.cnt != null) { const c = (S.counts || []).find(x => String(x.id) === String(ui.countId)); if (c) { c.items[+el.dataset.cnt].physical = el.value; save(true); } return; }
   if (el.dataset.rp) { rptPref(ui.sheet.type)[el.dataset.rp] = el.value; save(true); if (el.tagName === 'SELECT') renderSheet(); return; }
   if (el.dataset.crop) { ui.sheet.zoom = parseFloat(el.value); const im = document.querySelector('#cropBox img'); if (im) { const V = 280, c = ui.sheet, base = Math.max(V / c.img.width, V / c.img.height) * c.zoom, dw = c.img.width * base, dh = c.img.height * base; im.style.width = dw + 'px'; im.style.height = dh + 'px'; im.style.left = ((V - dw) / 2 + c.x) + 'px'; im.style.top = ((V - dh) / 2 + c.y) + 'px'; } return; }
   if (el.dataset.url) { ui[el.dataset.url === 'emp' ? 'urlEmp' : 'urlMgr'] = el.value.trim(); return; }
@@ -1322,6 +1477,7 @@ document.addEventListener('change', async ev => {
   }
   if (el.dataset.sort) { ui.sort[el.dataset.sort] = el.value; render(); return; }
   if (el.dataset.rp) { later(() => renderSheet()); return; }
+  if (el.dataset.cnt != null) { later(() => { const k = focusKey(document.activeElement); render(); }); return; }
   if (el.dataset.in === 'regDate') { ui.reg.date = el.value || today(); render(); if (ui.sheet && ui.sheet.kind === 'export') renderSheet(); return; }
   if (el.dataset.in === 'sFrom') { ui.search.from = el.value; render(); return; }
   if (el.dataset.in === 'sTo') { ui.search.to = el.value; render(); return; }
