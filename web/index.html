@@ -157,6 +157,19 @@ nav.tabs button.center.on .fab{background:linear-gradient(160deg,#E6C873,#C49A3A
 .vrow{display:flex;flex-direction:column;gap:6px;padding-bottom:10px;border-bottom:1px dashed var(--line)}
 .vhead{display:flex;align-items:center;gap:8px}.vhead b{flex:1}
 .vbox input{min-height:44px;font-size:15px;padding:0 8px}
+.sgroup{display:flex;align-items:center;gap:10px;padding:6px 2px 0}
+.sgroup b{font-size:15px}.sgroup span:last-child{font-size:13.5px;color:var(--mute)}
+.sdot{width:10px;height:10px;border-radius:50%;flex-shrink:0}.sdot.new{background:var(--info);box-shadow:0 0 0 4px var(--infoBg)}.sdot.cont{background:var(--pt);box-shadow:0 0 0 4px var(--ptBg)}
+.contcard{border-left:4px solid var(--pt)}
+.contline{font-size:13px;font-weight:600;color:var(--ptInk);background:var(--ptBg);border-radius:10px;padding:5px 10px;align-self:flex-start}
+.slipline{display:flex;flex-wrap:wrap;gap:6px 14px;padding:8px 12px;border-radius:12px;background:var(--infoBg);color:var(--infoInk);font-size:14px}
+.leftbox{border-top:1px solid var(--line);background:#FFFBF2;padding:10px 18px 12px}
+.lefthead{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ptInk);margin-bottom:4px}
+.leftrow{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:6px 0;border-bottom:1px dashed #F1E3C2}
+.leftrow:last-child{border-bottom:0}.leftrow span span{display:block;font-size:12.5px;color:var(--mute)}
+.hit{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:var(--card);text-align:left;font:inherit;color:inherit;cursor:pointer}
+.hit span span{display:block;font-size:12.5px;color:var(--mute)}
+input.bad{border-color:var(--no)}
 </style>
 </head>
 <body>
@@ -166,6 +179,6 @@ nav.tabs button.center.on .fab{background:linear-gradient(160deg,#E6C873,#C49A3A
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <input type="file" id="fileIn" accept=".xlsx,.xls,.csv" class="hidden">
 <input type="file" id="photoIn" accept="image/*" class="hidden">
-<script src="app.js?v=3.1.3"></script>
+<script src="app.js?v=3.1.4"></script>
 </body>
 </html>

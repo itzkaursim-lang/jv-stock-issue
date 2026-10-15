@@ -404,7 +404,7 @@
 
   function hookSubmit() {
     var s = $('ContentPlaceHolder1_btnsubmit');
-    if (s && !s.__jv) { s.__jv = true; s.addEventListener('click', function () { var j = job(); if (j && j.phase === 'await') { j.phase = 'capture'; j.capSearched = false; j.capTries = 0; j.submitAt = Date.now(); save(j); } }, true); }
+    if (s && !s.__jv) { s.__jv = true; s.addEventListener('click', function () { var j = job(); if (j && j.phase === 'await') { j.phase = 'capture'; j.capSearched = false; j.capTries = 0; j.submitAt = Date.now(); save(j); paint(); setTimeout(kick, 1500); } }, true); }
     var r = $('ContentPlaceHolder1_btnreset');
     if (r && !r.__jv) { r.__jv = true; r.addEventListener('click', function () { var j = job(); if (active(j) && ['fill', 'await'].indexOf(j.phase) >= 0) { j.phase = 'fill'; j.paused = true; j.pauseMsg = 'form was reset. Tap Resume to fill again.'; j.tries = {}; save(j); } }, true); }
   }
@@ -435,6 +435,8 @@
     return 'stop';
   }
 
+  function kick() { var j = job(); if (!running && active(j) && !j.paused && isIssue && ['dup', 'fill', 'capture'].indexOf(j.phase) >= 0) run(); }
+  setInterval(kick, 3000);
   async function run() {
     if (running) return; running = true;
     try {
@@ -461,7 +463,7 @@
     var msg = B.lastAlert() || ''; var j = job();
     if (!active(j)) return;
     var m = msg.match(/\b(\d{4,8})\b/);
-    if (j.phase === 'capture' || j.phase === 'await') { if (m) { j.alertSerial = m[1]; save(j); } log(j, 'CUIMS: ' + msg); return; }
+    if (j.phase === 'capture' || j.phase === 'await') { if (m) { j.alertSerial = m[1]; save(j); } log(j, 'CUIMS: ' + msg); setTimeout(kick, 800); return; }
     if (j.phase === 'fill' && !j.paused) { j.paused = true; j.pauseMsg = 'CUIMS message: ' + msg; save(j); log(j, 'CUIMS: ' + msg, true); ev('paused', { msg: j.pauseMsg }); paint(); }
   };
 
