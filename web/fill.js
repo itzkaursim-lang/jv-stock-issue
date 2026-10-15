@@ -148,6 +148,7 @@
         '<div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:14px">' + btn('cancelReset', 'Cancel and clear form', 'warn') + btn('cancelKeep', 'Cancel, keep form', '') + btn('noCancel', 'Keep going', 'main') + '</div></div>';
       bar.innerHTML = h; return;
     }
+    if (j.phase === 'await' && !ui.serialBox && formReset(j)) { j = Object.assign({}, j, { phase: 'capture' }); }
     if (j.phase === 'await' && !ui.serialBox) {
       var V = verify(j), allOk = V.every(function (r) { return r[2] !== false; });
       h += '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;background:' + (allOk ? '#E3F4EC' : '#FBE6E9') + ';color:' + (allOk ? '#0B5E3D' : '#8E1B2A') + ';font-weight:700;font-size:15.5px">' + ic(allOk ? 'ok' : 'alert', 20) + (allOk ? 'Rechecked. Everything matches. Tap SUBMIT.' : 'Something does not match. Check before SUBMIT.') + '</div>';
@@ -435,9 +436,23 @@
     return 'stop';
   }
 
-  function kick() { var j = job(); if (!running && active(j) && !j.paused && isIssue && ['dup', 'fill', 'capture'].indexOf(j.phase) >= 0) run(); }
+  function formReset(j) {
+    var sb = $('ContentPlaceHolder1_txtRequisitonSlipno') || document.querySelector('input[id*="RequisitonSlipno"]');
+    var anyRow = (j.items || []).some(function (x) { return !x.skip && gridRow(x.code); });
+    return isIssue && !anyRow && (!sb || sb.value.trim() !== j.slip);
+  }
+  function toCapture(j, why) { j.phase = 'capture'; j.capSearched = false; j.capTries = 0; j.submitAt = j.submitAt || Date.now(); ui.serialBox = false; save(j); log(j, why); paint(); }
+  document.addEventListener('click', function (e) {
+    var t = e.target && e.target.closest ? e.target.closest('#ContentPlaceHolder1_btnsubmit,input[id$="btnsubmit"]') : null;
+    if (!t) return; var j = job(); if (j && j.phase === 'await') { toCapture(j, 'SUBMIT tapped, finding the Serial No'); setTimeout(kick, 1500); }
+  }, true);
+  function kick() {
+    var j0 = job();
+    if (!running && active(j0) && !j0.paused && j0.phase === 'await' && !ui.serialBox && formReset(j0)) toCapture(j0, 'Form cleared after SUBMIT, finding the Serial No'); var j = job(); if (!running && active(j) && !j.paused && isIssue && ['dup', 'fill', 'capture'].indexOf(j.phase) >= 0) run(); }
   setInterval(kick, 3000);
   async function run() {
+    var ja = job();
+    if (active(ja) && ja.phase === 'await' && !ja.paused && !ui.serialBox && formReset(ja)) toCapture(ja, 'Form cleared after SUBMIT, finding the Serial No');
     if (running) return; running = true;
     try {
       for (var k = 0; k < 700; k++) {
