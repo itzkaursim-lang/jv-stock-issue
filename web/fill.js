@@ -465,6 +465,14 @@
     var t = e.target && e.target.closest ? e.target.closest('#ContentPlaceHolder1_btnsubmit,input[id$="btnsubmit"]') : null;
     if (!t) return; var j = job(); if (j && j.phase === 'await') { toCapture(j, 'SUBMIT tapped, finding the Serial No'); setTimeout(kick, 1500); }
   }, true);
+  (function () {
+    var nat = window.alert;
+    window.alert = function (m) {
+      var j = job();
+      if (j && (j.phase === 'capture' || j.phase === 'await')) { try { B.clearAlert && B.clearAlert(); } catch (e) {} window.__jvLastAlert = String(m || ''); if (window.JVFill && window.JVFill.onAlertMsg) window.JVFill.onAlertMsg(String(m || '')); return; }
+      return nat.apply(window, arguments);
+    };
+  })();
   function kick() {
     var j0 = job();
     if (!running && active(j0) && !j0.paused && j0.phase === 'await' && !ui.serialBox && formReset(j0)) toCapture(j0, 'Form cleared after SUBMIT, finding the Serial No'); var j = job(); if (!running && active(j) && !j.paused && isIssue && ['dup', 'fill', 'capture'].indexOf(j.phase) >= 0) run(); }
@@ -493,8 +501,9 @@
     running = false; paint();
   }
 
-  J.onAlertClosed = function () {
-    var msg = B.lastAlert() || ''; var j = job();
+  J.onAlertMsg = function (msg) { J.onAlertClosed(msg); };
+  J.onAlertClosed = function (given) {
+    var msg = given != null ? given : (B.lastAlert() || ''); var j = job();
     if (!active(j)) return;
     var m = msg.match(/\b(\d{4,8})\b/);
     if (j.phase === 'capture' || j.phase === 'await') { if (m) { j.alertSerial = m[1]; save(j); } log(j, 'CUIMS: ' + msg); setTimeout(kick, 800); return; }

@@ -205,6 +205,13 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public boolean onJsAlert(WebView wv, String url, String msg, JsResult res) {
                 lastAlert = msg == null ? "" : msg;
+                String jb = readFile(jobFile);
+                if ("emp".equals(who) && (jb.contains("\"phase\":\"capture\"") || jb.contains("\"phase\":\"await\""))) {
+                    // entry already submitted: take the message (Serial No) silently, no popup
+                    res.confirm();
+                    wv.evaluateJavascript("window.JVFill&&window.JVFill.onAlertClosed&&window.JVFill.onAlertClosed()", null);
+                    return true;
+                }
                 new AlertDialog.Builder(MainActivity.this)
                         .setTitle("CUIMS says")
                         .setMessage(lastAlert)
