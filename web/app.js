@@ -24,7 +24,7 @@ function writeLocal() { const t = JSON.stringify(S); try { if (N) N.storeSet(t);
 function save(noSync) {
   S.sync.dirty = true; S.sync.changedAt = new Date().toISOString();
   writeLocal();
-  if (S.sync.url && S.sync.auto) { clearTimeout(syncTimer); syncTimer = setTimeout(() => syncNow(true), noSync ? 15000 : 4000); }
+  if (!S.sync.firstDirty) S.sync.firstDirty = Date.now();
   paintSync();
 }
 let syncBusy = false, syncErr = '';
@@ -32,14 +32,16 @@ function syncLabel() {
   if (!S.sync.url) return ['off', 'Cloud not set'];
   if (syncBusy) return ['busy', 'Syncing…'];
   if (!navigator.onLine) return ['offline', 'Offline · saved on phone'];
-  if (S.sync.dirty || !S.sync.at) return [syncErr ? 'error' : 'pending', syncErr ? 'Will retry · saved on phone' : 'Saved on phone · uploading soon'];
+  if (S.sync.dirty || !S.sync.at) { const left = Math.max(0, Math.ceil(((S.sync.firstDirty || Date.now()) + (S.sync.delay != null ? S.sync.delay : 5) * 60000 - Date.now()) / 60000)); return [syncErr ? 'error' : 'pending', syncErr ? 'Will retry · saved on phone' : 'Saved on phone · upload in ' + (left ? left + ' min' : 'a moment')]; }
   return ['ok', 'Synced ' + (S.sync.at ? ago(S.sync.at) : '')];
 }
 function ago(ts) { const m = Math.round((Date.now() - new Date(ts)) / 60000); return m < 1 ? 'just now' : m < 60 ? m + ' min ago' : m < 1440 ? Math.round(m / 60) + ' h ago' : fmtDT(ts); }
 function paintSync() { const el = document.getElementById('syncline'); if (!el) return; const [k, t] = syncLabel(); el.className = 'sync s-' + k; el.lastChild.textContent = t; }
 window.addEventListener('online', () => { paintSync(); if (S.sync.dirty) syncNow(true); });
 window.addEventListener('offline', paintSync);
-setInterval(() => { paintSync(); if (S.sync.url && S.sync.auto && S.sync.dirty && navigator.onLine && !syncBusy) syncNow(true); }, 45000);
+function syncDue() { return S.sync.url && S.sync.auto && S.sync.dirty && navigator.onLine && !syncBusy && Date.now() - (S.sync.firstDirty || 0) >= (S.sync.delay != null ? S.sync.delay : 5) * 60000; }
+setInterval(() => { paintSync(); if (syncDue()) syncNow(true); }, 20000);
+document.addEventListener('visibilitychange', () => { if (document.hidden && S.sync.url && S.sync.auto && S.sync.dirty && navigator.onLine) syncNow(true); });
 const nid = () => S.nextId++;
 
 /* ================= utils ================= */
@@ -101,6 +103,7 @@ function unavail(lines, PL) {
     out.push('<b>' + esc(itemName(l.code)) + '</b> ' + num(l.qty) + ' ' + esc(itemUom(l.code)) + (k === 'missing' ? ' (not in stock sheet)' : k === 'hold' ? ' (on hold)' : s && s.qty >= l.qty ? ' (stock kept for higher-priority requests)' : ' (have ' + num(s ? s.qty : 0) + ')')); });
   return out.length ? '<div class="unav">' + ico('alert', 16) + '<span>Not available: ' + out.join(', ') + '</span></div>' : '';
 }
+const serFmt = v => { const s = String(v || ''); if (!s || s === '–') return '<span class="ser">–</span>'; return '<span class="ser">' + esc(s.slice(0, -2)) + '<b>' + esc(s.slice(-2)) + '</b></span>'; };
 const pill = (txt, cls) => '<span class="chip ' + (cls || 'c-gy') + '">' + esc(txt) + '</span>';
 function linePills(l, k) {
   const s = S.stock[l.code], u = itemUom(l.code), out = [];
@@ -246,7 +249,7 @@ function parseStock(wb) {
 }
 
 /* ================= UI state ================= */
-let ui = { locked: true, setPage: null, openStore: {}, sort: { home: 'priority', pend: 'custom', reg: 'time' }, tab: 'home', view: null, req: null, store: null, sheet: null, reg: { type: 'issue', date: today(), items: false }, search: { q: '', type: 'all', from: '', to: '', store: '', open: null }, upload: null, form: null };
+let ui = { picker: null, doneOpen: {}, lastReq: null, locked: true, setPage: null, openStore: {}, sort: { home: 'priority', pend: 'custom', reg: 'time' }, tab: 'home', view: null, req: null, store: null, sheet: null, reg: { type: 'issue', date: today(), items: false }, search: { q: '', type: 'all', from: '', to: '', store: '', open: null }, upload: null, form: null };
 
 const ICON = {
   home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg>',
@@ -261,9 +264,9 @@ function reqCard(r, cont) {
   const PL = plan();
   const tag = r.st === 'full' ? pill('Ready', 'c-ok') : r.st === 'part' ? pill(r.can.length + ' of ' + r.w.length + ' ready', 'c-gd') : r.st === 'done' ? pill('Done', 'c-in') : pill('Waiting', 'c-no');
   const slip = (r.w.find(l => l.slip) || {}).slip, rcv = (r.lines.find(l => l.rcv) || {}).rcv || (S.stores[r.store] || {}).rcv || '';
-  return '<div class="card' + (cont ? ' contcard' : '') + '"><div class="scard"><button class="main" data-a="openReq" data-v="' + esc(r.req) + '"><div class="row"><b class="ttl">' + esc(r.store) + '</b>' + tag + '</div>' +
+  return '<div class="card rcard' + (cont ? ' contcard' : '') + (ui.lastReq === r.req ? ' sel' : '') + '"><div class="scard"><button class="main" data-a="openReq" data-v="' + esc(r.req) + '"><div class="row"><span class="reqno">' + esc(r.req) + '</span>' + tag + '</div><b class="ttl">' + esc(r.store) + '</b>' +
     (cont ? '<div class="contline">Entered before: ' + [...new Set(r.iss.flatMap(l => l.issued.map(x => x.slip + (x.serial ? ' #' + x.serial : ''))))].map(esc).join(', ') + '</div>' : '') +
-    meta(['Req ' + esc(r.req), fmtShort(r.date), slip ? 'Slip ' + esc(slip) : '<em>No slip</em>', rcv ? 'GA' + esc(rcv) : '<em>No receiver</em>', r.lines.length + ' articles']) + unavail(r.w, PL) + '</button>' +
+    meta([fmtShort(r.date), slip ? 'Slip ' + esc(slip) : '<em>No slip</em>', rcv ? 'GA' + esc(rcv) : '<em>No receiver</em>', r.lines.length + ' articles']) + unavail(r.w, PL) + '</button>' +
     '<div class="side"><button class="xbtn" data-a="dropReq" data-v="' + esc(r.req) + '" aria-label="Remove ' + esc(r.store) + ' from the list">' + ico('x', 18) + '</button></div></div>' +
     (r.can && r.can.length ? '<div class="cta"><button class="btn main full" data-a="fillReq" data-v="' + esc(r.req) + '">Fill on CUIMS · ' + r.can.length + ' available</button></div>' : '') + '</div>';
 }
@@ -281,41 +284,39 @@ function vHome() {
   const t = today();
   const R = requests();
   const todays = R.filter(r => r.date === t && r.src !== 'old').map(r => Object.assign(r, reqState(r, PL))).filter(r => r.st !== 'done');
-  const order = { full: 0, part: 1, wait: 2 };
-  const so = ui.sort.home;
-  todays.sort((a, b) => so === 'custom' ? byStore(a.store, b.store) || a.req.localeCompare(b.req, undefined, { numeric: true }) : so === 'store' ? a.store.localeCompare(b.store) : so === 'req' ? a.req.localeCompare(b.req, undefined, { numeric: true }) : so === 'size' ? b.lines.length - a.lines.length : (order[a.st] - order[b.st] || b.can.length - a.can.length));
+  sortBy(todays, getSort('home'), r => ({ req: r.req, store: r.store, date: r.date, ready: r.can.length, size: r.lines.length }));
   const pend = S.lines.filter(isPending);
   const pendCan = pend.filter(l => PL[l.id] === 'issue').length;
   const issuedToday = S.entries.filter(e => (e.at || '').slice(0, 10) === t).length;
-  let h = '<header class="top"><div><h1>' + (S.me.name ? 'Hello, ' + esc(S.me.name.split(' ')[0]) : 'Today') + '</h1><div class="sub">' + fmtLong(t) + ' · ' + esc(stockAge()) + '</div></div>' +
-    '<button class="iconbtn" data-a="openSite" aria-label="Open CUIMS">' + '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></button></header><main>';
+  const readyNow = todays.reduce((n, r) => n + r.can.length, 0);
+  let h = '<main style="padding-top:16px">';
+  h += '<section class="hero"><div class="hrow"><div><div class="hello">' + (S.me.name ? 'Hello, ' + esc(S.me.name.split(' ')[0]) : 'Welcome') + '</div><div class="hdate">' + fmtLong(t) + '</div></div><button class="hstock" data-a="openMgr"><span>Stock</span><b>' + esc(stockAge().replace('Stock from ', '').replace(/ 20\d\d,/, ',')) + '</b></button></div>' +
+    '<div class="hstats"><button data-a="noop"><b>' + todays.length + '</b><span>Open today</span></button><button data-a="noop"><b>' + readyNow + '</b><span>Ready to issue</span></button><button data-a="tab" data-v="pend"><b>' + pend.length + '</b><span>Pending</span></button><button data-a="doneOpen"><b>' + issuedToday + '</b><span>Done today</span></button></div></section>';
   if (S.updateInfo && S.updateInfo.newer) h += '<button class="banner t-in tap" data-a="goUpdate" style="border:0"><b>Update ' + esc(S.updateInfo.tag) + ' available.</b> Tap to install.</button>';
-  if (!S.me.name) h += '<button class="banner t-pt tap" data-a="tab" data-v="set" style="border:0"><b>Add your name and emp code</b> in Settings, so entries and PDFs show who made them.</button>';
+  if (!S.me.name) h += '<button class="banner t-pt tap" data-a="goProfile" style="border:0"><b>Add your name and emp code</b> so entries and PDFs show who made them.</button>';
   if (!S.lines.length && !S.stockAt) {
-    return h + '<div class="card pad col"><h2>Start here</h2><div class="note">Upload the CUIMS stock report and your requests sheet. Download the template first if you need the format.</div>' +
-      '<button class="btn main" data-a="upload">Upload a file</button><button class="btn" data-a="template">Download data template</button></div></main>';
+    return h + '<div class="card pad col"><h2>Start here</h2><div class="note">Upload the CUIMS stock report and your requests sheet.</div><button class="btn main" data-a="upload">Upload a file</button><button class="btn" data-a="template">Download data template</button></div></main>';
   }
+  const qa = (a, label, d, cls) => '<button class="qa' + (cls ? ' ' + cls : '') + '" data-a="' + a + '"><span class="qi"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + d + '</svg></span><span>' + label + '</span></button>';
+  h += '<div class="qagrid">' + qa('upload', 'Upload', '<path d="M12 21V9M7 14l5-5 5 5M4 3h16"/>') + qa('newReq', 'Add request', '<path d="M12 5v14M5 12h14"/>') + qa('batchReq', 'Batch add', '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/>') + qa('openSite', 'Issue CUIMS', '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/>', 'gold') + '</div>';
   const ex = expiryRows().filter(r => r.left <= expDays());
-  if (ex.length) { const e0 = ex.filter(r => r.left < 0).length; h += '<button class="card pad tap" data-a="expOpen" style="display:flex;align-items:center;gap:12px;border-color:#FBCFD8"><span class="dic" style="width:42px;height:42px;border-radius:12px;background:var(--noBg);color:var(--noInk);display:flex;align-items:center;justify-content:center">' + ico('alert', 22) + '</span><span style="flex:1"><b class="ttl" style="font-size:16.5px">Expiry Tracker</b><div class="meta"><span>' + ex.length + ' batches within ' + expDays() + ' days</span>' + (e0 ? '<i></i><span><em>' + e0 + ' expired</em></span>' : '') + '</div></span>' + ico('right', 18) + '</button>'; }
+  if (ex.length) { const e0 = ex.filter(r => r.left < 0).length; h += '<button class="alertcard" data-a="expOpen"><span class="ai">' + ico('alert', 22) + '</span><span style="flex:1;min-width:0"><b>Expiry Tracker</b><span>' + ex.length + ' batches within ' + expDays() + ' days' + (e0 ? ' · ' + e0 + ' expired' : '') + '</span></span>' + ico('right', 18) + '</button>'; }
   h += tasksCard();
-  h += '<div class="grid3"><button class="btn main" data-a="upload">Upload</button><button class="btn" data-a="openSite">Issue CUIMS</button><button class="btn gold" data-a="openMgr">Live stock</button></div>';
-  h += '<div class="grid2"><button class="btn" data-a="newReq">Add store request</button><button class="btn" data-a="bulkEdit">Edit all requests</button></div>';
-  const c = { full: todays.filter(r => r.st === 'full').length, part: todays.filter(r => r.st === 'part').length, wait: todays.filter(r => r.st === 'wait').length };
-  h += '<div class="card pad col"><div class="row"><h3>Today\'s requests</h3><span class="note">' + todays.length + ' open · ' + issuedToday + (issuedToday === 1 ? ' entry' : ' entries') + ' done</span></div>' +
-    '<div class="grid3"><div class="tile t-ok"><b>' + c.full + '</b><span>Fully possible</span></div><div class="tile t-pt"><b>' + c.part + '</b><span>Partly possible</span></div><div class="tile t-no"><b>' + c.wait + '</b><span>Waiting</span></div></div></div>';
+  h += '<div class="shead"><div><h2>Today\'s requests</h2><span>' + todays.length + ' open</span></div>' + sortPick('home') + '</div>';
   if (todays.length) {
-    h += '<div class="row" style="margin-top:4px"><span class="sect">' + (so === 'priority' ? 'Do these now, in this order' : 'Today\'s requests') + '</span>' + sortSel('home', [['priority', 'Priority'], ['custom', 'My order'], ['store', 'Store A–Z'], ['req', 'Request No'], ['size', 'Most articles']]) + '</div>';
     const fresh = todays.filter(r => !r.iss.length), cont = todays.filter(r => r.iss.length);
     if (fresh.length) { h += '<div class="sgroup"><span class="sdot new"></span><b>New on CUIMS</b><span>' + fresh.length + ' never entered yet</span></div>'; fresh.forEach(r => { h += reqCard(r); }); }
-    if (cont.length) { h += '<div class="sgroup"><span class="sdot cont"></span><b>Continue</b><span>' + cont.length + ' already entered once, articles left</span></div>'; cont.forEach(r => { h += reqCard(r, true); }); }
-  } else if (S.lines.length) h += '<div class="card pad note">No open requests for today. Upload today\'s requests, or check Pending.</div>';
-  h += '<button class="card pad tap row" data-a="tab" data-v="pend"><span><b>Older pending</b><div class="note">' + pend.length + ' articles waiting · ' + pendCan + ' in stock now</div></span><span class="chip ' + (pendCan ? 'c-ok' : 'c-gy') + '">Open</span></button>';
+    if (cont.length) { h += '<div class="sgroup"><span class="sdot cont"></span><b>Continue</b><span>' + cont.length + ' entered once, articles left</span></div>'; cont.forEach(r => { h += reqCard(r, true); }); }
+  } else h += '<div class="card pad note">No open requests for today. Upload today\'s requests, add one, or check Pending.</div>';
+  h += '<button class="card pad tap row" data-a="tab" data-v="pend"><span><b class="ttl" style="font-size:16.5px">Older pending</b>' + meta([pend.length + ' articles waiting', pendCan + ' in stock now']) + '</span>' + ico('right', 18) + '</button>';
   const te = S.entries.filter(e => (e.at || '').slice(0, 10) === t).slice().reverse().slice(0, 5);
   if (te.length) {
-    h += '<div class="row"><span class="sect">Done today</span><button class="btn sm ghost" data-a="doneOpen">Done list</button></div><div class="card">';
-    te.forEach(e => h += '<div class="line"><div class="row"><b>' + esc(e.store) + '</b><span class="mono note">Slip ' + esc(e.slip) + '</span></div><div class="note">Serial ' + esc(e.serial || '–') + ' · ' + e.items.length + ' items · ' + fmtDT(e.at) + '</div></div>');
+    h += '<div class="shead"><div><h2>Done today</h2><span>Latest ' + te.length + '</span></div><button class="btn sm ghost" data-a="doneOpen">Done list</button></div><div class="card" style="overflow:hidden">';
+    te.forEach(e => { const rq = [...new Set(e.items.map(i => i.req).filter(Boolean))].join(', ');
+      h += '<div class="line"><div class="row"><span class="reqno">' + esc(rq || '–') + '</span>' + serFmt(e.serial) + '</div>' + meta([esc(e.store), 'Slip ' + esc(e.slip), e.items.length + ' items', esc(entryTime(e))]) + '</div>'; });
     h += '</div>';
   }
+  h += '<div class="grid2"><button class="btn" data-a="bulkEdit">Edit all requests</button><button class="btn gold" data-a="openMgr">Live stock</button></div>';
   return h + '</main>';
 }
 
@@ -359,9 +360,9 @@ function vPend() {
   h += '<div class="grid2"><button class="btn sm" data-a="expPendPdf"' + (pend.length ? '' : ' disabled') + '>Pending PDF</button><button class="btn sm" data-a="expPendXlsx"' + (pend.length ? '' : ' disabled') + '>Pending Excel</button></div>';
   if (!pend.length) return h + '<div class="card pad note">Nothing pending.</div></main>';
   const g = groupBy(pend, l => l.store);
-  h += '<div class="row"><span class="sect">By store</span>' + sortSel('pend', [['custom', 'My order'], ['store', 'Store A–Z'], ['most', 'Most pending'], ['oldest', 'Oldest first'], ['ready', 'Most in stock']]) + '</div>';
-  const ps = ui.sort.pend;
-  const storesSorted = Object.keys(g).sort((a, b) => ps === 'most' ? g[b].length - g[a].length : ps === 'oldest' ? oldestOf(g[a]).localeCompare(oldestOf(g[b])) : ps === 'ready' ? g[b].filter(l => PL[l.id] === 'issue').length - g[a].filter(l => PL[l.id] === 'issue').length : ps === 'custom' ? byStore(a, b) : a.localeCompare(b));
+  h += '<div class="shead"><div><h2>By store</h2><span>' + Object.keys(g).length + ' stores</span></div>' + sortPick('pend') + '</div>';
+  const gacc = st => { const L = g[st]; const rq = L.map(l => l.req).sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }))[0]; return { req: rq, store: st, date: L.reduce((m, l) => l.date > m ? l.date : m, ''), ready: L.filter(l => PL[l.id] === 'issue').length, size: L.length }; };
+  const storesSorted = sortBy(Object.keys(g), getSort('pend'), gacc);
   const wasEntered = st => g[st].some(l => S.lines.some(x => x.req === l.req && x.status === 'issued'));
   [['new', 'Never entered on CUIMS', storesSorted.filter(st => !wasEntered(st))], ['cont', 'Entered before, articles left', storesSorted.filter(wasEntered)]].forEach(([cls, title, list]) => {
     if (!list.length) return;
@@ -411,8 +412,8 @@ function shStart() {
 }
 function startJob(store, slip, rcv, lineIds) {
   const ls = S.lines.filter(l => lineIds.includes(l.id) && l.status === 'waiting');
-  const job = { id: 'J' + Date.now(), slip, rcv, store, phase: 'dup', paused: false, log: [], tries: {},
-    items: ls.map(l => ({ lineId: l.id, req: l.req, reqDate: l.date, code: l.code, name: itemName(l.code), uom: itemUom(l.code), qty: l.qty, remark: remarkFor(l.date), skip: false })) };
+  const job = { id: 'J' + Date.now(), slip, rcv, store, queue: !!S.queue, autoSubmit: !!S.autoSubmit, phase: 'dup', paused: false, log: [], tries: {},
+    items: ls.map(l => ({ lineId: l.id, req: l.req, reqDate: l.date, code: l.code, name: itemName(l.code), uom: itemUom(l.code), qty: l.qty, remark: l.remark || remarkFor(l.date), skip: false })) };
   if (!N) { toast('Open this inside the JV Stock Issue app to fill CUIMS.'); return; }
   N.startJob(JSON.stringify(job));
 }
@@ -466,9 +467,8 @@ function vReg() {
   h += '<div class="seg"><button data-a="regType" data-v="issue" class="' + (r.type === 'issue' ? 'on' : '') + '">Issue</button><button data-a="regType" data-v="return" class="' + (r.type === 'return' ? 'on' : '') + '">Return</button></div>';
   h += '<label class="f">Date<input type="date" data-in="regDate" value="' + esc(r.date) + '"></label>';
   if (r.type === 'issue') {
-    const rs = ui.sort.reg;
-    const list = S.entries.filter(e => entryDate(e) === r.date).sort((a, b) => rs === 'custom' ? byStore(a.store, b.store) : rs === 'store' ? a.store.localeCompare(b.store) : rs === 'slip' ? String(a.slip).localeCompare(String(b.slip), undefined, { numeric: true }) : entryTime(a).localeCompare(entryTime(b)));
-    h += '<div class="row"><span class="sect">' + list.length + ' entries</span>' + sortSel('reg', [['time', 'Time'], ['custom', 'My order'], ['store', 'Store A–Z'], ['slip', 'Slip No']]) + '</div>';
+    const list = sortBy(S.entries.filter(e => entryDate(e) === r.date), getSort('reg'), e => ({ req: (e.items.find(x => x.req) || {}).req || e.reqs || e.slip, store: e.store, date: entryDate(e) + ' ' + entryTime(e), size: e.items.length }));
+    h += '<div class="shead"><div><h2>' + list.length + ' entries</h2><span>' + fmtLong(r.date) + '</span></div>' + sortPick('reg') + '</div>';
     h += '<div class="grid2"><button class="btn main" data-a="pdfIssue"' + (list.length ? '' : ' disabled') + '>Make PDF</button><button class="btn" data-a="newManual">+ Manual entry</button></div>';
     if (!list.length) h += '<div class="card pad note">No issue entries on ' + fmtLong(r.date) + '.</div>';
     list.forEach(e => {
@@ -557,7 +557,7 @@ function vFind() {
   h += '<input type="text" data-in="q" value="' + esc(s.q) + '" placeholder="Search: atta, JV/912, 20401, LC MESS, GA600043…" autocomplete="off" style="font-size:16px">';
   h += '<div class="seg">' + [['all', 'All'], ['issue', 'Issue'], ['return', 'Return']].map(([k, l]) => '<button data-a="sType" data-v="' + k + '" class="' + (s.type === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>';
   h += '<div class="grid2"><label class="f">From<input type="date" data-in="sFrom" value="' + esc(s.from) + '"></label><label class="f">To<input type="date" data-in="sTo" value="' + esc(s.to) + '"></label></div>';
-  h += '<select data-in="sStore"><option value="">All stores</option>' + stores.map(x => '<option' + (x === s.store ? ' selected' : '') + '>' + esc(x) + '</option>').join('') + '</select>';
+  h += pickBtn('sStore', { title: 'Store', search: true, full: true, opts: [['', 'All stores']].concat(stores.map(x => [x, x])), val: s.store || '', set: v => { ui.search.store = v; render(); } }, 'Store');
   h += '<div class="row"><span class="note">' + res.length + ' records</span><button class="btn sm" data-a="expSearch"' + (res.length ? '' : ' disabled') + '>Export results</button></div>';
   res.slice(0, 150).forEach(x => {
     const open = s.open === x.id;
@@ -641,10 +641,12 @@ function vSet() {
   h += '<div class="pad col"><input type="text" id="newStore" list="areaList" placeholder="Add store: type or pick Project Area" autocapitalize="characters">' + areaDatalist() + '<button class="btn" data-a="addStore">+ Add store</button></div></div>';
   }
   if (pg === 'fill') {
+  h += '<div class="card pad col"><h3>Auto submit</h3><label class="chk"><input type="checkbox" data-a="autoSubToggle"' + (S.autoSubmit ? ' checked' : '') + '> Tap SUBMIT automatically when the recheck matches 100%</label><div class="note">A 4-second countdown with a Stop button appears first. You can also switch this in the CUIMS bar.</div></div>';
   h += '<div class="card pad col"><h3>Filling</h3><label class="chk"><input type="checkbox" data-a="queueToggle"' + (S.queue ? ' checked' : '') + '> Queue mode: after each submit, fill the next request automatically</label></div>';
   }
   if (pg === 'cloud') {
   h += '<div class="card pad col"><h3>Cloud backup (Google Drive + Sheet)</h3><label class="f">Apps Script web app URL<input type="text" data-set="sync.url" value="' + esc(S.sync.url) + '" placeholder="https://script.google.com/macros/s/…/exec"></label>' +
+    '<label class="f">Upload changes after</label>' + pickBtn('syncDelay', { title: 'Upload changes after', full: true, opts: [['0', 'Right away'], ['1', '1 minute'], ['5', '5 minutes'], ['15', '15 minutes'], ['30', '30 minutes'], ['60', '1 hour']], val: String(S.sync.delay != null ? S.sync.delay : 5), set: v => { S.sync.delay = parseFloat(v); writeLocal(); render(); } }) + '<div class="note">Everything is saved on the phone instantly. Cloud upload waits this long after a change (and always happens when you leave the app).</div>' +
     '<label class="chk"><input type="checkbox" data-a="syncAuto"' + (S.sync.auto ? ' checked' : '') + '> Back up automatically after changes</label>' +
     '<div class="note">' + (S.sync.at ? 'Last backup ' + fmtDT(S.sync.at) : 'Not backed up yet') + '</div>' +
     '<div class="grid2"><button class="btn" data-a="syncNow"' + (S.sync.url ? '' : ' disabled') + '>Back up now</button><button class="btn main" data-a="backups"' + (S.sync.url ? '' : ' disabled') + '>Manage backups</button></div></div>';
@@ -970,35 +972,33 @@ function vExpiry() {
   return h + '</main>';
 }
 function doneRows() {
-  const d = ui.doneDate || today(), ents = S.entries.filter(e => entryDate(e) === d);
-  const reqIds = [...new Set(ents.flatMap(e => e.items.map(i => i.req)).filter(Boolean))];
-  const rows = [];
-  requests().filter(r => reqIds.includes(r.req)).sort((a, b) => byStore(a.store, b.store)).forEach(r => {
-    const sl = ents.filter(e => e.items.some(i => i.req === r.req));
-    const left = r.lines.filter(l => l.status === 'waiting');
-    rows.push({ Store: r.store, 'Request No': r.req, 'Requested on': fmtLong(r.date), Slips: sl.map(e => e.slip), Serials: sl.map(e => e.serial || '–'), Status: left.length ? 'Partly done' : 'Fully done', 'Pending articles': left.map(l => itemName(l.code) + ' (' + l.code + ') ' + num(l.qty) + ' ' + itemUom(l.code)) });
-  });
-  return rows;
+  return doneData().map(({ r, slips, left }) => ({ 'Request No': r.req, Store: r.store, 'Requested on': fmtLong(r.date), Slips: slips.map(e => e.slip), Serials: slips.map(e => e.serial || '–'), Status: left.length ? 'Partly done' : 'Fully done', 'Pending articles': left.map(l => itemName(l.code) + ' (' + l.code + ') ' + num(l.qty) + ' ' + itemUom(l.code)) }));
+}
+function doneData() {
+  const d = ui.doneDate || today(), mode = ui.doneMode || 'entry';
+  let R;
+  if (mode === 'entry') { const ents = S.entries.filter(e => entryDate(e) === d); const ids = new Set(ents.flatMap(e => e.items.map(i => i.req)).filter(Boolean)); R = requests().filter(r => ids.has(r.req)); }
+  else R = requests().filter(r => r.date === d && r.lines.some(l => l.status === 'issued'));
+  R = sortBy(R, getSort('done'), r => ({ req: r.req, store: r.store, date: r.date, ready: r.lines.filter(l => l.status === 'waiting').length, size: r.lines.length }));
+  return R.map(r => { const slips = S.entries.filter(e => e.items.some(i => i.req === r.req) && (mode !== 'entry' || entryDate(e) === d)); return { r, slips, left: r.lines.filter(l => l.status === 'waiting'), issued: r.lines.filter(l => l.status === 'issued').length, total: r.lines.filter(l => l.status !== 'dropped').length }; });
 }
 function vDone() {
-  const d = ui.doneDate || today();
-  const ents = S.entries.filter(e => entryDate(e) === d);
-  const reqIds = [...new Set(ents.flatMap(e => e.items.map(i => i.req)).filter(Boolean))];
-  const R = requests().filter(r => reqIds.includes(r.req)).sort((a, b) => byStore(a.store, b.store) || a.req.localeCompare(b.req, undefined, { numeric: true }));
-  let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Done list</h1><div class="sub">Entries made on CUIMS, with what is still left. Use it to mark your paper.</div></div></header><main>';
-  h += '<label class="f">Date of entry<input type="date" data-in="doneDate" value="' + esc(d) + '"></label>';
-  const full = R.filter(r => !r.lines.some(l => l.status === 'waiting')).length;
-  h += '<div class="grid3"><div class="tile t-in"><b>' + ents.length + '</b><span>Slips</span></div><div class="tile t-ok"><b>' + full + '</b><span>Fully done</span></div><div class="tile t-pt"><b>' + (R.length - full) + '</b><span>Partly done</span></div></div>';
-  if (!R.length) h += '<div class="card pad note">No entries on ' + fmtLong(d) + '.</div>';
-  R.forEach(r => {
-    const left = r.lines.filter(l => l.status === 'waiting');
-    const slips = ents.filter(e => e.items.some(i => i.req === r.req));
-    h += '<div class="card" style="overflow:hidden"><div class="pad col" style="gap:8px"><div class="row"><b class="ttl">' + esc(r.store) + '</b>' + (left.length ? pill(left.length + ' left', 'c-gd') : pill('Fully done', 'c-ok')) + '</div>' +
-      meta(['Req ' + esc(r.req), 'requested ' + fmtShort(r.date), r.lines.filter(l => l.status === 'issued').length + ' of ' + r.lines.filter(l => l.status !== 'dropped').length + ' issued']) +
-      slips.map(e => '<div class="slipline"><span>Slip <b>' + esc(e.slip) + '</b></span><span>Serial <b>' + esc(e.serial || '–') + '</b></span><span>' + e.items.filter(i => i.req === r.req).length + ' articles · ' + esc(entryTime(e)) + '</span></div>').join('') + '</div>' +
-      (left.length ? '<div class="leftbox"><div class="lefthead">Still pending</div>' + left.map(l => '<div class="leftrow"><span><b>' + esc(itemName(l.code)) + '</b><span class="mono">' + esc(l.code) + '</span></span><b class="qty">' + num(l.qty) + ' ' + esc(itemUom(l.code)) + '</b></div>').join('') + '</div>' : '') + '</div>';
+  const d = ui.doneDate || today(), mode = ui.doneMode || 'entry', D = doneData();
+  let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Done list</h1><div class="sub">Requests entered on CUIMS, with Slip and Serial. Use it to mark your paper.</div></div></header><main>';
+  h += '<div class="seg"><button data-a="doneMode" data-v="entry" class="' + (mode === 'entry' ? 'on' : '') + '">By entry date</button><button data-a="doneMode" data-v="req" class="' + (mode === 'req' ? 'on' : '') + '">By request date</button></div>';
+  h += '<div class="grid2" style="align-items:end"><label class="f">' + (mode === 'entry' ? 'Entered on' : 'Requested on') + '<input type="date" data-in="doneDate" value="' + esc(d) + '"></label>' + sortPick('done') + '</div>';
+  const full = D.filter(x => !x.left.length).length;
+  h += '<div class="grid3"><div class="tile t-in"><b>' + D.reduce((n, x) => n + x.slips.length, 0) + '</b><span>Slips</span></div><div class="tile t-ok"><b>' + full + '</b><span>Fully done</span></div><div class="tile t-pt"><b>' + (D.length - full) + '</b><span>Partly done</span></div></div>';
+  if (!D.length) h += '<div class="card pad note">Nothing ' + (mode === 'entry' ? 'entered' : 'requested and entered') + ' on ' + fmtLong(d) + '.</div>';
+  D.forEach(({ r, slips, left, issued, total }) => {
+    const open = !!ui.doneOpen[r.req];
+    h += '<div class="card" style="overflow:hidden"><div class="pad col" style="gap:8px"><div class="row"><span class="reqno big">' + esc(r.req) + '</span>' + (left.length ? pill(left.length + ' left', 'c-gd') : pill('Fully done', 'c-ok')) + '</div>' +
+      '<b class="ttl">' + esc(r.store) + '</b>' + meta(['requested ' + fmtShort(r.date), issued + ' of ' + total + ' issued']) +
+      slips.map(e => '<div class="slipline"><span class="sl">' + esc(e.slip) + '</span>' + serFmt(e.serial) + '<span class="st">' + esc(fmtShort(entryDate(e))) + ' · ' + esc(entryTime(e)) + '</span></div>').join('') + '</div>' +
+      (left.length ? '<button class="leftbtn" data-a="doneTog" data-v="' + esc(r.req) + '"><span>' + (open ? 'Hide' : 'Show') + ' ' + left.length + ' pending article' + (left.length > 1 ? 's' : '') + '</span>' + ico(open ? 'up' : 'down', 18) + '</button>' : '') +
+      (left.length && open ? '<div class="leftbox">' + left.map(l => '<div class="leftrow"><span><b>' + esc(itemName(l.code)) + '</b><span class="mono">' + esc(l.code) + '</span></span><b class="qty">' + num(l.qty) + ' ' + esc(itemUom(l.code)) + '</b></div>').join('') + '</div>' : '') + '</div>';
   });
-  if (R.length) h += '<button class="btn" data-a="doneExport">Download done list</button>';
+  if (D.length) h += '<button class="btn" data-a="doneExport">Download done list</button>';
   return h + '</main>';
 }
 function vCountLog() {
@@ -1027,6 +1027,7 @@ function renderDrawer() {
     item('expOpen', 'Expiry Tracker', 'Batches expiring within ' + expDays() + ' days', '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6"/>') +
     item('doneOpen', 'Done list', 'Slips, serials and articles still left', '<path d="M4 12l5 5L20 6"/>') +
     item('newReq', 'Add store request', 'Type a request directly in the app', '<path d="M12 5v14M5 12h14"/>') +
+    item('batchReq', 'Batch add requests', 'Many stores at once, or paste from Excel', '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/>') +
     item('countLog', 'Count history', 'All past counts and differences', '<path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/>') +
     item('taskLog', 'Task log', 'Daily tasks: done, pending, not done', '<path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/>') +
     '<div class="dsect">Work</div>' +
@@ -1051,7 +1052,7 @@ const REPORTS = {
 function rptPref(type) {
   S.rp = S.rp || {};
   const R = REPORTS[type];
-  const d = { title: R.name, sub: S.me.storeName || '', orient: R.landscape ? 'l' : 'p', font: 'n', details: !!R.details && type === 'ret', sign: true, mgr: S.mgr.on, sort: 'custom', cols: {} };
+  const d = { title: R.name, sub: S.me.storeName || '', orient: R.landscape ? 'l' : 'p', font: 'n', details: !!R.details && type === 'ret', sign: true, mgr: S.mgr.on, sort: 'reqdate', cols: {} };
   const p = S.rp[type] = S.rp[type] || {};
   for (const k in d) if (!(k in p)) p[k] = d[k];
   return p;
@@ -1061,7 +1062,7 @@ function reportDef(type) {
   const p = rptPref(type), d = ui.reg.date;
   if (type === 'issue') {
     const list = S.entries.filter(e => entryDate(e) === d);
-    let G = issueGroups(list); if (p.sort === 'az') G.sort((a, b) => a.store.localeCompare(b.store)); if (p.sort === 'time') G.sort((a, b) => (a.slips[0] || {}).time > (b.slips[0] || {}).time ? 1 : -1);
+    let G = sortBy(issueGroups(list), ['custom', 'az', 'time'].includes(p.sort) ? 'reqdate' : p.sort, g => ({ req: g.req, store: g.store, date: reqDateOfRaw(g.req), size: g.items.length }));
     return { cols: [['no', '#'], ['req', 'Request No'], ['rdate', 'Requisition Requested Date'], ['store', 'Store'], ['to', 'Issued to'], ['slips', 'Slip No'], ['serials', 'Serial No'], ['times', 'Time'], ['items', 'Items'], ['remarks', 'Remarks'], ['by', 'Entered by']],
       rows: G.map((g, i) => ({ no: i + 1, req: g.req || '–', rdate: reqDateOf(g.req), store: g.store, to: [...g.to], slips: g.slips.map(x => x.slip), serials: g.slips.map(x => x.serial || '______'), times: g.slips.map(x => x.time), items: g.items.length, remarks: [...g.remarks].join(', ') || '–', by: [...g.by] })),
       chips: [['Date', fmtLong(d)], ['Requests', G.length], ['Items', list.reduce((n, e) => n + e.items.length, 0)]],
@@ -1071,18 +1072,19 @@ function reportDef(type) {
   }
   if (type === 'ret') {
     let list = S.returns.filter(x => x.date === d);
-    list = p.sort === 'time' ? list.sort((a, b) => (a.time || '').localeCompare(b.time || '')) : sortStores(list, 'store', p.sort);
+    list = sortBy(list, ['custom', 'az', 'time'].includes(p.sort) ? 'reqdate' : p.sort, r => ({ req: r.no, store: r.store, date: r.date + ' ' + (r.time || ''), size: r.items.length }));
     return { cols: [['no', '#'], ['rno', 'Return No'], ['store', 'Store'], ['by', 'Returned by'], ['dt', 'Date & time'], ['against', 'Against'], ['serial', 'Serial No'], ['items', 'Items'], ['remarks', 'Remarks'], ['ent', 'Entered by']],
       rows: list.map((r, i) => ({ no: i + 1, rno: r.no, store: r.store, by: ['GA' + r.by].concat(r.byName ? [r.byName] : []), dt: fmtShort(r.date) + ' ' + (r.time || ''), against: r.against, serial: r.serial || '______', items: r.items.length, remarks: r.remarks || '–', ent: [(r.enteredBy || {}).name || ''].concat((r.enteredBy || {}).emp ? [r.enteredBy.emp] : []) })),
       chips: [['Date', fmtLong(d)], ['Returns', list.length], ['Items', list.reduce((n, r) => n + r.items.length, 0)]],
       detail: list.map(r => ({ head: r.no + '   ·   ' + r.store + '   ·   Returned by GA' + r.by + '   ·   Serial ' + (r.serial || '____'), cols: ['S.No', 'Item code', 'Item', 'UOM', 'Qty', 'Item remarks'], rows: r.items.map((x, i) => [i + 1, x.code, x.name || itemName(x.code), x.uom || itemUom(x.code), num(x.qty), x.remark || '–']) })),
       file: 'Return-Register-' + d, sub2: 'Return · Department · Against Issue No 1111' };
   }
-  const objRows = type === 'pending' ? sortStores(rowsPending(), 'Store', p.sort) : type === 'requests' ? rowsRequests() : type === 'entries' ? rowsEntries() : type === 'items' ? rowsItems() : type === 'stock' ? rowsStock() : type === 'returns' ? rowsReturns() : type === 'search' ? searchRows() : type === 'done' ? doneRows() : type === 'expiry' ? expiryRows().filter(r => r.left <= expDays()).map(r => ({ Item: r.name, Code: r.code, Qty: r.qty, UOM: r.uom, MFD: r.mfd ? fmtLong(r.mfd) : '', Expiry: fmtLong(r.exp), 'Days left': r.left, Status: r.left < 0 ? 'Expired' : r.left <= 15 ? 'Within 15 days' : 'Within ' + expDays() + ' days', 'Counted on': fmtLong(r.countDate) })) : type === 'counts' ? countRows((S.counts || []).filter(c => !ui.countExportId || String(c.id) === String(ui.countExportId))) : [];
+  const objRows = type === 'pending' ? sortBy(rowsPending(), ['custom', 'az', 'time'].includes(p.sort) ? 'reqdate' : p.sort, r => ({ req: r['Request No'], store: r.Store, date: r['_date'] || '' })) : type === 'requests' ? rowsRequests() : type === 'entries' ? rowsEntries() : type === 'items' ? rowsItems() : type === 'stock' ? rowsStock() : type === 'returns' ? rowsReturns() : type === 'search' ? searchRows() : type === 'done' ? doneRows() : type === 'expiry' ? expiryRows().filter(r => r.left <= expDays()).map(r => ({ Item: r.name, Code: r.code, Qty: r.qty, UOM: r.uom, MFD: r.mfd ? fmtLong(r.mfd) : '', Expiry: fmtLong(r.exp), 'Days left': r.left, Status: r.left < 0 ? 'Expired' : r.left <= 15 ? 'Within 15 days' : 'Within ' + expDays() + ' days', 'Counted on': fmtLong(r.countDate) })) : type === 'counts' ? countRows((S.counts || []).filter(c => !ui.countExportId || String(c.id) === String(ui.countExportId))) : [];
   const keys = objRows.length ? Object.keys(objRows[0]) : [];
   const chips = type === 'pending' ? [['Date', fmtLong(today())], ['Stores', new Set(objRows.map(r => r.Store)).size], ['Articles', objRows.length]] : [['Date', fmtLong(today())], ['Rows', objRows.length]];
   return { cols: keys.map(k => [k, k]), rows: objRows, chips, file: REPORTS[type].name.replace(/[^A-Za-z]+/g, '-') + '-' + today(), sub2: '' };
 }
+function reqDateOfRaw(req) { const l = S.lines.find(x => x.req === req); return l ? l.date : ''; }
 function reqDateOf(req) {
   if (!req) return '–';
   const ds = [...new Set(S.lines.filter(l => l.req === req).map(l => l.date))].sort();
@@ -1100,7 +1102,7 @@ function shExport() {
   h += '<div class="note">Your choices are saved for next time.</div>';
   h += '<div class="card pad col"><h3>Basics</h3><label class="f">Title<input type="text" data-rp="title" value="' + esc(p.title) + '"></label><label class="f">Subtitle (store name)<input type="text" data-rp="sub" value="' + esc(p.sub) + '"></label>' +
     (R.dated ? '<label class="f">Date<input type="date" data-in="regDate" value="' + esc(ui.reg.date) + '"></label>' : '') +
-    (R.sorts ? '<label class="f">Order<select data-rp="sort">' + [['custom', 'My store order'], ['az', 'Store A–Z']].concat(R.dated ? [['time', 'Time']] : []).map(([v, l]) => '<option value="' + v + '"' + (p.sort === v ? ' selected' : '') + '>' + l + '</option>').join('') + '</select></label>' : '') + '</div>';
+    (R.sorts ? '<label class="f">Order</label>' + pickBtn('rpSort', { title: 'Order', full: true, opts: SORT_OPTS, val: p.sort, set: v => { p.sort = v; save(true); renderSheet(); } }) : '') + '</div>';
   if (R.pdf) {
     h += '<div class="card pad col"><h3>Page</h3><div class="seg">' + [['p', 'A4 Portrait'], ['l', 'A4 Landscape']].map(([v, l]) => '<button data-a="rpSet" data-k="orient" data-v="' + v + '" class="' + (p.orient === v ? 'on' : '') + '">' + l + '</button>').join('') + '</div>' +
       '<div class="seg">' + [['s', 'Small text'], ['n', 'Normal'], ['b', 'Large text']].map(([v, l]) => '<button data-a="rpSet" data-k="font" data-v="' + v + '" class="' + (p.font === v ? 'on' : '') + '">' + l + '</button>').join('') + '</div>' +
@@ -1161,7 +1163,7 @@ async function syncNow(quiet, kind, note) {
     const r = await fetch(S.sync.url, { method: 'POST', body: JSON.stringify(payload) });
     const j = await r.json();
     if (!j.ok) throw new Error(j.error || 'failed');
-    S.sync.at = new Date().toISOString(); if (S.sync.changedAt === startedAt) S.sync.dirty = false; syncErr = ''; syncBusy = false; writeLocal(); paintSync();
+    S.sync.at = new Date().toISOString(); if (S.sync.changedAt === startedAt) { S.sync.dirty = false; S.sync.firstDirty = 0; } syncErr = ''; syncBusy = false; writeLocal(); paintSync();
     if (!quiet) { toast('Backed up to Google Drive and Sheet.'); render(); if (ui.sheet && ui.sheet.kind === 'backups') loadBackups(); }
   } catch (e) { syncBusy = false; syncErr = e.message; paintSync(); if (!quiet) toast(e.message === 'offline' ? 'Offline. Saved on phone; it uploads by itself when internet is back.' : 'Backup failed: ' + e.message + '. It will retry by itself.'); }
 }
@@ -1182,9 +1184,10 @@ function shNewReq() {
   const f = ui.form, stores = [...new Set([...(S.storeOrder || []), ...Object.keys(S.stores), ...S.lines.map(l => l.store)])].sort(byStore);
   const reqClash = S.lines.some(l => l.req === f.req);
   let h = '<div class="row"><h2>Add store request</h2><button class="btn sm ghost" data-a="closeSheet">Close</button></div>';
-  h += '<label class="f">Store<select data-nr="store"><option value="">Choose store</option>' + stores.map(st => '<option' + (st === f.store ? ' selected' : '') + '>' + esc(st) + '</option>').join('') + '</select></label>';
+  h += '<label class="f">Store</label>' + pickBtn('nrStore', { title: 'Choose store', search: true, full: true, placeholder: 'Choose store', opts: stores.map(st => [st, st, (S.stores[st] || {}).rcv ? 'Receiver GA' + S.stores[st].rcv : '']), val: f.store, set: v => { ui.form.store = v; const d = (S.stores[v] || {}).rcv; if (d) ui.form.rcv = d; renderSheet(); } });
   h += '<div class="grid2"><label class="f">Request No<input type="text" data-nr="req" value="' + esc(f.req) + '" class="mono' + (reqClash ? ' bad' : '') + '"></label><label class="f">Request date<input type="date" data-nr="date" value="' + esc(f.date) + '"></label></div>' + (reqClash ? '<div class="err">Request No ' + esc(f.req) + ' already exists.</div>' : '');
   h += '<div class="grid2"><label class="f">Receiver (6 digits)<input type="text" inputmode="numeric" maxlength="6" data-nr="rcv" value="' + esc(f.rcv) + '" class="mono"></label><label class="f">Slip No (optional)<input type="text" data-nr="slip" value="' + esc(f.slip) + '" class="mono" autocapitalize="characters"></label></div>';
+  h += '<label class="f">Custom remark (optional)<input type="text" data-nr="remark" value="' + esc(f.remark || '') + '" placeholder="Replaces Requisition Requested on …"></label>';
   h += '<div class="sect">Articles (' + f.items.length + ')</div>';
   if (f.items.length) h += '<div class="card" style="overflow:hidden">' + f.items.map((it, i) => '<div class="line" style="flex-direction:row;align-items:center;gap:10px"><span style="flex:1;min-width:0"><b>' + esc(it.name) + '</b><div class="meta"><span class="mono">' + esc(it.code) + '</span>' + (S.stock[it.code] ? '<i></i><span>stock ' + num(S.stock[it.code].qty) + '</span>' : '') + '</div></span><input type="number" inputmode="decimal" data-nrq="' + i + '" value="' + esc(it.qty) + '" placeholder="Qty" style="width:92px;text-align:right"><span class="note" style="width:34px">' + esc(it.uom) + '</span><button class="xbtn" data-a="nrDel" data-v="' + i + '" aria-label="Remove">' + ico('x', 16) + '</button></div>').join('') + '</div>';
   h += '<div class="card pad col" style="gap:8px"><label class="f">Find item by name or code<input type="text" data-nr="q" value="' + esc(f.q || '') + '" placeholder="Type e.g. atta, sugar, GR-198" autocomplete="off"></label>';
@@ -1198,6 +1201,52 @@ function shNewReq() {
   const ok = f.store && f.req && !reqClash && f.items.length && f.items.every(x => parseFloat(x.qty) > 0) && (!f.rcv || /^\d{6}$/.test(f.rcv)) && (!f.slip || !slipProblem(f.slip));
   if (f.slip && slipProblem(f.slip)) h += '<div class="err">' + esc(slipProblem(f.slip)) + '</div>';
   h += '<button class="btn main full" data-a="nrSave"' + (ok ? '' : ' disabled') + '>Save request · ' + f.items.length + ' articles</button>';
+  return h;
+}
+function allStores() { return [...new Set([...(S.storeOrder || []), ...Object.keys(S.stores), ...S.lines.map(l => l.store), ...(S.areas || [])].filter(Boolean))].sort(byStore); }
+function nextReqNoFrom(used) {
+  const d = new Date(), pre = pad(d.getDate()) + pad(d.getMonth() + 1) + '-';
+  let mx = 0; S.lines.concat(used.map(r => ({ req: r }))).forEach(l => { if (String(l.req).startsWith(pre)) { const n = parseInt(String(l.req).slice(pre.length), 10); if (n > mx) mx = n; } });
+  return pre + String(mx + 1).padStart(2, '0');
+}
+function batchAddGroup(store) {
+  const f = ui.form; const req = nextReqNoFrom(f.groups.map(g => g.req));
+  let slip = ''; if (f.slipStart) { const m = String(f.slipStart).toUpperCase().match(/^(.*?)(\d+)$/); if (m) { const used = allSlips(); f.groups.forEach(g => used.add(g.slip)); let n = parseInt(m[2], 10); do { slip = m[1] + String(n).padStart(m[2].length, '0'); n++; } while (used.has(slip)); } }
+  f.groups.push({ store, req, rcv: (S.stores[store] || {}).rcv || '', slip, remark: '', items: [] }); f.act = f.groups.length - 1;
+}
+function shBatch() {
+  const f = ui.form, stores = allStores();
+  let h = '<div class="row"><h2>Batch add requests</h2><button class="btn sm ghost" data-a="closeSheet">Close</button></div>';
+  h += '<div class="note">Add many stores at once. Request No, receiver and Slip fill themselves. You can also paste rows from Excel.</div>';
+  h += '<div class="grid2"><label class="f">Request date<input type="date" data-bt="date" value="' + esc(f.date) + '"></label><label class="f">First Slip No (optional)<input type="text" data-bt="slipStart" value="' + esc(f.slipStart || '') + '" class="mono" placeholder="e.g. JV/1042" autocapitalize="characters"></label></div>';
+  f.groups.forEach((g, gi) => {
+    const act = f.act === gi;
+    h += '<div class="card bgroup' + (act ? ' act' : '') + '" style="overflow:hidden"><div class="pad col" style="gap:8px"><div class="row"><span class="reqno">' + esc(g.req) + '</span><span style="display:flex;gap:6px"><button class="btn sm ' + (act ? 'main' : 'ghost') + '" data-a="btAct" data-v="' + gi + '">' + (act ? 'Adding items' : 'Add items here') + '</button><button class="xbtn" data-a="btDel" data-v="' + gi + '" aria-label="Remove store">' + ico('x', 16) + '</button></span></div>' +
+      '<b class="ttl">' + esc(g.store) + '</b>' +
+      '<div class="grid3"><label class="f">Request No<input type="text" data-bg="' + gi + '|req" value="' + esc(g.req) + '" class="mono"></label><label class="f">Receiver<input type="text" inputmode="numeric" maxlength="6" data-bg="' + gi + '|rcv" value="' + esc(g.rcv) + '" class="mono"></label><label class="f">Slip No<input type="text" data-bg="' + gi + '|slip" value="' + esc(g.slip) + '" class="mono" autocapitalize="characters"></label></div>' +
+      '<label class="f">Custom remark (optional)<input type="text" data-bg="' + gi + '|remark" value="' + esc(g.remark) + '"></label></div>' +
+      (g.items.length ? g.items.map((it, ii) => '<div class="line" style="flex-direction:row;align-items:center;gap:10px"><span style="flex:1;min-width:0"><b>' + esc(it.name) + '</b><div class="meta"><span class="mono">' + esc(it.code) + '</span></div></span><input type="number" inputmode="decimal" data-bq="' + gi + '|' + ii + '" value="' + esc(it.qty) + '" placeholder="Qty" style="width:88px;text-align:right"><span class="note" style="width:32px">' + esc(it.uom) + '</span><button class="xbtn" data-a="btItemDel" data-v="' + gi + '|' + ii + '" aria-label="Remove">' + ico('x', 16) + '</button></div>').join('') : '<div class="line note">No articles yet.</div>') + '</div>';
+  });
+  h += pickBtn('btStore', { title: 'Add a store', search: true, full: true, placeholder: '+ Add a store', opts: stores.map(st => [st, st, (S.stores[st] || {}).rcv ? 'Receiver GA' + S.stores[st].rcv : '']), val: '', set: v => { batchAddGroup(v); renderSheet(); } });
+  if (f.groups.length) {
+    const g = f.groups[f.act] || f.groups[0];
+    h += '<div class="card pad col" style="gap:8px;position:sticky;bottom:0;z-index:2"><label class="f">Find item for <b>' + esc(g.store) + '</b> (' + esc(g.req) + ')<input type="text" data-bt="q" value="' + esc(f.q || '') + '" placeholder="Type name or code" autocomplete="off"></label>';
+    const q = String(f.q || '').trim().toUpperCase();
+    if (q.length >= 2) { const have = new Set(g.items.map(x => x.code));
+      const hits = Object.entries(S.stock).filter(([c, v]) => !have.has(c) && (c.includes(q) || String(v.name).toUpperCase().includes(q))).sort((a, b) => (String(a[1].name).toUpperCase().startsWith(q) ? 0 : 1) - (String(b[1].name).toUpperCase().startsWith(q) ? 0 : 1) || String(a[1].name).localeCompare(String(b[1].name))).slice(0, 6);
+      h += hits.length ? hits.map(([c, v]) => '<button class="hit" data-a="btPick" data-v="' + esc(c) + '"><span><b>' + esc(v.name) + '</b><span class="mono">' + esc(c) + '</span></span><span class="note">' + num(v.qty) + ' ' + esc(v.uom) + '</span></button>').join('') : '<div class="note">No match in the stock sheet.</div>'; }
+    h += '</div>';
+  }
+  h += '<details class="card pad"><summary><b>Paste rows from Excel</b></summary><div class="note" style="margin:8px 0">One row per article: <b>Store, Item code, Qty</b> (tab or comma separated). Optional 4th column: Request No.</div><textarea data-bt="paste" rows="5" placeholder="LC MESS	GR-198	60">' + esc(f.paste || '') + '</textarea><button class="btn" data-a="btPaste" style="margin-top:8px">Add pasted rows</button></details>';
+  const rows = f.groups.flatMap(g => g.items.map(it => ({ g, it })));
+  if (rows.length) {
+    h += '<div class="sect">Preview · ' + rows.length + ' articles · ' + f.groups.length + ' requests</div><div class="card tblwrap"><table><tr><th>Request</th><th>Store</th><th>Item</th><th>Qty</th><th>Receiver</th><th>Slip</th></tr>' +
+      rows.map(({ g, it }) => '<tr><td><b>' + esc(g.req) + '</b></td><td>' + esc(g.store) + '</td><td>' + esc(it.name) + ' <span class="note mono">' + esc(it.code) + '</span></td><td' + (parseFloat(it.qty) > 0 ? '' : ' style="color:var(--noInk);font-weight:700"') + '>' + esc(it.qty || 'missing') + '</td><td>' + esc(g.rcv || '–') + '</td><td>' + esc(g.slip || '–') + '</td></tr>').join('') + '</table></div>';
+  }
+  const bad = f.groups.find(g => !g.req || S.lines.some(l => l.req === g.req) || f.groups.filter(x => x.req === g.req).length > 1);
+  if (bad) h += '<div class="err">Request No ' + esc(bad.req) + ' is empty or already used.</div>';
+  const ok = rows.length && !bad && rows.every(({ it }) => parseFloat(it.qty) > 0);
+  h += '<button class="btn main full" data-a="btSave"' + (ok ? '' : ' disabled') + '>Save all · ' + rows.length + ' articles</button>';
   return h;
 }
 function shCrop() {
@@ -1265,6 +1314,7 @@ async function checkUpdate(manual) {
 /* ---------------- events from CUIMS ---------------- */
 window.onSiteEvent = function (raw) {
   let e; try { e = JSON.parse(raw); } catch (x) { return; }
+  if (e.type === 'setPref' && ['queue', 'autoSubmit'].includes(e.key)) { S[e.key] = !!e.val; save(true); render(); return; }
   if (e.type === 'areas' && Array.isArray(e.areas) && e.areas.length) {
     if (e.areas.join('|') !== S.areas.join('|')) { S.areas = e.areas; save(true); }
   } else if (e.type === 'login') { S.lastLoginAt = e.at; save(true); }
@@ -1301,6 +1351,7 @@ function recordSubmit(e) {
 }
 window.jvOnReturnFromSite = () => render();
 window.jvBack = () => {
+  if (ui.picker) { ui.picker = null; renderPicker(); return true; }
   if (ui.drawer) { ui.drawer = false; renderDrawer(); return true; }
   if (ui.sheet) { ui.sheet = null; renderSheet(); return true; }
   if (ui.view) { ui.view = null; render(); return true; }
@@ -1323,10 +1374,40 @@ function renderSheet() {
   const el = document.getElementById('sheet');
   if (!ui.sheet) { el.innerHTML = ''; return; }
   const k = ui.sheet.kind;
-  const body = k === 'newReq' ? shNewReq() : k === 'export' ? shExport() : k === 'crop' ? shCrop() : k === 'backups' ? shBackups() : k === 'start' ? shStart() : k === 'upload' ? shUpload() : k === 'entry' ? shEntry() : k === 'return' ? shReturn() : k === 'editReq' ? shEditReq() : k === 'bulk' ? shBulk() : k === 'mark' ? shMark() : '';
+  const body = k === 'batch' ? shBatch() : k === 'newReq' ? shNewReq() : k === 'export' ? shExport() : k === 'crop' ? shCrop() : k === 'backups' ? shBackups() : k === 'start' ? shStart() : k === 'upload' ? shUpload() : k === 'entry' ? shEntry() : k === 'return' ? shReturn() : k === 'editReq' ? shEditReq() : k === 'bulk' ? shBulk() : k === 'mark' ? shMark() : '';
   const sc = el.querySelector('.sheet') ? el.querySelector('.sheet').scrollTop : 0;
   el.innerHTML = '<div class="sheetbg" data-a="bgClose"><div class="sheet" role="dialog" aria-modal="true">' + body + '</div></div>';
   el.querySelector('.sheet').scrollTop = sc;
+}
+const SORT_OPTS = [['reqdate', 'Day, then Request No'], ['req_asc', 'Request No, low to high'], ['req_desc', 'Request No, high to low'], ['name_asc', 'Store name A to Z'], ['name_desc', 'Store name Z to A'],
+  ['date_asc', 'Date, oldest first'], ['date_desc', 'Date, newest first'], ['custom', 'My store order'], ['stock', 'Stock priority (most ready first)'], ['size', 'Most articles first']];
+function getSort(k) { S.uiPrefs = S.uiPrefs || {}; S.uiPrefs.sort = S.uiPrefs.sort || {}; return S.uiPrefs.sort[k] || 'reqdate'; }
+function setSort(k, v) { getSort(k); S.uiPrefs.sort[k] = v; writeLocal(); }
+function cmpSort(how, a, b) {
+  const rq = (x, y) => String(x.req || '').localeCompare(String(y.req || ''), undefined, { numeric: true });
+  const da = String(a.date || ''), db = String(b.date || '');
+  switch (how) {
+    case 'req_asc': return rq(a, b); case 'req_desc': return rq(b, a);
+    case 'name_asc': return String(a.store).localeCompare(String(b.store)) || rq(a, b); case 'name_desc': return String(b.store).localeCompare(String(a.store)) || rq(a, b);
+    case 'date_asc': return da.localeCompare(db) || rq(a, b); case 'date_desc': return db.localeCompare(da) || rq(a, b);
+    case 'custom': return byStore(a.store, b.store) || rq(a, b); case 'stock': return (b.ready || 0) - (a.ready || 0) || rq(a, b); case 'size': return (b.size || 0) - (a.size || 0) || rq(a, b);
+    default: return db.localeCompare(da) || rq(a, b);
+  }
+}
+function sortBy(list, how, acc) { return list.sort((x, y) => cmpSort(how, acc(x), acc(y))); }
+const PICKS = {};
+function pickBtn(id, cfg, label) { PICKS[id] = cfg; const cur = (cfg.opts.find(o => o[0] === cfg.val) || [])[1]; return '<button type="button" class="pickbtn' + (cfg.full ? ' full' : '') + '" data-a="pick" data-v="' + id + '"><span>' + esc(label ? label + (cur ? ': ' + cur : '') : cur || cfg.placeholder || 'Choose') + '</span>' + ico('down', 16) + '</button>'; }
+function sortPick(k) { return pickBtn('sort_' + k, { title: 'Sort by', opts: SORT_OPTS, val: getSort(k), set: v => { setSort(k, v); render(); } }, 'Sort'); }
+function renderPicker() {
+  let el = document.getElementById('picker'); if (!el) { el = document.createElement('div'); el.id = 'picker'; document.body.appendChild(el); }
+  const p = ui.picker; if (!p) { el.innerHTML = ''; return; }
+  const cfg = PICKS[p.id]; if (!cfg) { el.innerHTML = ''; return; }
+  const q = String(p.q || '').toUpperCase();
+  const list = cfg.opts.filter(o => !q || String(o[1]).toUpperCase().includes(q) || String(o[0]).toUpperCase().includes(q));
+  const search = cfg.search || cfg.opts.length > 8;
+  el.innerHTML = '<div class="pkbg" data-a="pickClose"></div><div class="pkpanel" role="dialog" aria-label="' + esc(cfg.title) + '"><div class="pkhead"><b>' + esc(cfg.title) + '</b><button class="xbtn" data-a="pickClose" aria-label="Close">' + ico('x', 18) + '</button></div>' +
+    (search ? '<div style="padding:0 16px 8px"><input type="text" data-pkq="1" value="' + esc(p.q || '') + '" placeholder="Search" autocomplete="off"></div>' : '') +
+    '<div class="pklist">' + (list.length ? list.map(o => '<button class="pkitem' + (o[0] === cfg.val ? ' on' : '') + '" data-a="pickSet" data-v="' + esc(o[0]) + '"><span>' + esc(o[1]) + (o[2] ? '<small>' + esc(o[2]) + '</small>' : '') + '</span>' + (o[0] === cfg.val ? '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>' : '') + '</button>').join('') : '<div class="note" style="padding:14px 18px">No match.</div>') + '</div></div>';
 }
 function sortSel(k, opts) { return '<select data-sort="' + k + '" style="width:auto;min-height:38px;font-size:14px;padding:0 8px">' + opts.map(([v, l]) => '<option value="' + v + '"' + (ui.sort[k] === v ? ' selected' : '') + '>Sort: ' + l + '</option>').join('') + '</select>'; }
 function storeRank(st) { const o = S.storeOrder || []; const i = o.indexOf(st); return i < 0 ? 9999 : i; }
@@ -1366,6 +1447,7 @@ function shEditReq() {
   h += '<label class="f">Store<input type="text" data-f="store" list="areaList" value="' + esc(f.store) + '" autocapitalize="characters"></label>' + areaDatalist();
   h += '<div class="grid2"><label class="f">Request date<input type="date" data-f="date" value="' + esc(f.date) + '"></label><label class="f">Receiver for this request<input type="text" data-f="rcv" value="' + esc(f.rcv) + '" class="mono" inputmode="numeric" maxlength="6"></label></div>';
   h += '<label class="f">Slip No for the next entry<input type="text" data-f="slip" value="' + esc(f.slip || '') + '" class="mono" autocapitalize="characters" placeholder="optional"></label>';
+  h += '<label class="f">Custom remark (optional)<input type="text" data-f="remark" value="' + esc(f.remark || '') + '" placeholder="Replaces Requisition Requested on …"></label>';
   h += '<div class="sect">Waiting articles</div>' + itemRowsHtml(f.items, true) + '<button class="btn ghost" data-a="addItem">+ Add article</button>';
   h += '<button class="btn main full" data-a="saveReq">Save request</button>';
   return h;
@@ -1384,7 +1466,7 @@ window.jvRelock = () => { if (!ui.locked) { ui.locked = true; render(); renderSh
 
 /* ---------------- actions ---------------- */
 const later = fn => setTimeout(fn, 0);
-function focusKey(el) { if (!el) return null; for (const a of ['data-in', 'data-f', 'data-it', 'data-set', 'data-store-rcv', 'data-store-name', 'data-nr']) if (el.hasAttribute && el.hasAttribute(a)) return [a, el.getAttribute(a), el.selectionStart]; return null; }
+function focusKey(el) { if (!el) return null; for (const a of ['data-in', 'data-f', 'data-it', 'data-set', 'data-store-rcv', 'data-store-name', 'data-nr', 'data-bt']) if (el.hasAttribute && el.hasAttribute(a)) return [a, el.getAttribute(a), el.selectionStart]; return null; }
 function refocus(k) { if (!k) return; const el = document.querySelector('[' + k[0] + '="' + CSS.escape(k[1]) + '"]'); if (el) { el.focus(); try { if (k[2] != null) el.setSelectionRange(k[2], k[2]); } catch (e) {} } }
 function blankItem() { return { code: '', name: '', uom: '', qty: '', remark: '' }; }
 function fillItemMeta(it) { it.code = String(it.code || '').trim().toUpperCase(); if (S.stock[it.code]) { it.name = S.stock[it.code].name; it.uom = S.stock[it.code].uom; } else { const f = findItemAnywhere(it.code); if (f) { it.name = f.name; it.uom = f.uom; } } }
@@ -1396,26 +1478,26 @@ document.addEventListener('click', async ev => {
   if (a === 'lockTap') { if (ui.locked) askUnlock(); else { ui.locked = true; render(); renderSheet(); toast('Locked.'); } return; }
   if (ui.locked && GUARDED.has(a)) { ev.preventDefault(); if (t.type === 'checkbox') t.checked = !t.checked; askUnlock(); return; }
   if (a === 'bgClose') { if (ev.target === t) { ui.sheet = null; renderSheet(); } return; }
-  if (t.type === 'checkbox' && !['hold', 'queueToggle', 'regItems', 'mgrToggle', 'syncAuto', 'lockToggle', 'markPick', 'stOn', 'rpTog', 'rpCol'].includes(a)) return;
+  if (t.type === 'checkbox' && !['hold', 'queueToggle', 'regItems', 'mgrToggle', 'syncAuto', 'lockToggle', 'markPick', 'stOn', 'rpTog', 'rpCol', 'autoSubToggle'].includes(a)) return;
   switch (a) {
     case 'tab': ui.tab = v; ui.view = null; if (v === 'set') ui.setPage = null; render(); window.scrollTo(0, 0); break;
     case 'openSite': if (N) N.openSite(); else toast('Open this inside the app.'); break;
     case 'goUpdate': ui.tab = 'set'; ui.view = null; render(); setTimeout(() => { const u = document.getElementById('upd'); if (u) u.scrollIntoView(); }, 50); break;
     case 'upload': ui.upload = null; ui.sheet = { kind: 'upload' }; renderSheet(); break;
     case 'template': template(); break;
-    case 'openReq': ui.view = 'req'; ui.req = v; render(); window.scrollTo(0, 0); break;
+    case 'openReq': ui.lastReq = v; ui.view = 'req'; ui.req = v; render(); window.scrollTo(0, 0); break;
     case 'back': ui.view = null; render(); break;
     case 'hold': if (t.checked) S.hold[v] = 1; else delete S.hold[v]; save(); render(); break;
-    case 'fillReq': { const PL = plan(); const r = requests().find(x => x.req === v); const ids = r.lines.filter(l => l.status === 'waiting' && PL[l.id] === 'issue').map(l => l.id); openStart(r.store, ids, r.store + ', request ' + r.req); break; }
+    case 'fillReq': { ui.lastReq = v; const PL = plan(); const r = requests().find(x => x.req === v); const ids = r.lines.filter(l => l.status === 'waiting' && PL[l.id] === 'issue').map(l => l.id); openStart(r.store, ids, r.store + ', request ' + r.req); break; }
     case 'fillStore': { const PL = plan(); const ids = S.lines.filter(l => isPending(l) && l.store === v && PL[l.id] === 'issue').map(l => l.id); openStart(v, ids, v + ', pending clearance'); break; }
     case 'editReq': { const r = requests().find(x => x.req === v); const w = r.lines.filter(l => l.status === 'waiting');
-      ui.form = { req: v, store: r.store, date: r.date, rcv: (r.lines.find(l => l.rcv) || {}).rcv || '', slip: (w.find(l => l.slip) || {}).slip || '', items: w.map(l => ({ lineId: l.id, code: l.code, qty: l.qty, name: itemName(l.code), uom: itemUom(l.code) })) };
+      ui.form = { req: v, store: r.store, date: r.date, rcv: (r.lines.find(l => l.rcv) || {}).rcv || '', slip: (w.find(l => l.slip) || {}).slip || '', remark: (w.find(l => l.remark) || {}).remark || '', items: w.map(l => ({ lineId: l.id, code: l.code, qty: l.qty, name: itemName(l.code), uom: itemUom(l.code) })) };
       ui.sheet = { kind: 'editReq' }; renderSheet(); break; }
     case 'dropReq': if (confirm('Remove request ' + v + ' (' + ((requests().find(x => x.req === v) || {}).store || '') + ') from the list? Waiting articles are removed; issued ones stay in the records.')) { S.lines.forEach(l => { if (l.req === v && l.status === 'waiting') l.status = 'dropped'; }); save(); ui.view = null; render(); } break;
     case 'saveReq': { const f = ui.form; if (f.rcv && !/^\d{6}$/.test(f.rcv)) { toast('Receiver must be 6 digits or blank.'); break; }
       const items = cleanItems(f.items); const keep = new Set(items.filter(i => i.lineId).map(i => i.lineId));
       const sl = (f.slip || '').trim().toUpperCase(); if (sl && !SLIP_RE.test(sl)) { toast('Slip No must be 2–10 characters with a digit.'); break; }
-      S.lines.forEach(l => { if (l.req !== f.req) return; l.store = f.store.trim().toUpperCase(); l.date = f.date || l.date; l.rcv = f.rcv || ''; if (l.status === 'waiting') l.slip = sl; if (l.status === 'waiting' && !keep.has(l.id)) l.status = 'dropped'; });
+      S.lines.forEach(l => { if (l.req !== f.req) return; l.store = f.store.trim().toUpperCase(); l.date = f.date || l.date; l.rcv = f.rcv || ''; if (l.status === 'waiting') { l.slip = sl; l.remark = (f.remark || '').trim(); } if (l.status === 'waiting' && !keep.has(l.id)) l.status = 'dropped'; });
       items.forEach(i => { if (i.lineId) { const l = S.lines.find(x => x.id === i.lineId); l.code = i.code; l.qty = i.qty; } else S.lines.push({ id: nid(), req: f.req, store: f.store.trim().toUpperCase(), date: f.date, code: i.code, qty: i.qty, rcv: f.rcv || '', slip: sl, src: 'new', earlier: '', status: 'waiting', issued: [] }); });
       save(); ui.sheet = null; renderSheet(); render(); toast('Request saved.'); break; }
     case 'bulkEdit': ui.form = { start: nextSlip(), allDate: today(), rows: bulkList().map(r => ({ req: r.req, newReq: r.req, store: r.store, n: r.w.length, slip: (r.w.find(l => l.slip) || {}).slip || '', date: r.date, rcv: (r.lines.find(l => l.rcv) || {}).rcv || (S.stores[r.store] || {}).rcv || '' })) }; ui.sheet = { kind: 'bulk' }; renderSheet(); break;
@@ -1468,15 +1550,36 @@ document.addEventListener('click', async ev => {
     case 'photoDel': delete S.me.photo; save(); render(); break;
     case 'expPendXlsx': openExport('pending'); break;
     case 'closeSheet': ui.sheet = null; renderSheet(); break;
+    case 'pick': ui.picker = { id: v, q: '' }; renderPicker(); { const i = document.querySelector('[data-pkq]'); if (i && PICKS[v] && PICKS[v].search) i.focus(); } break;
+    case 'pickClose': ui.picker = null; renderPicker(); break;
+    case 'pickSet': { const cfg = PICKS[ui.picker.id]; ui.picker = null; renderPicker(); if (cfg) cfg.set(v); break; }
     case 'newReq': ui.drawer = false; renderDrawer(); ui.form = { store: '', req: nextReqNo(), date: today(), rcv: '', slip: '', q: '', items: [] }; ui.sheet = { kind: 'newReq' }; renderSheet(); break;
     case 'nrPick': { const st = S.stock[v]; ui.form.items.push({ code: v, name: st.name, uom: st.uom, qty: '' }); ui.form.q = ''; renderSheet(); const el = document.querySelector('[data-nrq="' + (ui.form.items.length - 1) + '"]'); if (el) el.focus(); break; }
     case 'nrDel': ui.form.items.splice(+v, 1); renderSheet(); break;
     case 'nrSave': { const f = ui.form; const st = f.store.trim().toUpperCase();
-      f.items.forEach(it => S.lines.push({ id: nid(), req: f.req.trim(), store: st, date: f.date || today(), code: it.code, qty: parseFloat(it.qty), rcv: f.rcv || '', slip: (f.slip || '').trim().toUpperCase(), src: 'new', earlier: '', status: 'waiting', issued: [] }));
+      f.items.forEach(it => S.lines.push({ id: nid(), req: f.req.trim(), store: st, date: f.date || today(), code: it.code, qty: parseFloat(it.qty), rcv: f.rcv || '', slip: (f.slip || '').trim().toUpperCase(), remark: (f.remark || '').trim(), src: 'new', earlier: '', status: 'waiting', issued: [] }));
       if (!S.stores[st]) S.stores[st] = { rcv: f.rcv || '', rname: '' };
       save(); ui.sheet = null; renderSheet(); render(); toast('Request ' + f.req + ' saved for ' + st + '.'); break; }
     case 'doneOpen': ui.drawer = false; ui.view = 'done'; render(); window.scrollTo(0, 0); break;
     case 'doneExport': openExport('done'); break;
+    case 'doneMode': ui.doneMode = v; render(); break;
+    case 'batchReq': ui.drawer = false; renderDrawer(); ui.form = { date: today(), slipStart: '', groups: [], act: 0, q: '', paste: '' }; ui.sheet = { kind: 'batch' }; renderSheet(); break;
+    case 'btAct': ui.form.act = +v; ui.form.q = ''; renderSheet(); break;
+    case 'btDel': ui.form.groups.splice(+v, 1); ui.form.act = Math.max(0, ui.form.groups.length - 1); renderSheet(); break;
+    case 'btItemDel': { const [a1, b1] = v.split('|').map(Number); ui.form.groups[a1].items.splice(b1, 1); renderSheet(); break; }
+    case 'btPick': { const g = ui.form.groups[ui.form.act]; const st = S.stock[v]; g.items.push({ code: v, name: st.name, uom: st.uom, qty: '' }); ui.form.q = ''; renderSheet(); const el = document.querySelector('[data-bq="' + ui.form.act + '|' + (g.items.length - 1) + '"]'); if (el) el.focus(); break; }
+    case 'btPaste': { const f = ui.form; let n = 0, skip = 0;
+      String(f.paste || '').split(/\r?\n/).forEach(line => { const c = line.split(/	|,/).map(x => x.trim()); if (c.length < 3 || !c[0] || !c[1]) return; const q = parseFloat(c[2]); if (!(q > 0)) { skip++; return; }
+        const store = c[0].toUpperCase(), code = c[1].toUpperCase(); let g = f.groups.find(x => x.store === store && (!c[3] || x.req === c[3]));
+        if (!g) { batchAddGroup(store); g = f.groups[f.groups.length - 1]; if (c[3]) g.req = c[3]; }
+        g.items.push({ code, name: itemName(code), uom: itemUom(code), qty: String(q) }); n++; });
+      f.paste = ''; renderSheet(); toast(n + ' rows added' + (skip ? ', ' + skip + ' skipped (no qty)' : '') + '.'); break; }
+    case 'btSave': { const f = ui.form; let n = 0;
+      f.groups.forEach(g => { const st = g.store.toUpperCase(); g.items.forEach(it => { S.lines.push({ id: nid(), req: g.req.trim(), store: st, date: f.date || today(), code: it.code, qty: parseFloat(it.qty), rcv: g.rcv || '', slip: (g.slip || '').toUpperCase(), remark: (g.remark || '').trim(), src: 'new', earlier: '', status: 'waiting', issued: [] }); n++; });
+        if (!S.stores[st]) S.stores[st] = { rcv: g.rcv || '', rname: '' }; });
+      save(); ui.sheet = null; renderSheet(); render(); toast(n + ' articles saved in ' + f.groups.length + ' requests.'); break; }
+    case 'doneTog': ui.doneOpen[v] = !ui.doneOpen[v]; render(); break;
+    case 'noop': break;
     case 'drawer': ui.drawer = true; renderDrawer(); break;
     case 'drawerClose': ui.drawer = false; renderDrawer(); break;
     case 'dCount': ui.drawer = false; if (todayCount(true)) { ui.countId = todayCount(false).id; ui.view = 'count'; } render(); window.scrollTo(0, 0); break;
@@ -1513,6 +1616,7 @@ document.addEventListener('click', async ev => {
     case 'rpPdf': rpPdf(ui.sheet.type); break;
     case 'rpXlsx': rpXlsx(ui.sheet.type); break;
     case 'queueToggle': S.queue = t.checked; save(true); break;
+    case 'autoSubToggle': S.autoSubmit = t.checked; save(true); break;
     case 'startFill': { const s = ui.sheet; if (slipProblem(s.slip) || !/^\d{6}$/.test(s.rcv)) break;
       if (!S.stores[s.store]) S.stores[s.store] = { rcv: s.rcv, rname: '' }; else if (!S.stores[s.store].rcv) S.stores[s.store].rcv = s.rcv;
       const ids = s.lineIds.filter(id => !s.off[id]);
@@ -1595,11 +1699,15 @@ document.addEventListener('input', ev => {
   const el = ev.target;
   if (el.dataset.in === 'slip' || el.dataset.in === 'rcv') { const k = focusKey(el); ui.sheet[el.dataset.in] = el.dataset.in === 'slip' ? el.value.trim().toUpperCase() : el.value.replace(/\D/g, ''); renderSheet(); refocus(k); return; }
   if (el.dataset.in === 'q') { const k = focusKey(el); ui.search.q = el.value; render(); refocus(k); return; }
+  if (el.dataset.pkq) { ui.picker.q = el.value; const k = focusKey(el); renderPicker(); const i = document.querySelector('[data-pkq]'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } return; }
   if (el.dataset.bk) { ui.sheet[el.dataset.bk] = el.value; return; }
   if (el.dataset.tk) { ui.newTask = el.value; return; }
   if (el.dataset.nr) { const k = el.dataset.nr; ui.form[k] = k === 'rcv' ? el.value.replace(/\D/g, '') : el.value;
     if (k === 'store') { const d = (S.stores[el.value] || {}).rcv; if (d && !ui.form.rcv) ui.form.rcv = d; }
-    if (k === 'q' || k === 'req' || k === 'slip' || k === 'store') { const fk = focusKey(el); renderSheet(); refocus(fk); } return; }
+    if (k === 'q' || k === 'req' || k === 'slip') { const fk = focusKey(el); renderSheet(); refocus(fk); } return; }
+  if (el.dataset.bt) { const k = el.dataset.bt; ui.form[k] = el.value; if (k === 'q') { const fk = focusKey(el); renderSheet(); refocus(fk); } return; }
+  if (el.dataset.bg) { const [gi, k] = el.dataset.bg.split('|'); ui.form.groups[+gi][k] = k === 'rcv' ? el.value.replace(/\D/g, '') : k === 'slip' ? el.value.toUpperCase() : el.value; return; }
+  if (el.dataset.bq) { const [gi, ii] = el.dataset.bq.split('|').map(Number); ui.form.groups[gi].items[ii].qty = el.value; return; }
   if (el.dataset.nrq != null) { ui.form.items[+el.dataset.nrq].qty = el.value; const b = document.querySelector('[data-a=nrSave]'); if (b) { const f = ui.form; b.disabled = !(f.store && f.req && f.items.length && f.items.every(x => parseFloat(x.qty) > 0)); } return; }
   if (el.dataset.var) { const c = curCount(); if (c) { const [a1, k, f] = el.dataset.var.split('|'); const it = c.items[+a1]; it.variants[+k][f] = el.value; syncPhysical(it); save(true); } return; }
   if (el.dataset.expdays) { const n = parseInt(el.value, 10); if (n > 0) { S.expiryDays = n; save(true); } return; }
@@ -1637,6 +1745,7 @@ document.addEventListener('change', async ev => {
   }
   if (el.dataset.sort) { ui.sort[el.dataset.sort] = el.value; render(); return; }
   if (el.dataset.rp) { later(() => renderSheet()); return; }
+  if (el.dataset.bq || el.dataset.bg) { later(() => renderSheet()); return; }
   if (el.dataset.cnt != null || el.dataset.var || el.dataset.expdays) { later(() => render()); return; }
   if (el.dataset.in === 'doneDate') { ui.doneDate = el.value || today(); render(); return; }
   if (el.dataset.in === 'regDate') { ui.reg.date = el.value || today(); render(); if (ui.sheet && ui.sheet.kind === 'export') renderSheet(); return; }
