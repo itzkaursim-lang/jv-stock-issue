@@ -100,7 +100,7 @@
   function sw(id, label, on) {
     return '<button type="button" data-jv="' + id + '" style="display:inline-flex;align-items:center;gap:8px;border:0;background:none;padding:4px 0;font:600 13.5px system-ui;color:#3A3E45;cursor:pointer"><span style="width:38px;height:22px;border-radius:99px;background:' + (on ? 'linear-gradient(160deg,#E6C873,#C49A3A)' : '#D9D5CC') + ';position:relative;flex-shrink:0;transition:background .2s"><span style="position:absolute;top:2px;left:' + (on ? 18 : 2) + 'px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:left .2s"></span></span>' + label + '</button>';
   }
-  function toggles(j) { return '<div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:12px;padding-top:10px;border-top:1px solid #EFEDE8">' + sw('tQueue', 'Queue mode', !!j.queue) + sw('tAuto', 'Auto submit', !!j.autoSubmit) + '</div>'; }
+  function toggles(j) { return '<div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:12px;padding-top:10px;border-top:1px solid #EFEDE8">' + sw('tQueue', 'Queue mode', !!j.queue) + sw('tAuto', 'Auto submit', !!j.autoSubmit) + '</div>' + (j.queue && j.next ? '<div style="font-size:12.5px;color:#6B6F76;margin-top:4px">Next in queue: <b style="color:#0D1528">' + esc(j.next) + '</b></div>' : ''); }
   var autoTimer = null;
   function row(label, value, ok) {
     var mark = ok === undefined ? '' : ok ? ic('ok', 18, '#0E7A4F') : ic('no', 18, '#B42335');

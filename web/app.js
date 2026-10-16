@@ -418,27 +418,38 @@ function shStart() {
     meta([S.stock[l.code] ? num(S.stock[l.code].qty) + ' in stock' : '', remarkFor(l.date) ? 'remark added' : '']) + '</div>').join('') + '</div>';
   h += '<div class="card pad col"><b>Add an article to this entry</b><div class="grid2"><input type="text" data-stadd="code" value="' + esc(s.addCode || '') + '" placeholder="Item code e.g. GR-198" autocapitalize="characters" class="mono"><input type="number" inputmode="decimal" data-stadd="qty" value="' + esc(s.addQty || '') + '" placeholder="Qty"></div><button class="btn" data-a="stAdd">+ Add article</button></div>';
   h += '<label class="chk"><input type="checkbox" data-a="queueToggle"' + (S.queue ? ' checked' : '') + '> Queue mode: after I submit, fill the next request automatically</label>';
+  if (S.queue) h += queueBox();
   h += '<button class="btn main full" data-a="startFill"' + (sp || rp ? ' disabled' : '') + '>Start filling on CUIMS</button>';
-  h += '<div class="note" style="text-align:center">The app never taps SUBMIT. You check and submit yourself.</div>';
+  h += '<div class="note" style="text-align:center">' + (S.autoSubmit ? 'Auto submit is on: SUBMIT is tapped after a 100% recheck, with a 4-second Stop window.' : 'The app never taps SUBMIT. You check and submit yourself.') + '</div>';
   return h;
 }
 function startJob(store, slip, rcv, lineIds) {
   const ls = S.lines.filter(l => lineIds.includes(l.id) && l.status === 'waiting');
-  const job = { id: 'J' + Date.now(), slip, rcv, store, queue: !!S.queue, autoSubmit: !!S.autoSubmit, phase: 'dup', paused: false, log: [], tries: {},
+  const nq = S.queue ? nextQueueJob(lineIds) : null;
+  const job = { id: 'J' + Date.now(), slip, rcv, store, queue: !!S.queue, next: nq ? nq.req + ' · ' + nq.store : '', autoSubmit: !!S.autoSubmit, phase: 'dup', paused: false, log: [], tries: {},
     items: ls.map(l => ({ lineId: l.id, req: l.req, reqDate: l.date, code: l.code, name: itemName(l.code), uom: itemUom(l.code), qty: l.qty, remark: l.remark || remarkFor(l.date), skip: false })) };
   if (!N) { toast('Open this inside the JV Stock Issue app to fill CUIMS.'); return; }
   N.startJob(JSON.stringify(job));
 }
-function nextQueueJob() {
-  const PL = plan(); const t = today();
-  const R = requests().filter(r => r.date === t && r.src !== 'old').map(r => Object.assign(r, reqState(r, PL))).filter(r => r.can.length);
-  const order = { full: 0, part: 1 };
-  R.sort((a, b) => (order[a.st] || 2) - (order[b.st] || 2) || b.can.length - a.can.length);
-  for (const r of R) {
-    const rcv = (r.lines.find(l => l.rcv) || {}).rcv || (S.stores[r.store] || {}).rcv || '';
-    if (/^\d{6}$/.test(rcv)) return { store: r.store, rcv, ids: r.can.map(l => l.id), req: r.req };
-  }
-  return null;
+function queueList(skipIds) {
+  const PL = plan(), t = today(), skip = new Set(skipIds || []);
+  const R = requests().map(r => Object.assign(r, reqState(r, PL))).map(r => {
+    const can = r.lines.filter(l => l.status === 'waiting' && PL[l.id] === 'issue' && !skip.has(l.id) && (r.date === t && l.src !== 'old' ? true : S.queuePend && isPending(l)));
+    return Object.assign(r, { qcan: can });
+  }).filter(r => r.qcan.length);
+  sortBy(R, S.queueSort || 'reqdate', r => ({ req: r.req, store: r.store, date: r.date, ready: r.qcan.length, size: r.lines.length }));
+  return R.filter(r => /^\d{6}$/.test((r.lines.find(l => l.rcv) || {}).rcv || (S.stores[r.store] || {}).rcv || ''));
+}
+function nextQueueJob(skipIds) {
+  const r = queueList(skipIds)[0]; if (!r) return null;
+  const rcv = (r.lines.find(l => l.rcv) || {}).rcv || (S.stores[r.store] || {}).rcv || '';
+  return { store: r.store, rcv, ids: r.qcan.map(l => l.id), req: r.req };
+}
+function queueBox() {
+  const L = queueList(ui.sheet && ui.sheet.kind === 'start' ? ui.sheet.lineIds : []);
+  return '<div class="card pad col" style="gap:10px"><div class="row"><b>Queue order</b>' + pickBtn('queueSort', { title: 'Queue order', opts: SORT_OPTS, val: S.queueSort || 'reqdate', set: v => { S.queueSort = v; save(true); render(); renderSheet(); } }) + '</div>' +
+    '<label class="chk" style="min-height:36px"><input type="checkbox" data-a="queuePend"' + (S.queuePend ? ' checked' : '') + '> Also take pending requests (after today\'s)</label>' +
+    (L.length ? '<div class="qnext"><span>Next up</span>' + L.slice(0, 6).map((r, i) => '<div class="qrow"><b>' + (i + 1) + '</b><span class="reqno">' + esc(r.req) + '</span><span class="qst">' + esc(r.store) + '</span><span class="note">' + r.qcan.length + '</span></div>').join('') + (L.length > 6 ? '<div class="note">+ ' + (L.length - 6) + ' more</div>' : '') + '</div>' : '<div class="note">Nothing else ready to queue.</div>') + '</div>';
 }
 
 /* ---------------- Upload sheet ---------------- */
@@ -659,6 +670,7 @@ function vSet() {
   if (pg === 'fill') {
   h += '<div class="card pad col"><h3>Auto submit</h3><label class="chk"><input type="checkbox" data-a="autoSubToggle"' + (S.autoSubmit ? ' checked' : '') + '> Tap SUBMIT automatically when the recheck matches 100%</label><div class="note">A 4-second countdown with a Stop button appears first. You can also switch this in the CUIMS bar.</div></div>';
   h += '<div class="card pad col"><h3>Filling</h3><label class="chk"><input type="checkbox" data-a="queueToggle"' + (S.queue ? ' checked' : '') + '> Queue mode: after each submit, fill the next request automatically</label></div>';
+    h += queueBox();
   }
   if (pg === 'cloud') {
   h += '<div class="card pad col"><h3>Cloud backup (Google Drive + Sheet)</h3><label class="f">Apps Script web app URL<input type="text" data-set="sync.url" value="' + esc(S.sync.url) + '" placeholder="https://script.google.com/macros/s/…/exec"></label>' +
@@ -1508,7 +1520,7 @@ document.addEventListener('click', async ev => {
   if (a === 'lockTap') { if (ui.locked) askUnlock(); else { ui.locked = true; render(); renderSheet(); toast('Locked.'); } return; }
   if (ui.locked && GUARDED.has(a)) { ev.preventDefault(); if (t.type === 'checkbox') t.checked = !t.checked; const sel = '[data-a="' + a + '"]' + (v != null ? '[data-v="' + CSS.escape(v) + '"]' : ''); askUnlock(() => { const el = document.querySelector(sel); if (el) el.click(); }); return; }
   if (a === 'bgClose') { if (ev.target === t) { ui.sheet = null; renderSheet(); } return; }
-  if (t.type === 'checkbox' && !['hold', 'queueToggle', 'regItems', 'mgrToggle', 'syncAuto', 'lockToggle', 'markPick', 'stOn', 'rpTog', 'rpCol', 'autoSubToggle'].includes(a)) return;
+  if (t.type === 'checkbox' && !['hold', 'queueToggle', 'regItems', 'mgrToggle', 'syncAuto', 'lockToggle', 'markPick', 'stOn', 'rpTog', 'rpCol', 'autoSubToggle', 'queuePend'].includes(a)) return;
   switch (a) {
     case 'tab': ui.tab = v; ui.view = null; if (v === 'set') ui.setPage = null; render(); window.scrollTo(0, 0); break;
     case 'openSite': if (N) N.openSite(); else toast('Open this inside the app.'); break;
@@ -1658,7 +1670,8 @@ document.addEventListener('click', async ev => {
       if (j >= 0 && j < keys.length) { [keys[i], keys[j]] = [keys[j], keys[i]]; p.order = keys; save(true); renderSheet(); } break; }
     case 'rpPdf': rpPdf(ui.sheet.type); break;
     case 'rpXlsx': rpXlsx(ui.sheet.type); break;
-    case 'queueToggle': S.queue = t.checked; save(true); break;
+    case 'queueToggle': S.queue = t.checked; save(true); if (ui.sheet && ui.sheet.kind === 'start') renderSheet(); else render(); break;
+    case 'queuePend': S.queuePend = t.checked; save(true); if (ui.sheet && ui.sheet.kind === 'start') renderSheet(); else render(); break;
     case 'autoSubToggle': S.autoSubmit = t.checked; save(true); break;
     case 'startFill': { const s = ui.sheet; if (slipProblem(s.slip) || !/^\d{6}$/.test(s.rcv)) break;
       if (!S.stores[s.store]) S.stores[s.store] = { rcv: s.rcv, rname: '' }; else if (!S.stores[s.store].rcv) S.stores[s.store].rcv = s.rcv;

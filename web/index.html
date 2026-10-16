@@ -238,6 +238,9 @@ nav.tabs button:not(.center).on svg{color:var(--brand);background:var(--goldBg);
 nav.tabs button:not(.center).on:after{content:"";position:absolute;top:0;left:30%;right:30%;height:3px;border-radius:0 0 3px 3px;background:var(--gold)}
 nav.tabs button:active svg{transform:scale(.9)}
 .seg button.on{background:linear-gradient(160deg,#1C2E66,#0F1B3D);color:#F3DE9C;box-shadow:0 4px 10px rgba(15,27,61,.2)}
+.qnext{display:flex;flex-direction:column;gap:6px;padding:10px 12px;border-radius:14px;background:var(--soft);border:1px solid var(--line)}
+.qnext>span{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--goldInk)}
+.qrow{display:flex;align-items:center;gap:10px}.qrow>b{width:18px;color:var(--mute);font-size:13px}.qrow .qst{flex:1;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 </style>
 </head>
 <body>
@@ -247,6 +250,6 @@ nav.tabs button:active svg{transform:scale(.9)}
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <input type="file" id="fileIn" accept=".xlsx,.xls,.csv" class="hidden">
 <input type="file" id="photoIn" accept="image/*" class="hidden">
-<script src="app.js?v=3.3.2"></script>
+<script src="app.js?v=3.3.3"></script>
 </body>
 </html>
