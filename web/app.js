@@ -446,9 +446,9 @@ function shUpload() {
   const u = ui.upload;
   let h = '<div class="row"><h2>Upload</h2><button class="btn sm ghost" data-a="closeSheet">Close</button></div>';
   if (!u || !u.result) {
-    h += '<button class="card pad tap col" style="gap:4px" data-a="pick" data-v="new"><b>Fresh requests</b><span class="note">"New Requests" tab of the template. One row per article.</span></button>';
-    h += '<button class="card pad tap col" style="gap:4px" data-a="pick" data-v="old"><b>My earlier pending</b><span class="note">"Old Pending" tab. Load once, before you start using the app.</span></button>';
-    h += '<button class="card pad tap col" style="gap:4px" data-a="pick" data-v="stock"><b>CUIMS stock report</b><span class="note">Item Stock Statement exactly as downloaded. Replaces stock fully.</span></button>';
+    h += '<button class="card pad tap col" style="gap:4px" data-a="upPick" data-v="new"><b>Fresh requests</b><span class="note">"New Requests" tab of the template. One row per article.</span></button>';
+    h += '<button class="card pad tap col" style="gap:4px" data-a="upPick" data-v="old"><b>My earlier pending</b><span class="note">"Old Pending" tab. Load once, before you start using the app.</span></button>';
+    h += '<button class="card pad tap col" style="gap:4px" data-a="upPick" data-v="stock"><b>CUIMS stock report</b><span class="note">Item Stock Statement exactly as downloaded. Replaces stock fully.</span></button>';
     h += '<button class="btn ghost" data-a="template">Download data template</button>';
     if (u && u.error) h += '<div class="err">' + esc(u.error) + '</div>';
     return h;
@@ -1484,7 +1484,7 @@ function shEditReq() {
 }
 
 /* ---------------- lock ---------------- */
-const GUARDED = new Set(['corrOpen', 'corrSave', 'upload', 'bulkEdit', 'bulkSave', 'dropReq', 'dropStore', 'editReq', 'saveReq', 'markDone', 'markSave', 'newManual', 'saveEntry', 'delEntry', 'newReturn', 'saveReturn', 'delReturn',
+const GUARDED = new Set(['corrOpen', 'corrSave', 'bulkEdit', 'bulkSave', 'dropReq', 'dropStore', 'editReq', 'saveReq', 'markDone', 'markSave', 'newManual', 'saveEntry', 'delEntry', 'newReturn', 'saveReturn', 'delReturn',
   'rmStore', 'addStore', 'wipe', 'restore', 'bkRestore', 'bkDel', 'bkKeep', 'bkSave', 'bkNoteSave', 'photo', 'photoDel', 'mode', 'lockToggle', 'syncAuto', 'mgrToggle', 'moveStore', 'saveUrls', 'resetZoom', 'hold', 'cropSave']);
 let pendingAuth = null;
 function askUnlock(after) {
@@ -1506,7 +1506,7 @@ document.addEventListener('click', async ev => {
   const t = ev.target.closest('[data-a]'); if (!t) return;
   const a = t.dataset.a, v = t.dataset.v;
   if (a === 'lockTap') { if (ui.locked) askUnlock(); else { ui.locked = true; render(); renderSheet(); toast('Locked.'); } return; }
-  if (ui.locked && GUARDED.has(a)) { ev.preventDefault(); if (t.type === 'checkbox') t.checked = !t.checked; askUnlock(); return; }
+  if (ui.locked && GUARDED.has(a)) { ev.preventDefault(); if (t.type === 'checkbox') t.checked = !t.checked; const sel = '[data-a="' + a + '"]' + (v != null ? '[data-v="' + CSS.escape(v) + '"]' : ''); askUnlock(() => { const el = document.querySelector(sel); if (el) el.click(); }); return; }
   if (a === 'bgClose') { if (ev.target === t) { ui.sheet = null; renderSheet(); } return; }
   if (t.type === 'checkbox' && !['hold', 'queueToggle', 'regItems', 'mgrToggle', 'syncAuto', 'lockToggle', 'markPick', 'stOn', 'rpTog', 'rpCol', 'autoSubToggle'].includes(a)) return;
   switch (a) {
@@ -1672,7 +1672,7 @@ document.addEventListener('click', async ev => {
       const base = S.lines.find(l => l.id === s.lineIds[0]);
       const nl = { id: nid(), req: base ? base.req : s.req || 'MANUAL', store: s.store, date: base ? base.date : today(), code, qty: q, rcv: base ? base.rcv : '', slip: base ? base.slip : '', src: 'new', earlier: '', status: 'waiting', issued: [] };
       S.lines.push(nl); s.lineIds.push(nl.id); s.addCode = ''; s.addQty = ''; save(true); renderSheet(); if (!S.stock[code]) toast(code + ' is not in the stock sheet; CUIMS will check it.'); break; }
-    case 'pick': ui.upload = { kind: v }; document.getElementById('fileIn').click(); break;
+    case 'upPick': ui.upload = { kind: v }; document.getElementById('fileIn').click(); break;
     case 'uploadCancel': ui.upload = null; renderSheet(); break;
     case 'uploadOk': doImport(); break;
     case 'regType': ui.reg.type = v; render(); break;
