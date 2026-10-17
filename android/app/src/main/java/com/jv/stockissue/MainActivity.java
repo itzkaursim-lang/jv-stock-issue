@@ -3,6 +3,16 @@ package com.jv.stockissue;
 import android.annotation.SuppressLint;
 import android.app.AlertDialog;
 import android.app.DownloadManager;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import androidx.core.app.NotificationCompat;
+import androidx.core.app.NotificationManagerCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
+import android.Manifest;
+import android.content.pm.PackageManager;
 import android.content.BroadcastReceiver;
 import android.content.ContentValues;
 import android.content.Context;
@@ -146,6 +156,42 @@ public class MainActivity extends AppCompatActivity {
 
         fetchFillScript();
         loadApp();
+        if (Build.VERSION.SDK_INT >= 26) {
+            NotificationChannel ch = new NotificationChannel("jvjob", "Live entry progress", NotificationManager.IMPORTANCE_LOW);
+            ch.setDescription("Shows the CUIMS entry the app is filling");
+            ((NotificationManager) getSystemService(NOTIFICATION_SERVICE)).createNotificationChannel(ch);
+        }
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 7);
+        }
+    }
+
+    void postProgress(String title, String text, int done, int total, boolean ongoing) {
+        try {
+            Intent i = new Intent(this, MainActivity.class);
+            i.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+            PendingIntent pi = PendingIntent.getActivity(this, 0, i, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+            NotificationCompat.Builder nb = new NotificationCompat.Builder(this, "jvjob")
+                    .setSmallIcon(android.R.drawable.stat_sys_upload)
+                    .setContentTitle(title)
+                    .setContentText(text)
+                    .setStyle(new NotificationCompat.BigTextStyle().bigText(text))
+                    .setOnlyAlertOnce(true)
+                    .setOngoing(ongoing)
+                    .setContentIntent(pi)
+                    .setColor(0xFF0F1B3D)
+                    .setPriority(NotificationCompat.PRIORITY_LOW);
+            if (total > 0) nb.setProgress(total, done, false);
+            NotificationManagerCompat.from(this).notify(77, nb.build());
+        } catch (SecurityException ignored) { } catch (Exception ignored) { }
+    }
+
+    void setFull(boolean on) {
+        WindowInsetsControllerCompat c = WindowCompat.getInsetsController(getWindow(), root);
+        if (on) {
+            c.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+            c.hide(WindowInsetsCompat.Type.systemBars());
+        } else c.show(WindowInsetsCompat.Type.systemBars());
     }
 
     WebView makeView(String profile) {
@@ -402,6 +448,26 @@ public class MainActivity extends AppCompatActivity {
         Bridge(String w) { who = w; }
 
         @JavascriptInterface public String who() { return who; }
+        @JavascriptInterface public void progress(String title, String text, int done, int total, boolean ongoing) { runOnUiThread(() -> postProgress(title, text, done, total, ongoing)); }
+        @JavascriptInterface public void progressClear() { try { NotificationManagerCompat.from(MainActivity.this).cancel(77); } catch (Exception ignored) { } }
+        @JavascriptInterface public void setFullscreen(boolean on) { runOnUiThread(() -> setFull(on)); }
+        @JavascriptInterface public void keepAwake(boolean on) { runOnUiThread(() -> { if (on) getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); else getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); }); }
+        @JavascriptInterface public String getCred() {
+            if ("app".equals(who)) return "";
+            try { JSONObject o = new JSONObject(); o.put("u", prefs.getString("cu_" + who, "")); o.put("p", prefs.getString("cp_" + who, "")); o.put("auto", prefs.getBoolean("ca_" + who, true)); return o.toString(); } catch (Exception e) { return ""; }
+        }
+        @JavascriptInterface public void setCred(String forWho, String u, String p, boolean auto) {
+            if (!"app".equals(who)) return;
+            if (!"emp".equals(forWho) && !"mgr".equals(forWho)) return;
+            String pw = "__keep__".equals(p) ? prefs.getString("cp_" + forWho, "") : (p == null ? "" : p);
+            prefs.edit().putString("cu_" + forWho, u == null ? "" : u).putString("cp_" + forWho, pw).putBoolean("ca_" + forWho, auto).apply();
+        }
+        @JavascriptInterface public String credInfo() {
+            if (!"app".equals(who)) return "{}";
+            try { JSONObject o = new JSONObject();
+                for (String w : new String[]{"emp", "mgr"}) { JSONObject x = new JSONObject(); x.put("u", prefs.getString("cu_" + w, "")); x.put("has", prefs.getString("cp_" + w, "").length() > 0); x.put("auto", prefs.getBoolean("ca_" + w, true)); o.put(w, x); }
+                return o.toString(); } catch (Exception e) { return "{}"; }
+        }
         @JavascriptInterface public String targetUrl() { return url(who); }
         @JavascriptInterface public String storeGet() { return readFile(dataFile); }
         @JavascriptInterface public void storeSet(String s) { writeFile(dataFile, s); }

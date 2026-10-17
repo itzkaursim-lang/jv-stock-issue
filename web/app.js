@@ -274,38 +274,63 @@ function reqCard(r, cont) {
     (r.can && r.can.length ? '<div class="cta"><button class="btn main full" data-a="fillReq" data-v="' + esc(r.req) + '">Fill on CUIMS · ' + r.can.length + ' available</button></div>' : '') + '</div>';
 }
 function appBar() {
-  const lk = ui.locked ? '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>' : '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="M8 11V7a4 4 0 0 1 7.5-1.8"/></svg>';
-  return '<div class="appbar"><button class="menubtn" data-a="drawer" aria-label="Open menu"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg></button><img class="logo" src="icon.png" alt="JV Stock Issue logo"><div class="t"><b>JV Stock Issue</b><span>Built by <i>' + esc(S.me.builder || S.me.name || 'JV') + '</i></span><button id="syncline" class="sync" data-a="syncTap"><span class="sd"></span><span></span></button></div>' +
-    '<button class="lockbtn' + (ui.locked ? '' : ' open') + '" data-a="lockTap" aria-label="' + (ui.locked ? 'Unlock editing' : 'Lock editing') + '">' + lk + '</button>' +
-    '<button data-a="goProfile" aria-label="Profile" style="border:0;background:none;padding:0">' + avatar(false) + '</button></div>';
+  const lk = '<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="' + (ui.locked ? 'M8 11V7a4 4 0 0 1 8 0v4' : 'M8 11V7a4 4 0 0 1 7.5-1.8') + '"/></svg>';
+  const d = new Date();
+  return '<div class="appbar">' +
+    '<button class="avbtn" data-a="goProfile" aria-label="Profile">' + avatar(false) + '</button>' +
+    '<div class="t"><b>' + (S.me.name ? 'Hello, ' + esc(S.me.name.split(' ')[0]) : 'JV Stock Issue') + '</b><span>Today ' + d.getDate() + ' ' + d.toLocaleString('en-GB', { month: 'short' }) + '.</span><button id="syncline" class="sync" data-a="syncTap"><span class="sd"></span><span></span></button></div>' +
+    '<button class="cbtn' + (ui.locked ? '' : ' open') + '" data-a="lockTap" aria-label="' + (ui.locked ? 'Unlock editing' : 'Lock editing') + '">' + lk + '</button>' +
+    '<button class="cbtn" data-a="drawer" aria-label="Open menu"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg></button></div>';
 }
 function stockAge() { return S.stockAt ? 'Stock from ' + fmtDT(S.stockAt) : 'No stock uploaded yet'; }
 
 /* ---------------- Home ---------------- */
+function dayRange() {
+  const E = S.entries.filter(e => (e.at || '').slice(0, 10) === today()).slice().sort((a, b) => (a.at || '').localeCompare(b.at || ''));
+  if (!E.length) return null;
+  const reqs = [...new Set(E.flatMap(e => e.items.map(i => i.req)).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
+  const sers = E.map(e => e.serial).filter(Boolean);
+  return { slip: [E[0].slip, E[E.length - 1].slip], ser: sers.length ? [sers[0], sers[sers.length - 1]] : null, req: [reqs[0], reqs[reqs.length - 1]], n: E.length };
+}
 function vHome() {
   const PL = plan();
-  const t = today();
+  const t = ui.homeDate || today();
   const R = requests();
-  const todays = R.filter(r => r.date === t && r.src !== 'old').map(r => Object.assign(r, reqState(r, PL))).filter(r => r.st !== 'done');
+  const todays = R.filter(r => r.date === t && (r.src !== 'old' || t !== today())).map(r => Object.assign(r, reqState(r, PL))).filter(r => r.st !== 'done');
   sortBy(todays, getSort('home'), r => ({ req: r.req, store: r.store, date: r.date, ready: r.can.length, size: r.lines.length }));
   const pend = S.lines.filter(isPending);
   const pendCan = pend.filter(l => PL[l.id] === 'issue').length;
   const issuedToday = S.entries.filter(e => (e.at || '').slice(0, 10) === t).length;
   const readyNow = todays.reduce((n, r) => n + r.can.length, 0);
-  let h = '<main style="padding-top:16px">';
-  h += '<section class="hero"><div class="hrow"><div><div class="hello">' + (S.me.name ? 'Hello, ' + esc(S.me.name.split(' ')[0]) : 'Welcome') + '</div><div class="hdate">' + fmtLong(t) + '</div></div><button class="hstock" data-a="openMgr"><span>Stock</span><b>' + esc(stockAge().replace('Stock from ', '').replace(/ 20\d\d,/, ',')) + '</b></button></div>' +
-    '<div class="hstats"><button data-a="noop"><b>' + todays.length + '</b><span>Open today</span></button><button data-a="noop"><b>' + readyNow + '</b><span>Ready to issue</span></button><button data-a="tab" data-v="pend"><b>' + pend.length + '</b><span>Pending</span></button><button data-a="doneOpen"><b>' + issuedToday + '</b><span>Done today</span></button></div></section>';
+  const issuedToday2 = issuedToday;
+  let h = '<main style="padding-top:6px">';
+  const rg = dayRange();
+  h += '<section class="hero"><div class="hcopy"><div class="htitle">Daily<br>issue work</div><div class="hsub">' + (todays.length ? readyNow + ' articles ready across ' + todays.length + ' requests' : 'No open requests for this day') + '</div>' +
+    '<div class="hchips"><span>' + todays.length + ' open</span><span>' + pend.length + ' pending</span><span>' + issuedToday2 + ' done</span></div></div><img class="hlogo" src="icon.png" alt="">' +
+    (rg ? '<div class="hrange"><div><span>Slips</span><b>' + esc(rg.slip[0]) + (rg.n > 1 ? ' → ' + esc(rg.slip[1]) : '') + '</b></div><div><span>Serials</span><b>' + (rg.ser ? esc(rg.ser[0]) + (rg.ser[1] !== rg.ser[0] ? ' → ' + esc(rg.ser[1]) : '') : '–') + '</b></div><div><span>Requests</span><b>' + esc(rg.req[0] || '–') + (rg.req[1] && rg.req[1] !== rg.req[0] ? ' → ' + esc(rg.req[1]) : '') + '</b></div></div>' : '') +
+    '<div class="hcredit">JV Stock Issue · Built by ' + esc(S.me.builder || S.me.name || 'JV') + '</div></section>';
+  // date strip
+  const base = new Date(); base.setHours(12);
+  h += '<div class="dstrip">';
+  for (let k = -3; k <= 3; k++) { const dd = new Date(base); dd.setDate(base.getDate() + k); const iso = isoOf(dd); const has = R.some(r => r.date === iso && r.lines.some(l => l.status === 'waiting'));
+    h += '<button class="dday' + (iso === t ? ' on' : '') + '" data-a="homeDate" data-v="' + iso + '"><i' + (has ? ' class="dot"' : '') + '></i><span>' + dd.toLocaleString('en-GB', { weekday: 'short' }) + '</span><b>' + dd.getDate() + '</b></button>'; }
+  h += '</div>';
   if (S.updateInfo && S.updateInfo.newer) h += '<button class="banner t-in tap" data-a="goUpdate" style="border:0"><b>Update ' + esc(S.updateInfo.tag) + ' available.</b> Tap to install.</button>';
   if (!S.me.name) h += '<button class="banner t-pt tap" data-a="goProfile" style="border:0"><b>Add your name and emp code</b> so entries and PDFs show who made them.</button>';
   if (!S.lines.length && !S.stockAt) {
     return h + '<div class="card pad col"><h2>Start here</h2><div class="note">Upload the CUIMS stock report and your requests sheet.</div><button class="btn main" data-a="upload">Upload a file</button><button class="btn" data-a="template">Download data template</button></div></main>';
   }
-  const qa = (a, label, d, cls) => '<button class="qa' + (cls ? ' ' + cls : '') + '" data-a="' + a + '"><span class="qi"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + d + '</svg></span><span>' + label + '</span></button>';
-  h += '<div class="qagrid">' + qa('upload', 'Upload', '<path d="M12 21V9M7 14l5-5 5 5M4 3h16"/>') + qa('newReq', 'Add request', '<path d="M12 5v14M5 12h14"/>') + qa('batchReq', 'Batch add', '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/>') + qa('openSite', 'Issue CUIMS', '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/>', 'gold') + '</div>';
+  const qi = (a, label, d) => '<button class="qc" data-a="' + a + '" aria-label="' + label + '"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + d + '</svg></button>';
+  const oldest = pend.reduce((m, l) => Math.max(m, days(l.date)), 0);
+  h += '<div class="shead"><div><h2>Your work</h2></div></div><div class="plan">' +
+    '<button class="pt orange" data-a="tab" data-v="pend"><span class="ptag">' + (oldest > 2 ? 'Urgent' : 'Pending') + '</span><b>Pending</b><span>' + pend.length + ' articles</span><span>' + pendCan + ' ready now</span><span>oldest ' + oldest + ' d</span><span class="pfoot">Open list</span></button>' +
+    '<button class="pt blue" data-a="doneOpen"><span class="ptag">Today</span><b>Done</b><span>' + issuedToday2 + ' slips</span><span>' + fmtShort(today()) + '</span></button>' +
+    '<div class="pt pink">' + qi('upload', 'Upload', '<path d="M12 21V9M7 14l5-5 5 5M4 3h16"/>') + qi('newReq', 'Add request', '<path d="M12 5v14M5 12h14"/>') + qi('batchReq', 'Batch add', '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/>') + '</div></div>';
+  h += '<div class="grid2"><button class="btn main" data-a="openSite">Issue CUIMS</button><button class="btn lav" data-a="openMgr">Live stock</button></div>';
   const ex = expiryRows().filter(r => r.left <= expDays());
   if (ex.length) { const e0 = ex.filter(r => r.left < 0).length; h += '<button class="alertcard" data-a="expOpen"><span class="ai">' + ico('alert', 22) + '</span><span style="flex:1;min-width:0"><b>Expiry Tracker</b><span>' + ex.length + ' batches within ' + expDays() + ' days' + (e0 ? ' · ' + e0 + ' expired' : '') + '</span></span>' + ico('right', 18) + '</button>'; }
   h += tasksCard();
-  h += '<div class="shead"><div><h2>Today\'s requests</h2><span>' + todays.length + ' open</span></div>' + sortPick('home') + '</div>';
+  h += '<div class="shead"><div><h2>' + (t === today() ? 'Today\'s requests' : 'Requests of ' + fmtShort(t)) + '</h2><span>' + todays.length + ' open</span></div>' + sortPick('home') + '</div>';
   if (todays.length) {
     const fresh = todays.filter(r => !r.iss.length), cont = todays.filter(r => r.iss.length);
     if (fresh.length) { h += '<div class="sgroup"><span class="sdot new"></span><b>New on CUIMS</b><span>' + fresh.length + ' never entered yet</span></div>'; fresh.forEach(r => { h += reqCard(r); }); }
@@ -319,7 +344,7 @@ function vHome() {
       h += '<div class="line"><div class="row"><span class="reqno">' + esc(rq || '–') + '</span>' + serFmt(e.serial) + '</div>' + meta([esc(e.store), 'Slip ' + esc(e.slip), e.items.length + ' items', esc(entryTime(e))]) + '</div>'; });
     h += '</div>';
   }
-  h += '<div class="grid2"><button class="btn" data-a="bulkEdit">Edit all requests</button><button class="btn gold" data-a="openMgr">Live stock</button></div>';
+  h += '<button class="btn" data-a="bulkEdit">Edit all requests</button>';
   return h + '</main>';
 }
 
@@ -645,6 +670,12 @@ function vSet() {
       '<label class="f">Issue page (opens after login)<input type="text" data-url="emp" value="' + esc(ui.urlEmp != null ? ui.urlEmp : INFO.urlEmp || 'https://staff.cuchd.in/frmStoreIssueReceiveLC.aspx') + '"></label>' +
       '<label class="f">Manager page: live stock report<input type="text" data-url="mgr" value="' + esc(ui.urlMgr != null ? ui.urlMgr : INFO.urlMgr || 'https://staff.cuchd.in/frmItemStatementLC.aspx') + '"></label>' +
       '<button class="btn main" data-a="saveUrls">Save pages</button><div class="note">After every login, the app goes straight to these pages. No extra clicks.</div></div>';
+    let ci = {}; try { ci = N && N.credInfo ? JSON.parse(N.credInfo()) : {}; } catch (e) {}
+    const cred = (w, title) => { const c = ci[w] || {}; const f = (ui.cred || {})[w] || {};
+      return '<div class="card pad col"><h3>' + title + ' login</h3><div class="grid2"><label class="f">User ID<input type="text" data-cr="' + w + '|u" value="' + esc(f.u != null ? f.u : c.u || '') + '" autocomplete="off" autocapitalize="none"></label><label class="f">Password<input type="password" data-cr="' + w + '|p" value="' + esc(f.p || '') + '" placeholder="' + (c.has ? 'saved (type to change)' : '') + '" autocomplete="new-password"></label></div>' +
+        '<label class="chk"><input type="checkbox" data-a="credAuto" data-v="' + w + '"' + ((f.auto != null ? f.auto : c.auto !== false) ? ' checked' : '') + '> Log in by itself (fills and taps Login)</label><div class="grid2"><button class="btn main" data-a="credSave" data-v="' + w + '">Save</button><button class="btn" data-a="credDel" data-v="' + w + '"' + (c.has || c.u ? '' : ' disabled') + '>Remove</button></div></div>'; };
+    h += cred('emp', 'Issue CUIMS (your emp ID)') + cred('mgr', 'Manager CUIMS');
+    h += '<div class="note">Saved only on this phone (private app storage). Never included in cloud backups or exports. If CUIMS shows a captcha, the app fills ID and password and leaves the Login tap to you.</div>';
     h += '<div class="card pad col"><h3>Open</h3><div class="grid2"><button class="btn" data-a="openSite" type="button">Issue CUIMS</button><button class="btn" data-a="openMgr" type="button">Manager CUIMS</button></div></div>';
     h += '<div class="card pad col"><h3>Desktop view and zoom</h3><div class="note">CUIMS always opens in desktop view. Your zoom level is remembered after reloads. Pinch to set it once.</div><button class="btn" data-a="resetZoom">Reset zoom to default</button></div>';
   }
@@ -1013,7 +1044,7 @@ function vDone() {
   let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Done list</h1><div class="sub">Requests entered on CUIMS, with Slip and Serial. Use it to mark your paper.</div></div></header><main>';
   h += fltBar('done', true) + '<div class="row" style="justify-content:flex-end">' + sortPick('done') + '</div>';
   const full = D.filter(x => !x.left.length).length;
-  h += '<div class="grid3"><div class="tile t-in"><b>' + D.reduce((n, x) => n + x.slips.length, 0) + '</b><span>Slips</span></div><div class="tile t-ok"><b>' + full + '</b><span>Fully done</span></div><div class="tile t-pt"><b>' + (D.length - full) + '</b><span>Partly done</span></div></div>';
+  h += '<div class="grid3"><div class="tile t-in"><b>' + D.length + '</b><span>Requests</span></div><div class="tile t-ok"><b>' + full + '</b><span>Fully done</span></div><div class="tile t-pt"><b>' + (D.length - full) + '</b><span>Partly done</span></div></div>';
   if (!D.length) h += '<div class="card pad note">Nothing done for these dates.</div>';
   D.forEach(({ r, slips, left, issued, total }) => {
     const open = !!ui.doneOpen[r.req];
@@ -1407,7 +1438,7 @@ function render() {
   const app = document.getElementById('app');
   const y = window.scrollY;
   app.innerHTML = appBar() + (ui.view === 'done' ? vDone() : ui.view === 'expiry' ? vExpiry() : ui.view === 'count' ? vCount() : ui.view === 'countLog' ? vCountLog() : ui.view === 'taskLog' ? vTaskLog() : ui.view === 'req' ? vReq() : ({ home: vHome, pend: vPend, reg: vReg, find: vFind, set: vSet })[ui.tab]());
-  document.querySelector('#tabs .in').innerHTML = TABS.map(([k, l]) => k === 'find' ? '<button data-a="tab" data-v="find" class="center' + (ui.tab === k && !ui.view ? ' on' : '') + '" aria-label="Search"><span class="fab">' + ICON.find + '</span>' + l + '</button>' : '<button data-a="tab" data-v="' + k + '" class="' + (ui.tab === k && !ui.view ? 'on' : '') + '">' + ICON[k] + l + '</button>').join('');
+  document.querySelector('#tabs .in').innerHTML = TABS.map(([k, l]) => '<button data-a="tab" data-v="' + k + '" class="' + (ui.tab === k && !ui.view ? 'on' : '') + '" aria-label="' + l + '"><span class="nic">' + ICON[k] + '</span><span class="nl">' + l + '</span></button>').join('');
   renderDrawer();
   paintSync();
   window.scrollTo(0, y);
@@ -1496,7 +1527,7 @@ function shEditReq() {
 }
 
 /* ---------------- lock ---------------- */
-const GUARDED = new Set(['corrOpen', 'corrSave', 'bulkEdit', 'bulkSave', 'dropReq', 'dropStore', 'editReq', 'saveReq', 'markDone', 'markSave', 'newManual', 'saveEntry', 'delEntry', 'newReturn', 'saveReturn', 'delReturn',
+const GUARDED = new Set(['credSave', 'credDel', 'corrOpen', 'corrSave', 'bulkEdit', 'bulkSave', 'dropReq', 'dropStore', 'editReq', 'saveReq', 'markDone', 'markSave', 'newManual', 'saveEntry', 'delEntry', 'newReturn', 'saveReturn', 'delReturn',
   'rmStore', 'addStore', 'wipe', 'restore', 'bkRestore', 'bkDel', 'bkKeep', 'bkSave', 'bkNoteSave', 'photo', 'photoDel', 'mode', 'lockToggle', 'syncAuto', 'mgrToggle', 'moveStore', 'saveUrls', 'resetZoom', 'hold', 'cropSave']);
 let pendingAuth = null;
 function askUnlock(after) {
@@ -1520,7 +1551,7 @@ document.addEventListener('click', async ev => {
   if (a === 'lockTap') { if (ui.locked) askUnlock(); else { ui.locked = true; render(); renderSheet(); toast('Locked.'); } return; }
   if (ui.locked && GUARDED.has(a)) { ev.preventDefault(); if (t.type === 'checkbox') t.checked = !t.checked; const sel = '[data-a="' + a + '"]' + (v != null ? '[data-v="' + CSS.escape(v) + '"]' : ''); askUnlock(() => { const el = document.querySelector(sel); if (el) el.click(); }); return; }
   if (a === 'bgClose') { if (ev.target === t) { ui.sheet = null; renderSheet(); } return; }
-  if (t.type === 'checkbox' && !['hold', 'queueToggle', 'regItems', 'mgrToggle', 'syncAuto', 'lockToggle', 'markPick', 'stOn', 'rpTog', 'rpCol', 'autoSubToggle', 'queuePend'].includes(a)) return;
+  if (t.type === 'checkbox' && !['hold', 'queueToggle', 'regItems', 'mgrToggle', 'syncAuto', 'lockToggle', 'markPick', 'stOn', 'rpTog', 'rpCol', 'autoSubToggle', 'queuePend', 'credAuto'].includes(a)) return;
   switch (a) {
     case 'tab': ui.tab = v; ui.view = null; if (v === 'set') ui.setPage = null; render(); window.scrollTo(0, 0); break;
     case 'openSite': if (N) N.openSite(); else toast('Open this inside the app.'); break;
@@ -1624,6 +1655,13 @@ document.addEventListener('click', async ev => {
       save(); ui.sheet = null; renderSheet(); render(); toast(n + ' articles saved in ' + f.groups.length + ' requests.'); break; }
     case 'doneTog': ui.doneOpen[v] = !ui.doneOpen[v]; render(); break;
     case 'noop': break;
+    case 'credAuto': ui.cred = ui.cred || {}; ui.cred[v] = ui.cred[v] || {}; ui.cred[v].auto = t.checked; break;
+    case 'credSave': { if (!N || !N.setCred) { toast('Update the app to use this.'); break; } let ci = {}; try { ci = JSON.parse(N.credInfo()); } catch (e) {} const c = ci[v] || {}, f = (ui.cred || {})[v] || {};
+      const u = (f.u != null ? f.u : c.u || '').trim(); if (!u) { toast('Enter the User ID.'); break; }
+      if (!f.p && !c.has) { toast('Enter the password.'); break; }
+      N.setCred(v, u, f.p ? f.p : '__keep__', f.auto != null ? f.auto : c.auto !== false); ui.cred[v] = {}; render(); toast('Login saved on this phone.'); break; }
+    case 'credDel': if (N && N.setCred && confirm('Remove the saved login?')) { N.setCred(v, '', '', false); ui.cred = ui.cred || {}; ui.cred[v] = {}; render(); toast('Login removed.'); } break;
+    case 'homeDate': ui.homeDate = v === today() ? null : v; render(); break;
     case 'corrOpen': ui.form = { req: v, rows: corrRows(v).map(o => Object.assign(o, { final: String(Math.round((o.issued + o.waiting) * 1000) / 1000) })), addCode: '', addQty: '' }; ui.sheet = { kind: 'corr' }; renderSheet(); break;
     case 'corrAdd': { const f = ui.form; const c = String(f.addCode || '').trim().toUpperCase(), q = parseFloat(f.addQty); if (!c || !(q > 0)) { toast('Enter item code and qty.'); break; } const ex = f.rows.find(o => o.code === c); if (ex) ex.final = String(q); else f.rows.push({ code: c, issued: 0, waiting: 0, slips: [], final: String(q) }); f.addCode = ''; f.addQty = ''; renderSheet(); break; }
     case 'corrSave': { const f = ui.form; const base = S.lines.find(l => l.req === f.req); if (!base) break; let changed = 0, over = [];
@@ -1757,6 +1795,7 @@ document.addEventListener('input', ev => {
   if (el.dataset.in === 'q') { const k = focusKey(el); ui.search.q = el.value; render(); refocus(k); return; }
   if (el.dataset.pkq) { ui.picker.q = el.value; const k = focusKey(el); renderPicker(); const i = document.querySelector('[data-pkq]'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } return; }
   if (el.dataset.bk) { ui.sheet[el.dataset.bk] = el.value; return; }
+  if (el.dataset.cr) { const [w, k] = el.dataset.cr.split('|'); ui.cred = ui.cred || {}; ui.cred[w] = ui.cred[w] || {}; ui.cred[w][k] = el.value; return; }
   if (el.dataset.corr != null) { ui.form.rows[+el.dataset.corr].final = el.value; return; }
   if (el.dataset.cadd) { ui.form[el.dataset.cadd === 'code' ? 'addCode' : 'addQty'] = el.value; return; }
   if (el.dataset.tk) { ui.newTask = el.value; return; }
