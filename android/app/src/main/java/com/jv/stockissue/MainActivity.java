@@ -168,19 +168,20 @@ public class MainActivity extends AppCompatActivity {
     }
 
     boolean svcOn = false;
-    void postProgress(String title, String text, int done, int total, boolean ongoing) {
-        boolean paused = text != null && text.startsWith("Paused");
+    void postData(String json, boolean ongoing) {
         try {
+            JSONObject d = new JSONObject(json);
             if (ongoing) {
-                Intent si = new Intent(this, JobService.class);
-                si.putExtra("title", title); si.putExtra("text", text); si.putExtra("done", done); si.putExtra("total", total); si.putExtra("paused", paused);
-                if (!svcOn) { ContextCompat.startForegroundService(this, si); svcOn = true; }
-                else NotificationManagerCompat.from(this).notify(JobService.ID, JobService.build(this, title, text, done, total, true, paused));
+                if (!svcOn) { Intent si = new Intent(this, JobService.class); si.putExtra("data", json); ContextCompat.startForegroundService(this, si); svcOn = true; }
+                else NotificationManagerCompat.from(this).notify(JobService.ID, JobService.build(this, d, true));
             } else {
                 if (svcOn) { stopService(new Intent(this, JobService.class)); svcOn = false; }
-                NotificationManagerCompat.from(this).notify(JobService.ID, JobService.build(this, title, text, done, total, false, false));
+                NotificationManagerCompat.from(this).notify(JobService.ID, JobService.build(this, d, false));
             }
         } catch (SecurityException ignored) { } catch (Exception ignored) { }
+    }
+    void postProgress(String title, String text, int done, int total, boolean ongoing) {
+        try { JSONObject d = new JSONObject(); d.put("title", title); d.put("sub", text); d.put("done", done); d.put("total", total); d.put("kind", text != null && text.startsWith("Paused") ? "paused" : "fill"); postData(d.toString(), ongoing); } catch (Exception ignored) { }
     }
 
     final BroadcastReceiver actReceiver = new BroadcastReceiver() {
@@ -478,6 +479,7 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface public String who() { return who; }
         @JavascriptInterface public void markLogin() { if (!"app".equals(who)) prefs.edit().putLong("login_" + who, System.currentTimeMillis()).apply(); }
         @JavascriptInterface public void progress(String title, String text, int done, int total, boolean ongoing) { runOnUiThread(() -> postProgress(title, text, done, total, ongoing)); }
+        @JavascriptInterface public void progress2(String json, boolean ongoing) { runOnUiThread(() -> postData(json, ongoing)); }
         @JavascriptInterface public void progressClear() { runOnUiThread(() -> { try { if (svcOn) { stopService(new Intent(MainActivity.this, JobService.class)); svcOn = false; } NotificationManagerCompat.from(MainActivity.this).cancel(77); } catch (Exception ignored) { } }); }
         @JavascriptInterface public void setFullscreen(boolean on) { runOnUiThread(() -> setFull(on)); }
         @JavascriptInterface public void keepAwake(boolean on) { runOnUiThread(() -> { if (on) getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); else getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); }); }

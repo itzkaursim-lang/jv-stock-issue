@@ -50,7 +50,7 @@
   /* ---------- control bar ---------- */
   var bar = document.createElement('div');
   bar.id = 'jvbar';
-  bar.style.cssText = 'position:absolute;left:-9999px;top:0;transition:none;will-change:transform;z-index:2147483647;background:#F7F6FB;color:#141414;border-radius:24px;padding:0;font:16px/1.45 system-ui,sans-serif;box-shadow:0 12px 40px rgba(15,23,42,.35),0 0 0 1px rgba(201,162,75,.45);max-height:62vh;overflow:auto;transform-origin:0 0;box-sizing:border-box';
+  bar.style.cssText = 'position:absolute;left:-9999px;top:0;transition:none;will-change:transform;z-index:2147483647;background:#F7F6FB;color:#141414;border-radius:24px;padding:0;font:16px/1.45 Outfit,system-ui,sans-serif;box-shadow:0 12px 40px rgba(15,23,42,.35),0 0 0 1px rgba(201,162,75,.45);max-height:62vh;overflow:auto;transform-origin:0 0;box-sizing:border-box';
   document.body.appendChild(bar);
   var mini = false, portal = false, immersive = false; try { mini = localStorage.getItem('jvBarMini') === '1'; portal = localStorage.getItem('jvPortal') === '1'; } catch (e) {}
   function place() {
@@ -63,7 +63,7 @@
     var W = mini ? 'auto' : w + 'px', T = 'scale(' + inv + ')';
     if (bar.style.width !== W) bar.style.width = W;
     if (bar.style.transform !== T) bar.style.transform = T;
-    var MH = full ? Math.round(vh * sc) + 'px' : '62vh'; if (bar.style.maxHeight !== MH) bar.style.maxHeight = MH; var HH = full ? Math.round(vh * sc) + 'px' : ''; if (bar.style.height !== HH) bar.style.height = HH;
+    var MH = full ? Math.round(vh * sc) + 'px' : '74vh'; if (bar.style.maxHeight !== MH) bar.style.maxHeight = MH; var HH = full ? Math.round(vh * sc) + 'px' : ''; if (bar.style.height !== HH) bar.style.height = HH;
     var h = bar.offsetHeight, bw = bar.offsetWidth;
     var L = Math.round((mini ? pl + vw - (bw + gap) * inv : pl + gap * inv) * 10) / 10 + 'px', Tp = Math.round((pt + vh - (h + gap) * inv) * 10) / 10 + 'px';
     if (bar.style.left !== L) bar.style.left = L;
@@ -74,10 +74,10 @@
   window.addEventListener('scroll', place); window.addEventListener('resize', place);
   setInterval(place, 800);
   try { var g0 = JSON.parse(sessionStorage.getItem('jvBarGeo') || 'null'); if (g0) { bar.style.width = g0.w; bar.style.left = g0.l; bar.style.top = g0.t; bar.style.transform = g0.tr; if (g0.html) bar.innerHTML = g0.html; } } catch (e) {}
-  var BTN = 'min-height:46px;padding:0 16px;border-radius:999px;font:600 15px system-ui,sans-serif;cursor:pointer;';
+  var BTN = 'height:52px;padding:0 20px;border-radius:999px;font:700 15px \'Outfit\',system-ui,sans-serif;cursor:pointer;white-space:nowrap;';
   var WHO = (B.who && B.who()) || 'emp';
   function btn(id, label, kind) {
-    var st = kind === 'main' ? 'background:#141414;color:#fff;border:0;box-shadow:0 8px 16px rgba(20,20,20,.2);' : kind === 'gold' ? 'background:#B9A7FF;color:#141414;border:0;' : kind === 'warn' ? 'background:#FFD9E3;color:#8E1B3A;border:0;' : kind === 'link' ? 'background:none;color:#C0264A;border:0;padding:0 8px;' : kind === 'ghost' ? 'background:#fff;color:#141414;border:0;min-height:38px;padding:0 12px;font-size:13.5px;' : 'background:#fff;color:#141414;border:1.5px solid #E4E1EC;';
+    var st = kind === 'main' ? 'background:#141414;color:#fff;border:0;box-shadow:0 8px 16px rgba(20,20,20,.2);' : kind === 'gold' ? 'background:#ECE6FF;color:#4B3BA8;border:0;' : kind === 'warn' ? 'background:#FFD9E3;color:#8E1B3A;border:0;' : kind === 'link' ? 'background:none;color:#C0264A;border:0;padding:0 10px;' : kind === 'ghost' ? 'background:#fff;color:#141414;border:0;min-height:38px;padding:0 12px;font-size:13.5px;' : 'background:#fff;color:#141414;border:1.5px solid #E4E1EC;';
     return '<button type="button" data-jv="' + id + '" style="' + BTN + st + 'display:inline-flex;align-items:center;gap:8px">' + label + '</button>';
   }
   function curItem(j) {
@@ -94,24 +94,50 @@
     ok: '<path d="M5 12.5l4.5 4.5L19 7.5"/>', no: '<path d="M6 6l12 12M18 6L6 18"/>', back: '<path d="M15 5l-7 7 7 7"/>', alert: '<path d="M12 8v5M12 16.5v.5"/><circle cx="12" cy="12" r="9"/>'
   };
   function ic(n, sz, col) { return '<svg viewBox="0 0 24 24" width="' + (sz || 18) + '" height="' + (sz || 18) + '" fill="none" stroke="' + (col || 'currentColor') + '" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;vertical-align:-3px">' + IC[n] + '</svg>'; }
-  function head(title, sub) {
-    var who = ME.builder || ME.name || '';
-    var photo = ME.photo ? '<img src="' + ME.photo + '" alt="" style="width:42px;height:42px;border-radius:50%;object-fit:cover;border:3px solid #fff;box-shadow:0 4px 10px rgba(20,20,20,.15);flex-shrink:0">' : '';
-    return '<div style="background:#B9A7FF;color:#141414;padding:14px 12px 14px 14px;display:flex;align-items:center;gap:12px;border-radius:22px 22px 0 0">' +
-      '<img src="' + LOGO + '" alt="JV Stock Issue" style="width:44px;height:44px;border-radius:14px;flex-shrink:0;box-shadow:0 6px 14px rgba(60,40,140,.3)">' +
-      '<span style="flex:1;min-width:0"><span style="display:inline-block;font-size:11.5px;font-weight:800;background:rgba(255,255,255,.6);border-radius:99px;padding:2px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%">' + esc(title) + '</span><b style="display:block;font-size:18px;font-weight:800;letter-spacing:-.01em;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + sub + '</b>' + (who ? '<span style="display:block;font-size:11.5px;font-weight:600;color:#3D3270">Built by ' + esc(who) + '</span>' : '') + '</span>' +
-      photo + '<button type="button" data-jv="hide" aria-label="Hide panel" style="width:42px;height:42px;border-radius:50%;border:0;background:#fff;color:#141414;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;box-shadow:0 2px 8px rgba(20,20,20,.1)">' + ic('down', 20) + '</button></div>';
+  var F = "'Outfit',system-ui,sans-serif";
+  (function loadFont() { try { if (document.getElementById('jvfont')) return; var l = document.createElement('link'); l.id = 'jvfont'; l.rel = 'stylesheet'; l.href = 'https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap'; (document.head || document.documentElement).appendChild(l); } catch (e) {} })();
+  var C = { ink: '#141414', mute: '#6E6B7B', faint: '#8A87A0', lav: '#B9A7FF', lavInk: '#4B3BA8', over: '#6B5BD6', soft: '#F7F6FB', line: '#ECEAF3', ok: '#12A36B', okBg: '#E2F7EC', okInk: '#0B5E3D', warnBg: '#FFF1D9', warnInk: '#7A4B00', noBg: '#FFE4EA', noInk: '#C0264A' };
+  function reqOf(j) { var r = {}; (j.items || []).forEach(function (x) { if (x.req) r[x.req] = 1; }); return Object.keys(r).join(', ') || '–'; }
+  function cnt(j) { var t = (j.items || []).filter(function (x) { return !x.skip; }); return { total: t.length, done: t.filter(function (x) { return inGrid(x.code); }).length }; }
+  function ring(done, total, col) {
+    var r = 24, c = 2 * Math.PI * r, f = total ? done / total : 0;
+    return '<div style="position:relative;width:60px;height:60px;flex-shrink:0"><svg width="60" height="60" style="transform:rotate(-90deg)"><circle cx="30" cy="30" r="' + r + '" stroke="#fff" stroke-width="7" fill="none"/><circle cx="30" cy="30" r="' + r + '" stroke="' + (f ? col : 'transparent') + '" stroke-width="7" fill="none" stroke-linecap="round" stroke-dasharray="' + (c * f).toFixed(1) + ' ' + c.toFixed(1) + '" style="transition:stroke-dasharray .4s"/></svg><b style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font:800 15px ' + F + ';color:' + C.ink + '">' + (total ? done + '/' + total : '–') + '</b></div>';
   }
-
-  function sw(id, label, on) {
-    return '<button type="button" data-jv="' + id + '" style="display:inline-flex;align-items:center;gap:8px;border:0;background:none;padding:4px 0;font:600 13.5px system-ui;color:#3A3E45;cursor:pointer"><span style="width:38px;height:22px;border-radius:99px;background:' + (on ? '#141414' : '#D9D6E3') + ';position:relative;flex-shrink:0;transition:background .2s"><span style="position:absolute;top:2px;left:' + (on ? 18 : 2) + 'px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:left .2s"></span></span>' + label + '</button>';
+  function hero(over, title, j, ringCol) {
+    var k = j ? cnt(j) : null;
+    var collapse = '<button type="button" data-jv="hide" aria-label="Hide panel" style="width:40px;height:40px;border-radius:50%;border:0;background:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 4px 12px rgba(20,20,20,.08);flex-shrink:0">' + ic('down', 20, C.ink) + '</button>';
+    var h = '<div style="padding:18px 18px 16px;background:radial-gradient(120% 140% at 0% 0%,#D9CEFF 0%,#EDE8FF 45%,#fff 100%)">' +
+      '<div style="display:flex;align-items:center;gap:12px"><img src="' + LOGO + '" alt="JV Stock Issue" style="width:46px;height:46px;border-radius:15px;box-shadow:0 8px 18px rgba(60,40,140,.28);flex-shrink:0">' +
+      '<div style="flex:1;min-width:0"><div style="font:800 11.5px ' + F + ';letter-spacing:.09em;color:' + C.over + ';text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(over) + '</div><div style="font:800 19px ' + F + ';letter-spacing:-.01em;color:' + C.ink + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(title) + '</div></div>' + collapse + '</div>';
+    if (j) h += '<div style="display:flex;gap:8px;margin-top:14px;align-items:center">' + idTile('Request', reqOf(j), C.lavInk) + idTile('Slip', j.slip, C.ink) + ring(k.done, k.total, ringCol || C.ink) + '</div>';
+    return h + '</div>';
   }
-  function toggles(j) { return '<div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:12px;padding-top:10px;border-top:1px solid #EFEDE8">' + sw('tQueue', 'Queue mode', !!j.queue) + sw('tAuto', 'Auto submit', !!j.autoSubmit) + sw('tPortal', 'Big panel', portal) + sw('tFull', 'Full screen', immersive) + '</div>' + (j.queue && j.next ? '<div style="font-size:12.5px;color:#6B6F76;margin-top:4px">Next in queue: <b style="color:#0D1528">' + esc(j.next) + '</b></div>' : ''); }
+  function idTile(l, v, col) { return '<div style="flex:1;min-width:0;background:#fff;border-radius:18px;padding:9px 12px;box-shadow:0 2px 8px rgba(60,40,140,.06)"><span style="display:block;font:700 10.5px ' + F + ';color:' + C.faint + ';letter-spacing:.06em;text-transform:uppercase">' + l + '</span><b style="display:block;font:800 19px ' + F + ';color:' + col + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(v) + '</b></div>'; }
+  function statusCard(kind, title, sub) {
+    var bg = kind === 'ok' ? C.okBg : kind === 'warn' ? C.warnBg : kind === 'no' ? C.noBg : '#F2EEFF';
+    var dotBg = kind === 'ok' ? C.ok : kind === 'warn' ? '#FFB648' : kind === 'no' ? C.noInk : C.ink;
+    var icn = kind === 'ok' ? ic('ok', 18, '#fff') : kind === 'warn' ? ic('pause', 18, C.ink) : kind === 'no' ? ic('alert', 18, '#fff') : ic('play', 16, '#fff');
+    return '<div style="display:flex;align-items:center;gap:12px;border-radius:20px;padding:12px 14px;background:' + bg + '"><div style="width:38px;height:38px;border-radius:50%;background:' + dotBg + ';display:flex;align-items:center;justify-content:center;flex-shrink:0">' + icn + '</div><div style="min-width:0"><b style="display:block;font:800 16px ' + F + ';color:' + C.ink + '">' + esc(title) + '</b>' + (sub ? '<span style="display:block;font:500 13px ' + F + ';color:#4E5A55">' + esc(sub) + '</span>' : '') + '</div></div>';
+  }
+  function cell(label, val, sub, ok) {
+    var t = ok === undefined ? '' : '<i style="position:absolute;right:10px;top:10px;width:20px;height:20px;border-radius:50%;background:' + (ok ? '#D6F5E5' : C.noBg) + ';display:flex;align-items:center;justify-content:center">' + ic(ok ? 'ok' : 'no', 12, ok ? C.okInk : C.noInk) + '</i>';
+    return '<div style="position:relative;background:' + C.soft + ';border-radius:18px;padding:11px 12px;min-width:0' + (ok === false ? ';box-shadow:inset 0 0 0 1.5px ' + C.noInk : '') + '"><span style="display:block;font:700 10.5px ' + F + ';color:' + C.faint + ';letter-spacing:.05em;text-transform:uppercase">' + label + '</span><b style="display:block;font:700 15.5px ' + F + ';color:' + C.ink + ';margin-top:2px;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding-right:16px">' + val + '</b>' + (sub ? '<small style="display:block;font:500 12.5px ' + F + ';color:' + C.mute + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(sub) + '</small>' : '') + t + '</div>';
+  }
+  function secHead(l, r) { return '<div style="display:flex;justify-content:space-between;font:800 11.5px ' + F + ';letter-spacing:.09em;color:' + C.faint + ';text-transform:uppercase"><span>' + l + '</span><span>' + (r || '') + '</span></div>'; }
+  function itemRows(j, list) {
+    var cur = curItem(j);
+    return '<div style="background:' + C.soft + ';border-radius:20px;padding:2px 12px">' + list.map(function (o, k) {
+      var x = o.x, r = gridRow(x.code);
+      var st = x.skip ? ['Skipped', C.mute, '#EEECF3'] : r ? ['Added', C.okInk, '#D6F5E5'] : (cur && cur.code === x.code && j.phase === 'fill') ? ['Now', '#fff', C.ink] : ['Next', C.mute, '#EEECF3'];
+      return '<div style="display:flex;align-items:center;gap:12px;padding:10px 0;' + (k < list.length - 1 ? 'border-bottom:1px solid ' + C.line : '') + '"><span style="width:26px;height:26px;border-radius:50%;background:#fff;display:flex;align-items:center;justify-content:center;font:800 12px ' + F + ';color:' + C.mute + ';flex-shrink:0">' + (o.i + 1) + '</span><span style="flex:1;min-width:0"><b style="display:block;font:700 15px ' + F + ';color:' + C.ink + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:capitalize">' + esc(String(x.name || x.code).toLowerCase()) + '</b><span style="font:500 12px ' + F + ';color:' + C.faint + '">' + esc(x.code) + (r && !isNaN(r.bal) ? ' · balance ' + Number(r.bal).toLocaleString('en-IN') : '') + '</span></span><b style="font:800 16px ' + F + ';color:' + C.ink + ';white-space:nowrap">' + esc(x.qty) + (x.uom ? '<small style="font-size:11px;color:' + C.faint + ';margin-left:2px">' + esc(x.uom) + '</small>' : '') + '</b><span style="font:800 11.5px ' + F + ';border-radius:99px;padding:4px 10px;background:' + st[2] + ';color:' + st[1] + '">' + st[0] + '</span></div>';
+    }).join('') + '</div>';
+  }
+  function chip(id, label, on) { return '<button type="button" data-jv="' + id + '" style="display:inline-flex;align-items:center;gap:7px;height:38px;border-radius:99px;padding:0 14px 0 11px;border:0;cursor:pointer;font:700 13px ' + F + ';background:' + (on ? C.ink : '#F2F1F6') + ';color:' + (on ? '#fff' : '#4A4758') + '"><i style="width:8px;height:8px;border-radius:50%;background:' + (on ? '#7CF0B5' : '#C9C5D6') + '"></i>' + label + '</button>'; }
+  function chips(j) { return '<div style="display:flex;gap:8px;flex-wrap:wrap">' + chip('tQueue', 'Queue', !!j.queue) + chip('tAuto', 'Auto submit', !!j.autoSubmit) + chip('tPortal', 'Big panel', portal) + chip('tFull', 'Full screen', immersive) + '</div>'; }
+  function credit() { var who = ME.builder || ME.name || 'JV'; return '<div style="display:flex;align-items:center;justify-content:space-between;font:600 11.5px ' + F + ';color:#9A97A8">' + '<span>JV Stock Issue · Built by ' + esc(who) + '</span>' + (ME.photo ? '<img src="' + ME.photo + '" alt="" style="width:28px;height:28px;border-radius:50%;object-fit:cover;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.2)">' : '') + '</div>'; }
+  function row2(a, b) { return '<div style="display:flex;gap:10px;align-items:center">' + a + (b || '') + '</div>'; }
+  function wrap(inner) { return '<div style="padding:16px 18px 18px;display:flex;flex-direction:column;gap:14px">' + inner + '</div>'; }
   var autoTimer = null;
-  function row(label, value, ok) {
-    var mark = ok === undefined ? '' : ok ? ic('ok', 18, '#0E7A4F') : ic('no', 18, '#B42335');
-    return '<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #EFEDE8"><span style="width:118px;color:#6B6F76;font-size:13.5px;flex-shrink:0">' + label + '</span><b style="flex:1;font-size:15px;min-width:0;overflow:hidden;text-overflow:ellipsis">' + value + '</b>' + mark + '</div>';
-  }
   function verify(j) {
     var items = (j.items || []).filter(function (x) { return !x.skip; });
     var sb = $('ContentPlaceHolder1_txtRequisitonSlipno') || document.querySelector('input[id*="RequisitonSlipno"]');
@@ -119,118 +145,101 @@
     var paText = pa && pa.selectedIndex >= 0 ? pa.options[pa.selectedIndex].text.trim() : '';
     var rows = items.filter(function (x) { return gridRow(x.code); }).length;
     var dates = {}; items.forEach(function (x) { if (x.reqDate) dates[x.reqDate] = 1; });
-    var reqs = {}; items.forEach(function (x) { if (x.req) reqs[x.req] = 1; });
-    return [
-      ['Store', esc(j.store), paText.toUpperCase() === String(j.store).toUpperCase()],
-      ['Request', esc(Object.keys(reqs).join(', ') || '–')],
-      ['Requested on', esc(Object.keys(dates).map(function (d) { var p = d.split('-'); return p.length === 3 ? p[2] + '-' + p[1] + '-' + p[0] : d; }).join(', ') || '–')],
-      ['Slip No', esc(j.slip), !!sb && sb.value.trim() === j.slip],
-      ['Receiver', 'GA' + esc(j.rcv) + (j.rname ? ' <span style="font-weight:500;color:#3A3E45">' + esc(j.rname) + '</span>' : ''), !!rc && rc.value.indexOf(j.rcv) >= 0],
-      ['Issue type', 'Offline', !!it && it.value === 'Offline'],
-      ['Articles', rows + ' of ' + items.length + ' added', rows === items.length]
-    ];
-  }
-  function portalList(j) {
-    var items = j.items || [];
-    var rows = items.map(function (x, i) {
-      var r = gridRow(x.code), st = x.skip ? ['Skipped', '#6B6F76', '#EFEDE8'] : r ? ['Added', '#0B5E3D', '#E3F4EC'] : (curItem(j) && curItem(j).code === x.code && j.phase === 'fill') ? ['Now', '#8A5A00', '#FCF1DA'] : ['Waiting', '#3A3E45', '#F3F1EC'];
-      return '<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #EFEDE8"><span style="width:22px;color:#9AA0A8;font-size:13px">' + (i + 1) + '</span><span style="flex:1;min-width:0"><b style="display:block;font-size:15px">' + esc(x.name || x.code) + '</b><span style="font-size:12.5px;color:#6B6F76">' + esc(x.code) + (x.req ? ' · Req ' + esc(x.req) : '') + (r && !isNaN(r.bal) ? ' · balance ' + r.bal : '') + '</span></span><b style="font-variant-numeric:tabular-nums">' + x.qty + '</b><span style="font-size:12px;font-weight:700;padding:3px 9px;border-radius:99px;color:' + st[1] + ';background:' + st[2] + '">' + st[0] + '</span></div>';
-    }).join('');
-    var L = (j.log || []).slice(-12).reverse();
-    return '<div style="margin-top:14px"><div style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#8A6A1F">Articles</div>' + rows + '</div>' +
-      (L.length ? '<div style="margin-top:14px"><div style="font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#8A6A1F">Activity</div>' + L.map(function (x) { return '<div style="font-size:13px;color:#3A3E45;padding:4px 0">' + ic(x[1] ? 'no' : 'ok', 14, x[1] ? '#B42335' : '#0E7A4F') + ' ' + esc(x[0]) + '</div>'; }).join('') + '</div>' : '');
+    var dl = Object.keys(dates).map(function (d) { var p = d.split('-'); return p.length === 3 ? (+p[2]) + ' ' + MON[+p[1] - 1] + ' ' + p[0] : d; }).join(', ');
+    return { store: paText.toUpperCase() === String(j.store).toUpperCase(), paText: paText, slip: !!sb && sb.value.trim() === j.slip, rcv: !!rc && rc.value.indexOf(j.rcv) >= 0, type: !!it && it.value === 'Offline', rows: rows, total: items.length, dates: dl };
   }
   var lastNote = '';
   function notifyProgress(j) {
-    if (WHO !== 'emp' || !B.progress) return;
+    if (WHO !== 'emp' || !(B.progress2 || B.progress)) return;
     try {
       if (!j || !j.phase) return;
-      var total = (j.items || []).filter(function (x) { return !x.skip; }).length, done = (j.items || []).filter(function (x) { return !x.skip && inGrid(x.code); }).length;
-      var title, text, on = active(j);
-      if (j.phase === 'done') { title = 'Saved ' + j.slip + ' · Serial ' + (j.serial || ''); text = j.store + (j.next && j.queue ? ' · next: ' + j.next : ''); on = false; }
-      else if (j.phase === 'cancelled') { if (lastNote) { B.progressClear(); lastNote = ''; } if (B.keepAwake) B.keepAwake(false); return; }
-      else { title = j.store + ' · Slip ' + j.slip; text = (j.paused ? 'Paused: ' + (j.pauseMsg || '') : j.phase === 'await' ? 'All ' + total + ' added. ' + (j.autoSubmit ? 'Auto submit is on.' : 'Waiting for SUBMIT.') : j.phase === 'capture' ? 'Finding the Serial No' : 'Filling ' + done + ' of ' + total) + (j.queue ? ' · Queue on' : ''); }
-      var key = title + '|' + text + '|' + done + '|' + on;
-      if (key !== lastNote) { lastNote = key; B.progress(title, text, done, total, on); }
+      if (j.phase === 'cancelled') { if (lastNote) { B.progressClear && B.progressClear(); lastNote = ''; } if (B.keepAwake) B.keepAwake(false); return; }
+      var k = cnt(j), on = active(j), req = reqOf(j), cur = curItem(j);
+      var d = { req: req, slip: j.slip, title: j.store, done: k.done, total: k.total, tag: j.queue ? 'queue on' : '' };
+      d.metaL = k.done + ' of ' + k.total + ' added'; d.metaR = (j.queue ? 'Queue on' : 'Queue off') + ' · Auto submit ' + (j.autoSubmit ? 'on' : 'off');
+      if (j.phase === 'done') { d.kind = 'saved'; d.over = 'Saved · ' + req; d.bigOver = 'SAVED'; d.title = 'Slip ' + j.slip; d.sub = j.queue && j.next ? 'Next in queue: ' + j.next : j.store; d.serial = String(j.serial || ''); d.now = 'Saved on CUIMS'; d.nowSub = j.store + ' · ' + k.total + ' articles'; d.b1 = 'Open|open'; on = false; }
+      else if (j.paused) { d.kind = 'paused'; d.over = req + ' · Slip ' + j.slip; d.bigOver = 'PAUSED'; d.sub = 'Paused · ' + (j.pauseMsg === 'by you' ? 'by you' : (j.pauseMsg || '')); d.now = 'Paused'; d.nowSub = j.pauseMsg === 'by you' ? 'Tap Resume to continue' : (j.pauseMsg || ''); d.b1 = 'Resume|resume'; d.b2 = 'Open|open'; d.b3 = 'Cancel|cancel'; }
+      else if (j.phase === 'await') { var v = verify(j), ok = v.store && v.slip && v.rcv && v.type && v.rows === v.total; d.kind = 'ready'; d.allOk = ok; d.over = req + ' · Slip ' + j.slip; d.bigOver = 'READY TO SUBMIT'; d.sub = ok ? 'Ready · waiting for SUBMIT' : 'Check the form before SUBMIT'; d.now = ok ? 'All checks match' : 'Something does not match'; d.nowSub = 'GA' + j.rcv + (j.rname ? ' ' + j.rname : '') + ' · ' + k.total + ' articles'; d.b1 = 'Open CUIMS|open'; d.b3 = 'Cancel|cancel'; }
+      else if (j.phase === 'capture') { d.kind = 'capture'; d.over = req + ' · Slip ' + j.slip; d.bigOver = 'FINDING SERIAL'; d.sub = 'Finding the Serial No'; d.now = 'Finding the Serial No'; d.nowSub = 'Show Transactions · ' + j.slip; d.b2 = 'Open|open'; }
+      else { d.kind = 'fill'; d.over = req + ' · Slip ' + j.slip; d.bigOver = j.phase === 'dup' ? 'CHECKING' : 'ISSUE ENTRY'; d.sub = cur ? 'Adding ' + cur.name + ' · ' + k.done + ' of ' + k.total : 'Filling the form'; d.now = cur ? 'Adding ' + String(cur.name || cur.code) : (j.phase === 'dup' ? 'Checking ' + j.slip : 'Filling the form'); d.nowSub = cur ? cur.code + ' · ' + cur.qty + (cur.uom ? ' ' + cur.uom : '') : 'Store, receiver, department'; d.b1 = 'Pause|pause'; d.b2 = 'Open|open'; d.b3 = 'Cancel|cancel'; }
+      var key = JSON.stringify(d) + on;
+      if (key !== lastNote) { lastNote = key; if (B.progress2) B.progress2(JSON.stringify(d), on); else B.progress(d.title, d.sub, d.done, d.total, on); }
       if (B.keepAwake) B.keepAwake(on);
     } catch (e) {}
   }
   function paintInner() { notifyProgress(job()); paintInner2(); }
   function paintInner2() {
     var j = job();
-    var h = '';
     if (mini) {
-      var tt = j && j.items ? j.items.filter(function (x) { return !x.skip; }).length : 0;
-      var dd = j && j.items ? j.items.filter(function (x) { return !x.skip && inGrid(x.code); }).length : 0;
-      var lab = WHO === 'mgr' ? 'Manager' : !active(j) ? 'Ready' : dd + ' / ' + tt;
-      bar.innerHTML = '<button type="button" data-jv="expand" aria-label="Show panel" style="min-height:48px;padding:0 14px 0 6px;border-radius:999px;background:#141414;color:#fff;border:0;box-shadow:0 10px 24px rgba(20,20,20,.3);display:flex;align-items:center;gap:10px;font:700 15px system-ui;cursor:pointer"><img src="' + LOGO + '" alt="" style="width:34px;height:34px;border-radius:10px">' + (active(j) && j.paused ? ic('pause', 16, '#E8C97A') : '') + esc(lab) + ic('up', 18) + '</button>';
-      bar.style.borderRadius = '999px'; bar.style.boxShadow = '0 8px 24px rgba(15,23,42,.35)'; return;
+      var k0 = j && j.items ? cnt(j) : { done: 0, total: 0 };
+      var t1 = WHO === 'mgr' ? 'Manager CUIMS' : !active(j) ? 'JV Stock Issue' : reqOf(j) + ' · ' + k0.done + '/' + k0.total;
+      var t2 = WHO === 'mgr' ? 'Live stock' : !active(j) ? (isLogin ? 'Log in' : 'Ready') : (j.paused ? 'Paused' : j.phase === 'await' ? 'Ready to submit' : j.phase === 'capture' ? 'Finding Serial' : 'Filling') + ' · ' + j.store;
+      bar.innerHTML = '<button type="button" data-jv="expand" aria-label="Show panel" style="display:flex;align-items:center;gap:10px;height:58px;border-radius:99px;background:' + C.ink + ';color:#fff;border:0;padding:0 16px 0 7px;cursor:pointer;box-shadow:0 14px 30px rgba(20,20,20,.3);text-align:left"><img src="' + LOGO + '" alt="" style="width:44px;height:44px;border-radius:50%"><span><b style="display:block;font:800 15px ' + F + '">' + esc(t1) + '</b><span style="display:block;font:500 12px ' + F + ';color:#B9B6C6;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(t2) + '</span></span>' + ic('up', 18, '#fff') + '</button>';
+      bar.style.borderRadius = '999px'; bar.style.boxShadow = 'none'; bar.style.background = 'transparent'; return;
     }
-    bar.style.borderRadius = '24px'; bar.style.boxShadow = '0 18px 44px rgba(20,20,20,.28)';
-    var body = 'padding:14px 16px 16px';
-    if (WHO === 'mgr') {
-      bar.innerHTML = head('Manager CUIMS', 'Live stock report') + '<div style="' + body + '"><div style="font-size:14px;color:#6B6F76">Separate login for the manager ID. Download the Item Stock Statement, then upload it in the app.</div><div style="display:flex;gap:8px;margin-top:12px">' + btn('app', ic('back', 16) + ' Back to app', 'main') + '</div></div>';
-      return;
-    }
+    bar.style.borderRadius = '30px'; bar.style.boxShadow = '0 24px 60px rgba(30,20,70,.28),0 0 0 1px rgba(20,20,20,.04)'; bar.style.background = '#fff';
+    var h = '';
+    if (WHO === 'mgr') { bar.innerHTML = hero('Manager CUIMS', 'Live stock report', null) + wrap(statusCard('run', 'Separate manager login', 'Download the Item Stock Statement, then upload it in the app.') + row2(btn('app', 'Back to app', 'main')) + credit()); return; }
     if (!active(j)) {
-      var last = j && j.phase === 'done' ? '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;background:#E3F4EC;color:#0B5E3D;font-weight:700">' + ic('ok', 20, '#0E7A4F') + 'Saved ' + esc(j.slip) + ' · Serial ' + esc(j.serial || '') + '</div>' : '';
-      bar.innerHTML = head('JV Stock Issue', isLogin ? 'Please log in' : 'Ready') + '<div style="' + body + '">' + (last || '<div style="font-size:14.5px;color:#6B6F76">' + (isLogin ? 'Log in once. Your working page opens by itself.' : 'No entry running. Start one from the app.') + '</div>') + '<div style="display:flex;gap:8px;margin-top:12px">' + btn('app', ic('back', 16) + ' Back to app', 'main') + '</div></div>';
-      return;
+      var body0 = j && j.phase === 'done' ? statusCard('ok', 'Saved ' + j.slip, 'Serial ' + (j.serial || '') + ' · ' + j.store) : statusCard('run', isLogin ? 'Please log in' : 'No entry running', isLogin ? 'The app fills your saved login and opens your page.' : 'Start one from the app.');
+      bar.innerHTML = hero('JV Stock Issue', isLogin ? 'Log in to CUIMS' : 'Ready', null) + wrap(body0 + row2(btn('app', 'Back to app', 'main')) + credit()); return;
     }
-    var total = (j.items || []).filter(function (x) { return !x.skip; }).length;
-    var done = (j.items || []).filter(function (x) { return !x.skip && inGrid(x.code); }).length;
-    var pct = total ? Math.round(done / total * 100) : 0;
-    h += head(j.store, 'Slip ' + esc(j.slip) + '<span style="color:#E8C97A;font-weight:600"> · ' + done + ' of ' + total + '</span>');
-    h += '<div style="' + body + '">';
+    var k = cnt(j), cur = curItem(j);
     if (ui.confirmCancel) {
-      h += '<div style="padding:12px 14px;border-radius:14px;background:#FBF3F4;border:1px solid #F1D3D8;color:#7E1A28;font-weight:700;font-size:15.5px">Cancel entry ' + esc(j.slip) + '?</div>' +
-        '<div style="font-size:13.5px;color:#6B6F76;margin-top:8px">Nothing has been submitted. You can clear the CUIMS form or keep it as it is.</div>' +
-        '<div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:14px">' + btn('cancelReset', 'Cancel and clear form', 'warn') + btn('cancelKeep', 'Cancel, keep form', '') + btn('noCancel', 'Keep going', 'main') + '</div></div>';
-      bar.innerHTML = h; return;
+      bar.innerHTML = hero('Cancel entry?', j.store, j, C.ink) + wrap(statusCard('no', 'Cancel ' + j.slip + '?', 'Nothing has been submitted yet.') + '<div style="display:flex;flex-direction:column;gap:8px">' + btn('cancelReset', 'Cancel and clear the form', 'warn') + btn('cancelKeep', 'Cancel, keep the form', '') + btn('noCancel', 'Keep going', 'main') + '</div>'); return;
     }
     if (j.phase === 'await' && !ui.serialBox && formReset(j)) { j = Object.assign({}, j, { phase: 'capture' }); }
+    var items = (j.items || []).map(function (x, i) { return { x: x, i: i }; });
     if (j.phase === 'await' && !ui.serialBox) {
-      var V = verify(j), allOk = V.every(function (r) { return r[2] !== false; });
-      h += '<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;background:' + (allOk ? '#E3F4EC' : '#FBE6E9') + ';color:' + (allOk ? '#0B5E3D' : '#8E1B2A') + ';font-weight:700;font-size:15.5px">' + ic(allOk ? 'ok' : 'alert', 20) + (allOk ? 'Rechecked. Everything matches. Tap SUBMIT.' : 'Something does not match. Check before SUBMIT.') + '</div>';
-      h += '<div style="margin-top:6px">' + V.map(function (r) { return row(r[0], r[1], r[2]); }).join('') + '</div>';
+      var v = verify(j), allOk = v.store && v.slip && v.rcv && v.type && v.rows === v.total;
+      var nChecks = [v.store, v.slip, v.rcv, v.type, v.rows === v.total].filter(Boolean).length;
+      h += hero('Issue entry', j.store, j, allOk ? C.ok : C.noInk);
+      var inner = statusCard(allOk ? 'ok' : 'no', allOk ? 'Ready to submit' : 'Check before SUBMIT', allOk ? 'All ' + nChecks + ' checks match the CUIMS form' : nChecks + ' of 5 checks match. See the red tiles.');
+      inner += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">' + cell('Receiver', 'GA' + esc(j.rcv), j.rname || '', v.rcv) + cell('Requested on', esc(v.dates || '–'), '') + cell('Issue type', 'Offline', 'Department', v.type) + cell('Project area', esc(v.paText || j.store), v.store ? 'matches store' : 'expected ' + j.store, v.store) + '</div>';
+      inner += secHead('Articles', v.rows + ' of ' + v.total + ' added') + itemRows(j, portal ? items : items.slice(0, 4));
+      if (!portal && items.length > 4) inner += '<div style="font:600 12.5px ' + F + ';color:' + C.faint + ';text-align:center">+ ' + (items.length - 4) + ' more · turn on Big panel to see all</div>';
       if (allOk && j.autoSubmit && !ui.autoStop) {
         var secs = ui.autoAt ? Math.max(0, Math.ceil((ui.autoAt - Date.now()) / 1000)) : 4;
-        h += '<div style="display:flex;gap:10px;margin-top:14px;align-items:center"><div style="flex:1;font-weight:700;color:#0D1528">Submitting in ' + secs + ' s</div>' + btn('autoStop', 'Stop', 'warn') + '</div>';
+        inner += row2('<div style="flex:1;height:52px;border-radius:99px;background:' + C.ink + ';color:#fff;display:flex;align-items:center;justify-content:center;font:700 15.5px ' + F + '">Submitting in ' + secs + ' s</div>', btn('autoStop', 'Stop', 'warn'));
         if (!ui.autoAt) { ui.autoAt = Date.now() + 4000; clearInterval(autoTimer); autoTimer = setInterval(function () {
           var jj = job(); if (!jj || jj.phase !== 'await' || ui.autoStop || !jj.autoSubmit) { clearInterval(autoTimer); ui.autoAt = 0; paint(); return; }
           if (Date.now() >= ui.autoAt) { clearInterval(autoTimer); ui.autoAt = 0; var sb = $('ContentPlaceHolder1_btnsubmit') || document.querySelector('input[id$="btnsubmit"]'); if (sb) { toCapture(jj, 'Auto submit: SUBMIT tapped'); sb.click(); setTimeout(kick, 1500); } return; }
           paint(); }, 500); }
       } else {
-        h += '<div style="display:flex;gap:10px;margin-top:14px;align-items:center">' + btn('serialAsk', 'Enter Serial', 'gold') + btn('cancel', 'Cancel', 'link') + '</div>';
+        inner += row2('<div style="flex:1;height:52px;border-radius:99px;background:' + (allOk ? C.ink : '#E4E1EC') + ';color:' + (allOk ? '#fff' : C.mute) + ';display:flex;align-items:center;justify-content:center;font:700 15px ' + F + ';white-space:nowrap">' + (allOk ? 'Waiting for SUBMIT' : 'Fix, then SUBMIT') + '</div>', btn('serialAsk', 'Serial', 'gold') + btn('cancel', 'Cancel', 'link'));
       }
-      h += toggles(j) + (portal ? portalList(j) : '') + '</div>'; bar.innerHTML = h; return;
+      inner += chips(j) + credit();
+      bar.innerHTML = h + wrap(inner); return;
     }
-    var status = '', tone = '#14161A', bg = '#F6F5F2', icon = '';
-    if (isLogin) { status = 'Logged out. Log in; the entry restarts by itself.'; tone = '#8A5A00'; bg = '#FCF1DA'; icon = 'alert'; }
-    else if (j.paused) { status = j.pauseMsg === 'by you' ? 'Paused' : (j.pauseMsg || 'Paused'); tone = '#8A5A00'; bg = '#FCF1DA'; icon = 'pause'; }
-    else if (j.phase === 'dup') status = 'Checking Show Transactions for ' + j.slip;
-    else if (j.phase === 'dupfound') { status = j.slip + ' already exists on CUIMS (Serial ' + (j.dupSerial || '?') + ').'; tone = '#8E1B2A'; bg = '#FBE6E9'; icon = 'alert'; }
-    else if (j.phase === 'fill') status = 'Filling the form';
-    else if (j.phase === 'capture') status = 'Finding the Serial No for ' + j.slip;
-    h += '<div style="height:6px;border-radius:99px;background:#EFEDE8;overflow:hidden"><div style="height:6px;width:' + pct + '%;background:#141414;border-radius:99px"></div></div>';
-    h += '<div style="margin-top:12px;display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border-radius:12px;background:' + bg + ';color:' + tone + ';font-weight:650;font-size:15px">' + (icon ? ic(icon, 20) : '') + '<span>' + esc(status) + '</span></div>';
-    var L = (j.log || []).slice(-2);
-    if (L.length && !j.paused) h += '<div style="font-size:13px;color:#6B6F76;margin-top:10px;line-height:1.6">' + L.map(function (x) { return ic(x[1] ? 'no' : 'ok', 14, x[1] ? '#B42335' : '#0E7A4F') + ' ' + esc(x[0]); }).join('<br>') + '</div>';
-    h += '<div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:14px;align-items:center">';
-    if (ui.confirmCancel) {
-      h += '<span style="width:100%;font-size:14.5px;font-weight:650">Cancel this entry?</span>' + btn('cancelReset', 'Cancel and clear form', 'warn') + btn('cancelKeep', 'Cancel, keep form', '') + btn('noCancel', 'Keep going', 'main');
-    } else if (j.phase === 'dupfound') {
-      h += btn('dupDone', 'Mark as done', 'main') + btn('dupIgnore', 'Fill anyway', '');
-    } else if (j.phase === 'await' && ui.serialBox) {
-      h += '<input id="jvserial" inputmode="numeric" placeholder="Serial No from CUIMS" style="flex:1;min-width:150px;min-height:48px;border:1.5px solid #D9D5CC;border-radius:999px;padding:0 16px;font:16px system-ui">' + btn('serialSave', 'Save', 'gold') + btn('serialNo', 'Back', 'link');
-    } else if (!isLogin) {
-      h += (j.paused ? btn('resume', ic('play', 16) + ' Resume', 'main') : btn('pause', ic('pause', 16) + ' Pause', 'main'));
-      if (j.paused && j.phase === 'fill' && curItem(j) && j.pauseMsg && j.pauseMsg !== 'by you') h += btn('skip', 'Skip ' + esc(curItem(j).code), '');
-      h += btn('cancel', 'Cancel', 'link');
+    // working states
+    var over = j.paused ? 'Paused' : j.phase === 'dup' ? 'Checking' : j.phase === 'capture' ? 'Finding Serial' : j.phase === 'dupfound' ? 'Already on CUIMS' : 'Filling';
+    if (j.queue) over += ' · queue on';
+    h += hero(over, j.store, j, j.paused ? '#FFB648' : C.ink);
+    var inner2 = '';
+    if (isLogin) inner2 += statusCard('warn', 'Logged out', 'Logging in again; the entry restarts by itself.');
+    else if (j.paused) inner2 += statusCard('warn', 'Paused', j.pauseMsg === 'by you' ? 'Tap Resume to continue.' : (j.pauseMsg || ''));
+    else if (j.phase === 'dupfound') inner2 += statusCard('no', j.slip + ' already exists', 'Serial ' + (j.dupSerial || '?') + ' on Show Transactions.');
+    else if (j.phase === 'capture') inner2 += statusCard('run', 'Finding the Serial No', 'Show Transactions · ' + j.slip);
+    else {
+      inner2 += '<div style="background:' + C.ink + ';color:#fff;border-radius:20px;padding:14px;display:flex;align-items:center;gap:12px"><div style="width:42px;height:42px;border-radius:14px;background:' + C.lav + ';display:flex;align-items:center;justify-content:center;flex-shrink:0">' + ic(j.phase === 'dup' ? 'alert' : 'play', 20, C.ink) + '</div><div style="min-width:0"><b style="display:block;font:700 16px ' + F + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(cur && j.phase === 'fill' && (j.log || []).some(function (x) { return /Project Area/.test(x[0]); }) ? 'Adding ' + String(cur.name || cur.code).toLowerCase().replace(/\b\w/g, function (m) { return m.toUpperCase(); }) : j.phase === 'dup' ? 'Checking ' + j.slip : 'Setting up the form') + '</b><span style="font:500 12.5px ' + F + ';color:#C9C5D6">' + esc(cur ? cur.code + ' · ' + cur.qty + (cur.uom ? ' ' + cur.uom : '') : 'Store, receiver, department') + '</span></div></div>';
     }
-    h += '</div>' + (!ui.confirmCancel && !isLogin && j.phase !== 'dupfound' ? toggles(j) + (portal ? portalList(j) : '') : '') + '</div>';
-    bar.innerHTML = h;
+    var segs = ''; for (var q = 0; q < k.total; q++) segs += '<i style="flex:1;height:6px;border-radius:99px;background:' + (q < k.done ? C.ink : q === k.done ? C.lav : '#E4E1EC') + '"></i>';
+    if (k.total) inner2 += '<div style="display:flex;gap:5px">' + segs + '</div>';
+    var ci = cur ? items.findIndex(function (o) { return o.x === cur || o.x.code === cur.code; }) : items.length;
+    var show = portal ? items : items.slice(Math.max(0, ci - 1), Math.max(0, ci - 1) + 3);
+    if (show.length) inner2 += itemRows(j, show);
+    if (j.phase === 'dupfound') inner2 += row2(btn('dupDone', 'Mark as done', 'main'), btn('dupIgnore', 'Fill anyway', ''));
+    else if (j.phase === 'await' && ui.serialBox) inner2 += row2('<input id="jvserial" inputmode="numeric" placeholder="Serial No" style="flex:1;min-width:0;height:52px;border:1.5px solid #E4E1EC;border-radius:99px;padding:0 18px;font:600 16px ' + F + '">', btn('serialSave', 'Save', 'main') + btn('serialNo', 'Back', 'link'));
+    else if (!isLogin) {
+      var pb = j.paused ? btn('resume', ic('play', 16, '#fff') + ' Resume', 'main') : btn('pause', ic('pause', 16, '#fff') + ' Pause', 'main');
+      pb = pb.replace('display:inline-flex', 'flex:1;justify-content:center;display:inline-flex');
+      inner2 += row2(pb, (j.paused && j.phase === 'fill' && cur && j.pauseMsg && j.pauseMsg !== 'by you' ? btn('skip', 'Skip', '') : '') + btn('cancel', 'Cancel', 'link'));
+    }
+    if (portal) { var L = (j.log || []).slice(-8).reverse(); if (L.length) inner2 += secHead('Activity', '') + '<div style="display:flex;flex-direction:column;gap:6px">' + L.map(function (x) { return '<div style="display:flex;gap:8px;align-items:flex-start;font:500 13px ' + F + ';color:#3A3746">' + ic(x[1] ? 'no' : 'ok', 14, x[1] ? C.noInk : C.ok) + '<span>' + esc(x[0]) + '</span></div>'; }).join('') + '</div>'; }
+    if (!isLogin && j.phase !== 'dupfound') inner2 += chips(j);
+    bar.innerHTML = h + wrap(inner2);
   }
+
   bar.addEventListener('click', function (e) {
     var t = e.target.closest('[data-jv]'); if (!t) return;
     var a = t.getAttribute('data-jv'); var j = job();
