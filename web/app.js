@@ -29,6 +29,7 @@ function save(noSync) {
 }
 let syncBusy = false, syncErr = '';
 function syncLabel() {
+  if (S.testMode) return ['offline', 'Test mode · backup paused'];
   if (!S.sync.url) return ['off', 'Cloud not set'];
   if (syncBusy) return ['busy', 'Syncing…'];
   if (!navigator.onLine) return ['offline', 'Offline · saved on phone'];
@@ -211,7 +212,7 @@ function parseReqSheet(ws, kind, sheetName) {
   const have = new Set(S.lines.map(l => l.req.toUpperCase() + '|' + l.code));
   const out = [], dup = [], warn = new Set(), badQty = [], skipped = [], notes = [];
   let ex = 0, data = 0;
-  const skip = (i, r, why) => skipped.push({ row: i + 1, req: String(r[ci.req] == null ? '' : r[ci.req]).trim(), store: String(r[ci.store] == null ? '' : r[ci.store]).trim(), code: String(r[ci.code] == null ? '' : r[ci.code]).trim().toUpperCase(), qty: String(r[ci.qty] == null ? '' : r[ci.qty]).trim(), why });
+  const skip = (i, r, why, inApp) => skipped.push({ inApp, row: i + 1, req: String(r[ci.req] == null ? '' : r[ci.req]).trim(), store: String(r[ci.store] == null ? '' : r[ci.store]).trim(), code: String(r[ci.code] == null ? '' : r[ci.code]).trim().toUpperCase(), qty: String(r[ci.qty] == null ? '' : r[ci.qty]).trim(), why });
   for (let i = hm.h + 1; i < rows.length; i++) {
     const r = rows[i];
     const req = String(r[ci.req]).trim(), code = String(r[ci.code]).trim().toUpperCase(), qty = parseFloat(String(r[ci.qty]).replace(/[^\d.]/g, ''));
@@ -221,7 +222,12 @@ function parseReqSheet(ws, kind, sheetName) {
     if (!req || !code) { skip(i, r, !req ? 'Request No is empty' : 'Item code is empty'); continue; }
     if (!(qty > 0)) { skip(i, r, String(r[ci.qty]).trim() === '' ? 'Qty is empty' : 'Qty is not a number above 0'); continue; }
     const key = req.toUpperCase() + '|' + code;
-    if (have.has(key)) { const already = S.lines.some(l => l.req.toUpperCase() + '|' + l.code === key); skip(i, r, already ? 'Already in the app (same Request No + item)' : 'Same Request No + item appears twice in this file'); dup.push(req + ' ' + code); continue; }
+    if (have.has(key)) {
+      const ex0 = S.lines.find(l => l.req.toUpperCase() + '|' + l.code === key);
+      let inApp = null;
+      if (ex0) { const fileStore = String(r[ci.store]).trim().toUpperCase(); const e = S.entries.find(e2 => e2.items.some(it => it.lineId === ex0.id));
+        inApp = { req: ex0.req, store: ex0.store, date: ex0.date, qty: ex0.qty, status: ex0.status, slip: e ? e.slip : (ex0.issued[0] || {}).slip || '', serial: e ? e.serial : (ex0.issued[0] || {}).serial || '', made: ex0.fromFile ? 'file' : '', other: fileStore && fileStore !== ex0.store }; }
+      skip(i, r, ex0 ? (inApp.other ? 'Request No already used in the app for a different store' : 'Already in the app (same Request No + item)') : 'Same Request No + item appears twice in this file', inApp); dup.push(req + ' ' + code); continue; }
     have.add(key);
     const store = String(r[ci.store]).trim().toUpperCase();
     if (!store) { skip(i, r, 'Store is empty'); continue; }
@@ -459,7 +465,7 @@ function shStart() {
 function startJob(store, slip, rcv, lineIds) {
   const ls = S.lines.filter(l => lineIds.includes(l.id) && l.status === 'waiting');
   const nq = S.queue ? nextQueueJob(lineIds) : null;
-  const job = { id: 'J' + Date.now(), slip, rcv, store, queue: !!S.queue, next: nq ? nq.req + ' · ' + nq.store : '', autoSubmit: !!S.autoSubmit, phase: 'dup', paused: false, log: [], tries: {},
+  const job = { id: 'J' + Date.now(), test: !!S.testMode, slip, rcv, store, queue: !!S.queue, next: nq ? nq.req + ' · ' + nq.store : '', autoSubmit: !!S.autoSubmit && !S.testMode, phase: 'dup', paused: false, log: [], tries: {},
     items: ls.map(l => ({ lineId: l.id, req: l.req, reqDate: l.date, code: l.code, name: itemName(l.code), uom: itemUom(l.code), qty: l.qty, remark: l.remark || remarkFor(l.date), skip: false })) };
   if (!N) { toast('Open this inside the JV Stock Issue app to fill CUIMS.'); return; }
   N.startJob(JSON.stringify(job));
@@ -486,11 +492,13 @@ function queueBox() {
 }
 
 /* ---------------- Upload sheet ---------------- */
+function reparseUpload() { const u = ui.upload; if (!u || !u.wb) { renderSheet(); return; } u.result = u.kind === 'stock' ? parseStock(u.wb) : parseRequests(u.wb, u.kind); renderSheet(); }
 function importReport(r, kind) {
   const sk = r.skipped || [], nt = r.notes || [];
   if (!sk.length && !nt.length) return '<div class="okbox">' + ico('right', 16).replace('M9 6l6 6-6 6', 'M5 12.5l4.5 4.5L19 7.5') + '<span>Nothing will be skipped. Every row is clean.</span></div>';
   const group = list => { const g = {}; list.forEach(x => (g[x.why] = g[x.why] || []).push(x)); return Object.entries(g).sort((a, b) => b[1].length - a[1].length); };
-  const table = (list, stock) => '<div class="tblwrap"><table><tr><th>Row</th>' + (stock ? '' : '<th>Request</th><th>Store</th>') + '<th>Item</th><th>Qty</th></tr>' + list.map(x => '<tr><td>' + x.row + '</td>' + (stock ? '' : '<td><b>' + esc(x.req || '–') + '</b></td><td>' + esc(x.store || '–') + '</td>') + '<td class="mono">' + esc(x.code || '–') + (S.stock[x.code] ? '<div class="note">' + esc(S.stock[x.code].name) + '</div>' : '') + '</td><td>' + esc(x.qty || '–') + '</td></tr>').join('') + '</table></div>';
+  const where = a => '<div class="inapp">' + '<b>In app: ' + esc(a.store) + '</b><span>' + [fmtShort(a.date), 'qty ' + num(a.qty), a.status === 'issued' ? 'issued' + (a.slip ? ' in ' + a.slip : '') + (a.serial ? ' #' + a.serial : '') : a.status === 'dropped' ? 'removed' : 'waiting', a.made === 'file' ? 'from an earlier file' : ''].filter(Boolean).map(esc).join(' · ') + '</span><span class="inbtns"><button class="btn sm ghost" data-a="impOpenReq" data-v="' + esc(a.req) + '">Open</button><button class="btn sm ghost" data-a="impRenum" data-v="' + esc(a.req) + '">Renumber app\'s request</button>' + (a.status !== 'issued' ? '<button class="btn sm ghost danger-t" data-a="impDrop" data-v="' + esc(a.req) + '">Remove app\'s request</button>' : '') + '</span></div>';
+  const table = (list, stock) => '<div class="tblwrap"><table><tr><th>Row</th>' + (stock ? '' : '<th>Request</th><th>Store</th>') + '<th>Item</th><th>Qty</th></tr>' + list.map(x => '<tr><td>' + x.row + '</td>' + (stock ? '' : '<td><b>' + esc(x.req || '–') + '</b></td><td>' + esc(x.store || '–') + '</td>') + '<td class="mono">' + esc(x.code || '–') + (S.stock[x.code] ? '<div class="note">' + esc(S.stock[x.code].name) + '</div>' : '') + '</td><td>' + esc(x.qty || '–') + '</td></tr>' + (x.inApp ? '<tr class="inrow"><td></td><td colspan="4">' + where(x.inApp) + '</td></tr>' : '')).join('') + '</table></div>';
   let h = '';
   if (sk.length) {
     h += '<div class="card" style="overflow:hidden"><div class="pad row"><b class="ttl" style="font-size:17px">Will be skipped</b>' + pill(sk.length + ' row' + (sk.length > 1 ? 's' : ''), 'c-no') + '</div>';
@@ -616,13 +624,16 @@ function searchIndex() {
   const out = [];
   S.entries.forEach(e => out.push({ type: 'Issue', id: 'e' + e.id, date: entryDate(e), time: entryTime(e), store: e.store, who: 'GA' + e.rcv + (e.rname ? ' ' + e.rname : ''), no: e.slip, serial: e.serial || '', reqs: e.reqs || [...new Set(e.items.map(i => i.req).filter(Boolean))].join(', '), by: e.by || {}, remarks: e.remarks || '', items: e.items, kind: e.kind }));
   S.returns.forEach(r => out.push({ type: 'Return', id: 'r' + r.id, date: r.date, time: r.time, store: r.store, who: 'GA' + r.by + (r.byName ? ' ' + r.byName : ''), no: r.no, serial: r.serial || '', reqs: 'Against ' + r.against, by: r.enteredBy || {}, remarks: r.remarks || '', items: r.items }));
+  const R0 = {}; S.lines.forEach(l => { if (l.status === 'dropped') return; (R0[l.req] = R0[l.req] || []).push(l); });
+  Object.entries(R0).forEach(([req, L]) => { const w = L.filter(l => l.status === 'waiting').length;
+    out.push({ type: 'Request', id: 'q' + req, date: L[0].date, time: '', store: L[0].store, who: w ? w + ' waiting · ' + (L.length - w) + ' issued' : 'all ' + L.length + ' issued', no: req, serial: '', reqs: req, by: {}, remarks: L.some(l => l.fromFile) ? '' : 'added in app', items: L.map(l => ({ code: l.code, name: itemName(l.code), qty: l.qty, uom: itemUom(l.code), req, remark: l.status })) }); });
   out.forEach(x => { x.rdates = new Set(x.items.map(i => rd[i.req]).filter(Boolean)); x.hay = [x.type, x.date, x.date ? fmtLong(x.date) : '', x.store, x.who, x.no, x.serial, x.reqs, x.by.name, x.by.emp, x.remarks, ...x.items.map(i => i.code + ' ' + (i.name || itemName(i.code)) + ' ' + (i.remark || ''))].join(' ').toLowerCase(); x.sk = (x.date || '') + (x.time || ''); });
   out.sort((a, b) => b.sk.localeCompare(a.sk));
   SIDX = { ver: DATAVER, recs: out }; return out;
 }
 function searchRecords() {
   const s = ui.search, terms = s.q.toLowerCase().split(/\s+/).filter(Boolean);
-  return searchIndex().filter(x => (!s.rd || (x.type === 'Issue' && x.rdates.has(s.rd))) && (s.type === 'all' || x.type.toLowerCase() === s.type) && (!s.from || x.date >= s.from) && (!s.to || x.date <= s.to) && (!s.store || x.store === s.store) && terms.every(t => x.hay.includes(t)));
+  return searchIndex().filter(x => (!s.rd || (x.type === 'Issue' && x.rdates.has(s.rd)) || (x.type === 'Request' && x.date === s.rd)) && (s.type === 'all' || x.type.toLowerCase() === s.type) && (!s.from || x.date >= s.from) && (!s.to || x.date <= s.to) && (!s.store || x.store === s.store) && terms.every(t => x.hay.includes(t)));
 }
 function searchRecordsOld() {
   const out = [];
@@ -647,10 +658,10 @@ function sResults(res) {
   h += '<div class="row"><span class="note">' + res.length + ' records</span><button class="btn sm" data-a="expSearch"' + (res.length ? '' : ' disabled') + '>Export results</button></div>';
   res.slice(0, 150).forEach(x => {
     const open = s.open === x.id;
-    h += '<button class="card pad tap col" style="gap:4px" data-a="sOpen" data-v="' + x.id + '"><div class="row"><b>' + esc(x.store) + '</b><span class="chip ' + (x.type === 'Issue' ? 'c-in' : 'c-pt') + '">' + x.type + '</span></div>' +
-      '<div class="note mono">' + esc(x.no) + ' · Serial ' + esc(x.serial || '–') + ' · ' + (x.date ? fmtShort(x.date) : '') + ' ' + esc(x.time || '') + '</div>' +
+    h += '<button class="card pad tap col" style="gap:4px" data-a="sOpen" data-v="' + x.id + '"><div class="row"><b>' + esc(x.store) + '</b><span class="chip ' + (x.type === 'Issue' ? 'c-in' : x.type === 'Request' ? 'c-gd' : 'c-pt') + '">' + x.type + '</span></div>' +
+      '<div class="note mono">' + (x.type === 'Request' ? '<span class="reqno" data-req="' + esc(x.no) + '">' + esc(x.no) + '</span> · requested ' + (x.date ? fmtShort(x.date) : '') : esc(x.no) + ' · Serial ' + esc(x.serial || '–') + ' · ' + (x.date ? fmtShort(x.date) : '') + ' ' + esc(x.time || '') + (x.reqs ? ' · Req ' + esc(x.reqs) : '')) + '</div>' +
       '<div class="note">' + esc(x.who) + ' · ' + x.items.length + ' items · by ' + esc(x.by.name || '–') + '</div>' +
-      (open ? '<div class="tblwrap" style="margin-top:6px"><table><tr><th>Code</th><th>Item</th><th>Qty</th><th>Remark</th></tr>' + x.items.map(i => '<tr><td>' + esc(i.code) + '</td><td>' + esc(i.name || itemName(i.code)) + '</td><td>' + num(i.qty) + ' ' + esc(i.uom || '') + '</td><td>' + esc(i.remark || '–') + '</td></tr>').join('') + '</table></div>' + (x.reqs ? '<div class="note">' + esc(x.reqs) + '</div>' : '') : '') + '</button>';
+      (open ? '<div class="tblwrap" style="margin-top:6px"><table><tr><th>Code</th><th>Item</th><th>Qty</th><th>Remark</th></tr>' + x.items.map(i => '<tr><td>' + esc(i.code) + '</td><td>' + esc(i.name || itemName(i.code)) + '</td><td>' + num(i.qty) + ' ' + esc(i.uom || '') + '</td><td>' + esc(i.remark || '–') + '</td></tr>').join('') + '</table></div>' + (x.reqs ? '<div class="note">' + esc(x.reqs) + '</div>' : '') + (x.type === 'Request' ? '<div class="grid2" style="margin-top:8px"><span class="btn sm" data-a="openReq" data-v="' + esc(x.no) + '">Open request</span><span class="btn sm ghost" data-a="renumReq" data-v="' + esc(x.no) + '">Renumber</span></div>' : '') : '') + '</button>';
   });
   if (res.length > 150) h += '<div class="note">Showing 150. Narrow the search or export all.</div>';
   return h;
@@ -658,10 +669,10 @@ function sResults(res) {
 function vFind() {
   const s = ui.search;
   const res = searchRecords();
-  const stores = [...new Set([...S.entries.map(e => e.store), ...S.returns.map(r => r.store)])].sort();
-  let h = '<header class="top"><div><h1>Search</h1><div class="sub">Issues and returns: any date, store, item, slip, serial or person.</div></div></header><main>';
+  const stores = [...new Set([...S.entries.map(e => e.store), ...S.returns.map(r => r.store), ...S.lines.map(l => l.store)])].sort();
+  let h = '<header class="top"><div><h1>Search</h1><div class="sub">Requests, issues and returns: any Request No, store, item, slip, serial or person.</div></div></header><main>';
   h += '<div class="sbox">' + '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input type="search" data-in="q" value="' + esc(s.q) + '" placeholder="Item, slip, serial, store, request…" autocomplete="off" enterkeyhint="search"></div>';
-  h += '<div class="seg">' + [['all', 'All'], ['issue', 'Issue'], ['return', 'Return']].map(([k, l]) => '<button data-a="sType" data-v="' + k + '" class="' + (s.type === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>';
+  h += '<div class="seg">' + [['all', 'All'], ['request', 'Requests'], ['issue', 'Issues'], ['return', 'Returns']].map(([k, l]) => '<button data-a="sType" data-v="' + k + '" class="' + (s.type === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>';
   h += '<label class="f fdate"><span>Request date</span><span class="fin"><input type="date" data-in="sRd" value="' + esc(s.rd || '') + '">' + (s.rd ? '<button class="fx" data-a="sRdClear" aria-label="Clear request date">' + ico('x', 14) + '</button>' : '') + '</span></label>';
   h += '<div class="note" style="margin-top:-6px">Issue date range:</div>';
   h += '<div class="grid2"><label class="f">From<input type="date" data-in="sFrom" value="' + esc(s.from) + '"></label><label class="f">To<input type="date" data-in="sTo" value="' + esc(s.to) + '"></label></div>';
@@ -712,6 +723,10 @@ function vSet() {
       '<label class="f">Name<input type="text" data-set="me.name" value="' + esc(S.me.name) + '"></label>' +
       '<div class="grid2"><label class="f">Emp code<input type="text" data-set="me.emp" value="' + esc(S.me.emp) + '" autocapitalize="characters"></label><label class="f">Designation<input type="text" data-set="me.desig" value="' + esc(S.me.desig) + '"></label></div>' +
       '<label class="f">"Built by" name in the top bar<input type="text" data-set="me.builder" value="' + esc(S.me.builder || '') + '" placeholder="' + esc(S.me.name || 'Your name') + '"></label></div>';
+  }
+  if (pg === 'data') {
+    h += '<div class="card pad col"><h3>Test mode</h3><div class="note">Try new features or practise entries without touching your real requests, slips or stock. Your real data is put aside and comes back exactly as it was. Cloud backup pauses while testing.</div><button class="btn ' + (S.testMode ? 'main' : '') + '" data-a="testToggle" type="button">' + (S.testMode ? 'Leave Test mode' : 'Turn on Test mode') + '</button>' + (S.testMode ? '<button class="btn ghost" data-a="testClear" type="button">Delete all test data</button>' : '') + '</div>';
+    h += '<div class="card pad col"><h3>Data check</h3><div class="note">Finds Request No clashes, repeated items, mixed dates, incomplete rows and repeated Slip Nos, with fix buttons.</div><button class="btn" data-a="dcOpen" type="button">Run data check</button></div>';
   }
   if (pg === 'cuims') {
     h += '<div class="card pad col"><h3>Two CUIMS logins</h3><div class="note">Issue CUIMS uses your emp ID to fill entries. Manager CUIMS has its own separate login for the live stock report.' + (INFO.mgrSeparate === false ? ' <b>Your phone\'s WebView is too old for separate logins; both share one login until Android System WebView is updated.</b>' : '') + '</div>' +
@@ -1132,6 +1147,8 @@ function renderDrawer() {
     item('doneOpen', 'Done list', 'Slips, serials and articles still left', '<path d="M4 12l5 5L20 6"/>') +
     item('newReq', 'Add store request', 'Type a request directly in the app', '<path d="M12 5v14M5 12h14"/>') +
     item('batchReq', 'Batch add requests', 'Many stores at once, or paste from Excel', '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/>') +
+    item('dcOpen', 'Data check', 'Find clashes and errors, fix on the spot', '<path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/><path d="M9 12l2 2 4-4"/>') +
+    item('testToggle', S.testMode ? 'Leave Test mode' : 'Test mode', S.testMode ? 'Back to your real data' : 'Try things without touching real data', '<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3"/>') +
     item('countLog', 'Count history', 'All past counts and differences', '<path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/>') +
     item('taskLog', 'Task log', 'Daily tasks: done, pending, not done', '<path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/>') +
     '<div class="dsect">Work</div>' +
@@ -1258,6 +1275,7 @@ function rpXlsx2(type) {
 /* ---------------- Google Sheet sync ---------------- */
 async function syncNow(quiet, kind, note) {
   if (!S.sync.url) return;
+  if (S.testMode) { if (!quiet) toast('Test mode: cloud backup is paused.'); return; }
   const payload = { action: 'sync', kind: kind || 'auto', note: note || '', counts: { requests: requests().length, articles: S.lines.length, entries: S.entries.length, returns: S.returns.length }, at: new Date().toISOString(), by: meTag(),
     tabs: { 'Requests': rowsRequests(), 'Request lines': rowsAllLines(), 'Entries': rowsEntries(), 'Entry items': rowsItems(), 'Pending': rowsPending(), 'Returns': rowsReturns(), 'Stock': rowsStock(),
       'Stores': Object.entries(S.stores).map(([s, v]) => ({ Store: s, Receiver: v.rcv ? 'GA' + v.rcv : '', Name: v.rname || '' })) },
@@ -1469,7 +1487,7 @@ window.jvBack = () => {
 function render() {
   const app = document.getElementById('app');
   const y = window.scrollY;
-  app.innerHTML = appBar() + (ui.view === 'done' ? vDone() : ui.view === 'expiry' ? vExpiry() : ui.view === 'count' ? vCount() : ui.view === 'countLog' ? vCountLog() : ui.view === 'taskLog' ? vTaskLog() : ui.view === 'req' ? vReq() : ({ home: vHome, pend: vPend, reg: vReg, find: vFind, set: vSet })[ui.tab]());
+  app.innerHTML = appBar() + (S.testMode ? '<div class="testbar"><span><b>TEST MODE</b> · your real data is safe and hidden. Cloud backup is paused. Entries submitted on CUIMS are still real.</span><button class="btn sm" data-a="testToggle">Exit</button></div>' : '') + (ui.view === 'check' ? vCheck() : ui.view === 'done' ? vDone() : ui.view === 'expiry' ? vExpiry() : ui.view === 'count' ? vCount() : ui.view === 'countLog' ? vCountLog() : ui.view === 'taskLog' ? vTaskLog() : ui.view === 'req' ? vReq() : ({ home: vHome, pend: vPend, reg: vReg, find: vFind, set: vSet })[ui.tab]());
   document.querySelector('#tabs .in').innerHTML = TABS.map(([k, l]) => '<button data-a="tab" data-v="' + k + '" class="' + (ui.tab === k && !ui.view ? 'on' : '') + '" aria-label="' + l + '"><span class="nic">' + ICON[k] + '</span><span class="nl">' + l + '</span></button>').join('');
   renderDrawer();
   paintSync();
@@ -1512,6 +1530,80 @@ function loader(on, msg) {
   el.innerHTML = '<div class="ldbox"><div class="ldorb"><span class="o1"></span><span class="o2"></span><span class="o3"></span><img src="icon.png" alt=""></div><b>' + esc(msg || 'Working') + '</b><div class="ldbar"><i></i></div></div>';
 }
 const skel = n => Array.from({ length: n || 3 }, () => '<div class="card pad skel"><i style="width:34%"></i><i style="width:72%"></i><i style="width:55%"></i></div>').join('');
+function uiPrompt(msg, value, okLabel) {
+  return new Promise(res => {
+    let el = document.getElementById('dlg'); if (!el) { el = document.createElement('div'); el.id = 'dlg'; document.body.appendChild(el); }
+    el.innerHTML = '<div class="pkbg"></div><div class="dlgbox" role="dialog" aria-modal="true"><div class="dlgmsg">' + esc(msg) + '</div><input type="text" id="dlgin" value="' + esc(value || '') + '" class="mono" autocapitalize="characters"><div class="grid2"><button class="btn" data-dlg="0">Cancel</button><button class="btn main" data-dlg="1">' + esc(okLabel || 'OK') + '</button></div></div>';
+    const inp = el.querySelector('#dlgin'); setTimeout(() => { inp.focus(); inp.select(); }, 50);
+    el.querySelectorAll('[data-dlg]').forEach(b => b.onclick = e => { e.stopPropagation(); const v = inp.value.trim(); el.innerHTML = ''; res(b.dataset.dlg === '1' ? v : null); });
+  });
+}
+const TEST_KEYS = ['lines', 'entries', 'returns', 'stock', 'stockAt', 'counts', 'taskLog', 'corrections', 'hold'];
+const deep = o => JSON.parse(JSON.stringify(o == null ? null : o));
+function setTestMode(on) {
+  if (on === !!S.testMode) return;
+  if (on) {
+    S._real = {}; TEST_KEYS.forEach(k => S._real[k] = S[k]);
+    const t = S._test || {};
+    S.lines = t.lines || []; S.entries = t.entries || []; S.returns = t.returns || []; S.counts = t.counts || []; S.taskLog = t.taskLog || {}; S.corrections = t.corrections || []; S.hold = t.hold || {};
+    S.stock = t.stock || deep(S._real.stock) || {}; S.stockAt = t.stockAt || S._real.stockAt;
+    S.testMode = true;
+  } else {
+    S._test = {}; TEST_KEYS.forEach(k => S._test[k] = S[k]);
+    TEST_KEYS.forEach(k => S[k] = S._real[k]); delete S._real; S.testMode = false;
+  }
+  ui.view = null; ui.lastReq = null; save(); render();
+}
+function renumberReqStore(from, store, to) {
+  to = String(to || '').trim(); if (!to) return false;
+  if (S.lines.some(l => l.req === to)) { toast('Request No ' + to + ' already exists.'); return false; }
+  const ids = new Set(S.lines.filter(l => l.req === from && l.store === store).map(l => l.id));
+  S.lines.forEach(l => { if (ids.has(l.id)) l.req = to; });
+  S.entries.forEach(e => e.items.forEach(i => { if (ids.has(i.lineId)) i.req = to; }));
+  return true;
+}
+function dataIssues() {
+  const out = [], by = {};
+  S.lines.filter(l => l.status !== 'dropped').forEach(l => (by[l.req] = by[l.req] || []).push(l));
+  Object.entries(by).forEach(([req, L]) => {
+    const stores = [...new Set(L.map(l => l.store))];
+    if (stores.length > 1) out.push({ kind: 'multi', req, stores: stores.map(st => ({ st, n: L.filter(l => l.store === st).length, issued: L.some(l => l.store === st && l.status === 'issued') })) });
+    const seen = {}; L.filter(l => l.status === 'waiting').forEach(l => { const k = l.store + '|' + l.code; (seen[k] = seen[k] || []).push(l); });
+    Object.values(seen).filter(x => x.length > 1).forEach(x => out.push({ kind: 'dupline', req, store: x[0].store, code: x[0].code, lines: x.map(l => l.id), qtys: x.map(l => l.qty) }));
+    const ds = [...new Set(L.map(l => l.date))]; if (ds.length > 1) out.push({ kind: 'dates', req, dates: ds.sort() });
+  });
+  const bad = S.lines.filter(l => l.status !== 'dropped' && (!l.store || !l.code || !(l.qty > 0) || !l.req));
+  if (bad.length) out.push({ kind: 'bad', ids: bad.map(l => l.id), n: bad.length });
+  const slips = {}; S.entries.forEach(e => (slips[String(e.slip).toUpperCase()] = slips[String(e.slip).toUpperCase()] || []).push(e));
+  Object.entries(slips).filter(([k, v]) => v.length > 1).forEach(([k, v]) => out.push({ kind: 'slip', slip: k, n: v.length, stores: v.map(e => e.store) }));
+  const miss = S.lines.filter(l => l.status === 'waiting' && Object.keys(S.stock).length && !S.stock[l.code]);
+  if (miss.length) out.push({ kind: 'nostock', n: miss.length, codes: [...new Set(miss.map(l => l.code))] });
+  return out;
+}
+function vCheck() {
+  const I = dataIssues();
+  let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Data check</h1><div class="sub">Finds clashes and errors in your data, with a button to fix each one.</div></div></header><main>';
+  if (!I.length) return h + '<div class="okbox">' + ico('right', 16).replace('M9 6l6 6-6 6', 'M5 12.5l4.5 4.5L19 7.5') + '<span>All clear. No clashes or errors found in ' + S.lines.length + ' articles and ' + S.entries.length + ' slips.</span></div></main>';
+  h += '<div class="banner" style="background:#FFE4EA;color:#8E1B3A;border:0"><b>' + I.length + ' things to check.</b> Nothing changes until you tap a button.</div>';
+  I.forEach(x => {
+    if (x.kind === 'multi') h += '<div class="card pad col" style="gap:10px"><div class="row"><span class="reqno" data-req="' + esc(x.req) + '">' + esc(x.req) + '</span>' + pill('Used by ' + x.stores.length + ' stores', 'c-no') + '</div><div class="note">One Request No should belong to one store. Give the wrong one a new number.</div>' +
+      x.stores.map(o => '<div class="row" style="align-items:center"><span><b>' + esc(o.st) + '</b><div class="meta"><span>' + o.n + ' articles</span>' + (o.issued ? '<i></i><span>has issued slips</span>' : '') + '</div></span><button class="btn sm" data-a="dcRenum" data-v="' + esc(x.req) + '" data-s="' + esc(o.st) + '">Renumber</button></div>').join('') + '</div>';
+    if (x.kind === 'dupline') h += '<div class="card pad col" style="gap:10px"><div class="row"><span class="reqno" data-req="' + esc(x.req) + '">' + esc(x.req) + '</span>' + pill('Item twice', 'c-gd') + '</div><div><b>' + esc(itemName(x.code)) + '</b> <span class="mono note">' + esc(x.code) + '</span><div class="meta"><span>' + esc(x.store) + '</span><i></i><span>qty ' + x.qtys.map(num).join(' + ') + '</span></div></div><div class="grid2"><button class="btn sm" data-a="dcMerge" data-v="' + x.lines.join(',') + '">Merge into one (' + num(x.qtys.reduce((a, b) => a + b, 0)) + ')</button><button class="btn sm ghost" data-a="dcKeepFirst" data-v="' + x.lines.join(',') + '">Keep first only</button></div></div>';
+    if (x.kind === 'dates') h += '<div class="card pad col" style="gap:10px"><div class="row"><span class="reqno" data-req="' + esc(x.req) + '">' + esc(x.req) + '</span>' + pill('Mixed dates', 'c-gd') + '</div><div class="note">Articles of this request have different dates: ' + x.dates.map(fmtShort).join(', ') + '.</div><div class="grid2"><button class="btn sm" data-a="dcDate" data-v="' + esc(x.req) + '" data-d="' + x.dates[0] + '">Use ' + fmtShort(x.dates[0]) + '</button><button class="btn sm ghost" data-a="dcDate" data-v="' + esc(x.req) + '" data-d="' + x.dates[x.dates.length - 1] + '">Use ' + fmtShort(x.dates[x.dates.length - 1]) + '</button></div></div>';
+    if (x.kind === 'bad') h += '<div class="card pad col" style="gap:10px"><div class="row"><b>Incomplete articles</b>' + pill(x.n, 'c-no') + '</div><div class="note">Missing Request No, store, item code or qty.</div><button class="btn sm" data-a="dcBad" data-v="' + x.ids.join(',') + '">Remove ' + x.n + ' incomplete article' + (x.n > 1 ? 's' : '') + '</button></div>';
+    if (x.kind === 'slip') h += '<div class="card pad col" style="gap:6px"><div class="row"><b>Slip ' + esc(x.slip) + ' used ' + x.n + ' times</b>' + pill('Check', 'c-no') + '</div><div class="note">' + esc(x.stores.join(', ')) + '. Edit the wrong one in Registers.</div><button class="btn sm ghost" data-a="dcSlip" data-v="' + esc(x.slip) + '">Show in Search</button></div>';
+    if (x.kind === 'nostock') h += '<div class="card pad col" style="gap:6px"><div class="row"><b>Items not in the stock sheet</b>' + pill(x.n, 'c-gd') + '</div><div class="note mono">' + esc(x.codes.slice(0, 20).join(', ')) + (x.codes.length > 20 ? '…' : '') + '</div><div class="note">Upload a fresh stock report, or correct the item code in the request.</div></div>';
+  });
+  return h + '</main>';
+}
+function renumberReq(from, to) {
+  to = String(to || '').trim(); if (!to || to === from) return false;
+  if (S.lines.some(l => l.req === to)) { toast('Request No ' + to + ' already exists.'); return false; }
+  S.lines.forEach(l => { if (l.req === from) l.req = to; });
+  S.entries.forEach(e => e.items.forEach(i => { if (i.req === from) i.req = to; }));
+  if (ui.lastReq === from) ui.lastReq = to;
+  return true;
+}
 function uiConfirm(msg, okLabel, danger) {
   return new Promise(res => {
     let el = document.getElementById('dlg'); if (!el) { el = document.createElement('div'); el.id = 'dlg'; document.body.appendChild(el); }
@@ -1604,7 +1696,7 @@ function shEditReq() {
 }
 
 /* ---------------- lock ---------------- */
-const GUARDED = new Set(['credSave', 'credDel', 'corrOpen', 'corrSave', 'bulkEdit', 'bulkSave', 'dropReq', 'dropStore', 'editReq', 'saveReq', 'markDone', 'markSave', 'newManual', 'saveEntry', 'delEntry', 'newReturn', 'saveReturn', 'delReturn',
+const GUARDED = new Set(['testToggle', 'testClear', 'dcRenum', 'dcMerge', 'dcKeepFirst', 'dcDate', 'dcBad', 'renumReq', 'impRenum', 'impDrop', 'credSave', 'credDel', 'corrOpen', 'corrSave', 'bulkEdit', 'bulkSave', 'dropReq', 'dropStore', 'editReq', 'saveReq', 'markDone', 'markSave', 'newManual', 'saveEntry', 'delEntry', 'newReturn', 'saveReturn', 'delReturn',
   'rmStore', 'addStore', 'wipe', 'restore', 'bkRestore', 'bkDel', 'bkKeep', 'bkSave', 'bkNoteSave', 'photo', 'photoDel', 'mode', 'lockToggle', 'syncAuto', 'mgrToggle', 'moveStore', 'saveUrls', 'resetZoom', 'hold', 'cropSave']);
 let pendingAuth = null;
 function askUnlock(after) {
@@ -1744,6 +1836,19 @@ document.addEventListener('click', async ev => {
       save(); ui.sheet = null; renderSheet(); render(); toast(n + ' articles saved in ' + f.groups.length + ' requests.'); break; }
     case 'doneTog': ui.doneOpen[v] = !ui.doneOpen[v]; render(); break;
     case 'noop': break;
+    case 'testToggle': { ui.drawer = false; renderDrawer(); const on = !S.testMode; if (!(await uiConfirm(on ? 'Turn on Test mode? Your real requests, slips and stock are put aside and a separate test copy starts. Nothing you do in test mode touches real data.' : 'Leave Test mode? Your real data comes back exactly as it was. Test data is kept for next time.', on ? 'Start testing' : 'Leave test mode'))) break; setTestMode(on); toast(on ? 'Test mode on.' : 'Back to your real data.'); break; }
+    case 'testClear': if (await uiConfirm('Delete all test data?', 'Delete', true)) { S.lines = []; S.entries = []; S.returns = []; S.counts = []; S.taskLog = {}; S.corrections = []; S.hold = {}; S.stock = deep((S._real || {}).stock) || S.stock; save(); render(); } break;
+    case 'dcOpen': ui.drawer = false; ui.view = 'check'; render(); window.scrollTo(0, 0); break;
+    case 'dcRenum': { const st = t.dataset.s; const to = await uiPrompt('New Request No for ' + st + ' (now ' + v + ')', v + '-' + st.replace(/[^A-Z0-9]/gi, '').slice(0, 4), 'Renumber'); if (to && renumberReqStore(v, st, to)) { save(); render(); toast(st + ' is now ' + to + '.'); } break; }
+    case 'dcMerge': { const ids = v.split(',').map(Number); const L = S.lines.filter(l => ids.includes(l.id)); L[0].qty = L.reduce((a, l) => a + l.qty, 0); L.slice(1).forEach(l => l.status = 'dropped'); save(); render(); break; }
+    case 'dcKeepFirst': { const ids = v.split(',').map(Number); S.lines.filter(l => ids.slice(1).includes(l.id)).forEach(l => l.status = 'dropped'); save(); render(); break; }
+    case 'dcDate': S.lines.forEach(l => { if (l.req === v) l.date = t.dataset.d; }); save(); render(); break;
+    case 'dcBad': { const ids = v.split(',').map(Number); S.lines.forEach(l => { if (ids.includes(l.id)) l.status = 'dropped'; }); save(); render(); break; }
+    case 'dcSlip': ui.view = null; ui.tab = 'find'; ui.search.q = v; ui.search.type = 'all'; render(); break;
+    case 'renumReq': { const to = await uiPrompt('New Request No for ' + v, v, 'Renumber'); if (to && renumberReq(v, to)) { save(); render(); toast('Renumbered to ' + to + '.'); } break; }
+    case 'impRenum': { const to = await uiPrompt('Give the app\'s request ' + v + ' a new Request No. Your file\'s ' + v + ' will then import normally.', v + '-T', 'Renumber'); if (to && renumberReq(v, to)) { save(); reparseUpload(); toast(v + ' in the app is now ' + to + '.'); } break; }
+    case 'impDrop': { if (!(await uiConfirm('Remove the waiting articles of the app\'s request ' + v + '? Issued records stay. Your file\'s ' + v + ' will then import.', 'Remove', true))) break; S.lines.forEach(l => { if (l.req === v && l.status === 'waiting') l.status = 'dropped'; }); S.lines = S.lines.filter(l => !(l.req === v && l.status === 'dropped' && !l.issued.length)); save(); reparseUpload(); break; }
+    case 'impOpenReq': ui.sheet = null; renderSheet(); ui.lastReq = v; ui.view = 'req'; ui.req = v; render(); window.scrollTo(0, 0); break;
     case 'credAuto': ui.cred = ui.cred || {}; ui.cred[v] = ui.cred[v] || {}; ui.cred[v].auto = t.checked; break;
     case 'credSave': { if (!N || !N.setCred) { toast('Update the app to use this.'); break; } let ci = {}; try { ci = JSON.parse(N.credInfo()); } catch (e) {} const c = ci[v] || {}, f = (ui.cred || {})[v] || {};
       const u = (f.u != null ? f.u : c.u || '').trim(); if (!u) { toast('Enter the User ID.'); break; }
@@ -1925,7 +2030,7 @@ document.addEventListener('change', async ev => {
     const f = el.files[0]; el.value = ''; if (!f || !ui.upload) { loader(false); return; }
     if (!window.XLSX) { loader(false); ui.upload.error = 'Excel tools not loaded yet. Check internet and try again.'; renderSheet(); return; }
     try {
-      const wb = await readWorkbook(f);
+      const wb = await readWorkbook(f); ui.upload.wb = wb;
       const r = ui.upload.kind === 'stock' ? parseStock(wb) : parseRequests(wb, ui.upload.kind);
       if (r.error) ui.upload.error = r.error; else ui.upload.result = r;
     } catch (e) { ui.upload.error = 'Could not read this file. Use .xlsx or .csv.'; }
@@ -1954,7 +2059,7 @@ function doImport() {
   if (u.kind === 'stock') { S.stock = r.stock; S.stockAt = new Date().toISOString(); save(); toast('Stock replaced: ' + r.count + ' items. Everything re-planned.'); }
   else {
     r.rows.forEach(x => {
-      S.lines.push({ id: nid(), req: x.req, store: x.store, date: x.date, code: x.code, qty: x.qty, rcv: x.rcv, slip: x.slip || '', src: x.src, earlier: x.earlier || '', status: 'waiting', issued: [] });
+      S.lines.push({ fromFile: true, id: nid(), req: x.req, store: x.store, date: x.date, code: x.code, qty: x.qty, rcv: x.rcv, slip: x.slip || '', src: x.src, earlier: x.earlier || '', status: 'waiting', issued: [] });
       if (!S.stores[x.store]) S.stores[x.store] = { rcv: '', rname: '' };
     });
     save(); toast(r.rows.length + ' articles imported.');

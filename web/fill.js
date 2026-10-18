@@ -195,7 +195,7 @@
     if (j.phase === 'await' && !ui.serialBox) {
       var v = verify(j), allOk = v.store && v.slip && v.rcv && v.type && v.rows === v.total;
       var nChecks = [v.store, v.slip, v.rcv, v.type, v.rows === v.total].filter(Boolean).length;
-      h += hero('Issue entry', j.store, j, allOk ? C.ok : C.noInk);
+      h += hero((j.test ? 'Test mode · ' : '') + 'Issue entry', j.store, j, allOk ? C.ok : C.noInk);
       var inner = statusCard(allOk ? 'ok' : 'no', allOk ? 'Ready to submit' : 'Check before SUBMIT', allOk ? 'All ' + nChecks + ' checks match the CUIMS form' : nChecks + ' of 5 checks match. See the red tiles.');
       inner += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">' + cell('Receiver', 'GA' + esc(j.rcv), j.rname || '', v.rcv) + cell('Requested on', esc(v.dates || '–'), '') + cell('Issue type', 'Offline', 'Department', v.type) + cell('Project area', esc(v.paText || j.store), v.store ? 'matches store' : 'expected ' + j.store, v.store) + '</div>';
       inner += secHead('Articles', v.rows + ' of ' + v.total + ' added') + itemRows(j, portal ? items : items.slice(0, 4));
@@ -216,6 +216,7 @@
     // working states
     var over = j.paused ? 'Paused' : j.phase === 'dup' ? 'Checking' : j.phase === 'capture' ? 'Finding Serial' : j.phase === 'dupfound' ? 'Already on CUIMS' : 'Filling';
     if (j.queue) over += ' · queue on';
+    if (j.test) over = 'Test mode · ' + over;
     h += hero(over, j.store, j, j.paused ? '#FFB648' : C.ink);
     var inner2 = '';
     if (isLogin) inner2 += statusCard('warn', 'Logged out', 'Logging in again; the entry restarts by itself.');
