@@ -336,6 +336,20 @@ public class MainActivity extends AppCompatActivity {
         if (!src.isEmpty()) v.evaluateJavascript(src, null);
     }
 
+    void loadFresh(WebView v, String who, String u) {
+        long at = prefs.getLong("login_" + who, 0);
+        if (at > 0 && System.currentTimeMillis() - at > 3600000L) {
+            prefs.edit().putLong("login_" + who, 0).apply();
+            CookieManager c = CookieManager.getInstance();
+            try { if ("mgr".equals(who) && mgrSeparate) c = ProfileStore.getInstance().getProfile("manager").getCookieManager(); } catch (Throwable ignored) { }
+            final CookieManager cm = c;
+            cm.removeAllCookies(ok -> { cm.flush(); v.loadUrl(u); });
+            toast("Login is over 1 hour old. Logging in fresh…");
+            return;
+        }
+        v.loadUrl(u);
+    }
+
     void show(String which) {
         siteView.setVisibility("emp".equals(which) ? View.VISIBLE : View.GONE);
         mgrView.setVisibility("mgr".equals(which) ? View.VISIBLE : View.GONE);
@@ -448,6 +462,7 @@ public class MainActivity extends AppCompatActivity {
         Bridge(String w) { who = w; }
 
         @JavascriptInterface public String who() { return who; }
+        @JavascriptInterface public void markLogin() { if (!"app".equals(who)) prefs.edit().putLong("login_" + who, System.currentTimeMillis()).apply(); }
         @JavascriptInterface public void progress(String title, String text, int done, int total, boolean ongoing) { runOnUiThread(() -> postProgress(title, text, done, total, ongoing)); }
         @JavascriptInterface public void progressClear() { try { NotificationManagerCompat.from(MainActivity.this).cancel(77); } catch (Exception ignored) { } }
         @JavascriptInterface public void setFullscreen(boolean on) { runOnUiThread(() -> setFull(on)); }
@@ -476,20 +491,22 @@ public class MainActivity extends AppCompatActivity {
 
         @JavascriptInterface public void startJob(String j) {
             writeFile(jobFile, j);
-            runOnUiThread(() -> { show("emp"); siteView.loadUrl(url("emp")); });
+            runOnUiThread(() -> { show("emp"); loadFresh(siteView, "emp", url("emp")); });
         }
         @JavascriptInterface public void openSite() {
             runOnUiThread(() -> {
                 show("emp");
                 String u = siteView.getUrl();
-                if (u == null || !u.contains("cuchd.in")) siteView.loadUrl(url("emp"));
+                long at = prefs.getLong("login_emp", 0);
+                if (u == null || !u.contains("cuchd.in") || (at > 0 && System.currentTimeMillis() - at > 3600000L)) loadFresh(siteView, "emp", url("emp"));
             });
         }
         @JavascriptInterface public void openMgr() {
             runOnUiThread(() -> {
                 show("mgr");
                 String u = mgrView.getUrl();
-                if (u == null || !u.contains("cuchd.in")) mgrView.loadUrl(url("mgr"));
+                long at = prefs.getLong("login_mgr", 0);
+                if (u == null || !u.contains("cuchd.in") || (at > 0 && System.currentTimeMillis() - at > 3600000L)) loadFresh(mgrView, "mgr", url("mgr"));
             });
         }
         @JavascriptInterface public void setUrls(String emp, String mgr) {

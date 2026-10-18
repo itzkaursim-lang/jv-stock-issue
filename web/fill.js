@@ -542,22 +542,28 @@
 
   /* ---------- start ---------- */
   (function autoLogin() {
-    if (!isLogin || !B.getCred) return;
+    if (isIssue || !B.getCred) return;
     var c = {}; try { c = JSON.parse(B.getCred() || '{}'); } catch (e) {}
     if (!c.u || !c.p) return;
-    var pw = document.querySelector('input[type="password"]'); if (!pw) return;
-    var form = pw.form || document;
-    var texts = [].slice.call(form.querySelectorAll('input[type="text"],input[type="email"],input:not([type])')).filter(function (x) { return x.offsetParent !== null; });
-    var user = texts.filter(function (x) { return x.compareDocumentPosition(pw) & Node.DOCUMENT_POSITION_FOLLOWING; }).pop() || texts[0];
-    if (!user) return;
-    var set = function (el, v) { el.focus(); el.value = v; ['input', 'change', 'keyup'].forEach(function (t) { el.dispatchEvent(new Event(t, { bubbles: true })); }); };
-    set(user, c.u); set(pw, c.p);
-    var others = texts.filter(function (x) { return x !== user && !x.value; });
-    var n = 0; try { var k = JSON.parse(sessionStorage.getItem('jvLoginTry') || '{"n":0,"t":0}'); n = Date.now() - k.t < 120000 ? k.n : 0; } catch (e) {}
-    if (c.auto && !others.length && n < 2) {
-      var btn = form.querySelector('input[type="submit"],button[type="submit"],input[id*="ogin" i],button[id*="ogin" i],input[value*="ogin" i]');
-      if (btn) { try { sessionStorage.setItem('jvLoginTry', JSON.stringify({ n: n + 1, t: Date.now() })); } catch (e) {} setTimeout(function () { btn.click(); }, 700); }
-    }
+    var tries = 0;
+    var setV = function (el, v) { try { var d = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value'); el.focus(); d.set.call(el, v); } catch (e) { el.value = v; } ['input', 'change', 'keyup', 'blur'].forEach(function (t) { el.dispatchEvent(new Event(t, { bubbles: true })); }); };
+    (function attempt() {
+      tries++;
+      var pw = [].slice.call(document.querySelectorAll('input[type="password"]')).filter(function (x) { return x.offsetParent !== null; })[0];
+      if (!pw) { if (tries < 40) setTimeout(attempt, 250); return; }
+      var all = [].slice.call(document.querySelectorAll('input')).filter(function (x) { return x.offsetParent !== null && /^(text|email|tel|number|)$/i.test(x.type || 'text') && !/captcha/i.test(x.id + x.name + x.placeholder); });
+      var before = all.filter(function (x) { return x.compareDocumentPosition(pw) & Node.DOCUMENT_POSITION_FOLLOWING; });
+      var user = before.pop() || all[0];
+      if (!user) { if (tries < 40) setTimeout(attempt, 250); return; }
+      setV(user, c.u); setV(pw, c.p);
+      var cap = [].slice.call(document.querySelectorAll('input')).filter(function (x) { return x.offsetParent !== null && x !== user && x !== pw && /^(text|number|tel|)$/i.test(x.type || 'text') && !x.value; });
+      var n = 0; try { var k = JSON.parse(sessionStorage.getItem('jvLoginTry') || '{"n":0,"t":0}'); n = Date.now() - k.t < 120000 ? k.n : 0; } catch (e) {}
+      if (c.auto && !cap.length && n < 2) {
+        var root = pw.form || document;
+        var btn = root.querySelector('input[type="submit"],button[type="submit"],input[id*="ogin" i],button[id*="ogin" i],input[value*="ogin" i],a[id*="ogin" i]') || [].slice.call(root.querySelectorAll('button,a,input[type="button"]')).filter(function (x) { return /log\s*in|sign\s*in/i.test(x.textContent + ' ' + (x.value || '')); })[0];
+        if (btn) { try { sessionStorage.setItem('jvLoginTry', JSON.stringify({ n: n + 1, t: Date.now() })); } catch (e) {} setTimeout(function () { btn.click(); }, 600); }
+      }
+    })();
   })();
   var target = '';
   try { target = B.targetUrl ? B.targetUrl() : ISSUE_URL; } catch (e) { target = ISSUE_URL; }
@@ -567,6 +573,7 @@
     else if (localStorage.getItem('jvSawLogin_' + WHO) === '1') {
       localStorage.removeItem('jvSawLogin_' + WHO);
       if (WHO === 'emp') ev('login');
+      try { B.markLogin && B.markLogin(); } catch (e) {}
       if (!onTarget && /cuchd\.in/.test(location.host)) { setTimeout(function () { location.href = target; }, 300); }
     }
   } catch (e) {}

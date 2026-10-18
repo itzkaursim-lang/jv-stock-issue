@@ -318,15 +318,93 @@ header.top h1{font-size:30px;letter-spacing:-.02em}
 .qa .qi{background:#141414;color:#fff}
 input[type=text],input[type=date],input[type=time],input[type=number],input[type=password],select,textarea{border-radius:16px}
 main{padding-bottom:calc(120px + env(safe-area-inset-bottom,0px))!important}
+
+/* ===== v4.1: whole-app UI kit ===== */
+header.top{padding:18px 18px 4px}
+header.top h1{font-size:32px;font-weight:800;letter-spacing:-.025em;line-height:1.05}
+header.top .sub{font-size:14.5px;color:var(--mute);margin-top:6px}
+header.top .btn.ghost.sm,.btn.sm.ghost[data-a=back],.btn.sm.ghost[data-a=setBack]{border-radius:999px;background:#fff;border:1px solid var(--line);min-height:44px;padding:0 16px}
+.card{border-radius:26px;background:#fff;box-shadow:0 1px 3px rgba(20,20,20,.04),0 8px 22px rgba(20,20,20,.04)}
+.card.pad,.pad{padding:18px 20px}
+.line{padding:15px 20px;border-bottom:1px solid #F0EEF5}
+.tile{border-radius:24px;padding:16px;box-shadow:none;background-image:none}
+.tile b{font-size:30px;font-weight:800;letter-spacing:-.02em}
+.tile span{font-size:13.5px;font-weight:600}
+.t-ok{background:#D6F5E5}.t-ok b,.t-ok span{color:#0B5E3D}
+.t-pt{background:#FFE7C2}.t-pt b,.t-pt span{color:#7A4B00}
+.t-no{background:#FFD9E3}.t-no b,.t-no span{color:#8E1B3A}
+.t-in{background:#DDE6FF}.t-in b,.t-in span{color:#2A3F9A}
+.chip{border-radius:999px;font-weight:700;padding:5px 12px}
+.c-ok{background:#D6F5E5;color:#0B5E3D}.c-gd{background:#FFE7C2;color:#7A4B00}.c-no{background:#FFD9E3;color:#8E1B3A}.c-in{background:#DDE6FF;color:#2A3F9A}.c-gy{background:#EEECF3;color:#4A4758}
+.banner{border-radius:22px;padding:14px 18px}
+.sheet{border-radius:32px 32px 0 0;background:var(--bg);padding:22px 18px}
+.sheet h2{font-size:24px;font-weight:800;letter-spacing:-.02em}
+.sheetbg{background:rgba(20,20,20,.35);backdrop-filter:blur(3px)}
+label.f{font-weight:600;color:#3A3746}
+input[type=text],input[type=date],input[type=time],input[type=number],input[type=password],input[type=search],select,textarea{background:#fff;border:1.5px solid #E4E1EC;border-radius:18px;min-height:52px;padding:0 16px;font-size:16px}
+input:focus,select:focus,textarea:focus{outline:none;border-color:#141414;box-shadow:0 0 0 4px rgba(185,167,255,.35)}
+.sbox{display:flex;align-items:center;gap:10px;background:#fff;border:1.5px solid #E4E1EC;border-radius:999px;padding:0 8px 0 18px;color:var(--mute)}
+.sbox input{border:0!important;box-shadow:none!important;flex:1;min-width:0;padding:0 6px;background:transparent}
+.sbox:focus-within{border-color:#141414;box-shadow:0 0 0 4px rgba(185,167,255,.35)}
+.srow{padding:16px 20px}.srow .ic{border-radius:50%;width:44px;height:44px}
+.xbtn{border-radius:50%;background:#F4F2F8;border:0}
+.dpanel{background:var(--bg);border-radius:0 32px 32px 0}
+.ditem{padding:12px 20px}.ditem .dic{width:44px;height:44px;box-shadow:0 2px 8px rgba(20,20,20,.06);border:0}
+.hit{border-radius:18px;border:1.5px solid #E9E7F0;padding:12px 16px}.hit.first{border-color:#141414}
+.sgroup{padding:10px 4px 0}.sgroup b{font-size:16px}
+.reqno{border-radius:999px;padding:4px 12px;font-weight:800;cursor:pointer}
+.slipline{border-radius:18px;background:#F6F5FA;border:0}
+.leftbtn{background:#FFF4E0;border-top:0;border-radius:0 0 26px 26px;color:#7A4B00}
+.leftbox{background:#FFF9EE}
+.unav,.alertcard{border-radius:22px}
+/* hero refinements */
+.hero{padding:20px 18px 14px;min-height:250px}
+.hkick{display:inline-block;background:rgba(255,255,255,.6);border-radius:99px;padding:3px 12px;font-size:12.5px;font-weight:700;margin-bottom:10px}
+.hstat{position:relative;z-index:2;display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:16px}
+.hstat div{background:rgba(255,255,255,.62);border-radius:18px;padding:10px 6px;text-align:center}
+.hstat b{display:block;font-size:22px;font-weight:800;line-height:1.1}.hstat span{display:block;font-size:11px;font-weight:600;color:#3D3270;line-height:1.2;margin-top:2px}
+.hrange{margin-top:8px;z-index:2}.hrange.empty{display:block;font-size:13px;font-weight:600;color:#3D3270;text-align:center}
+.hrange b{display:block;font-size:14px;line-height:1.35}.hrange b i{display:block;font-style:normal;font-size:10.5px;color:#7466C9;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.hlogo.small{width:64px;height:64px;right:14px;top:132px;bottom:auto;border-radius:18px;transform:rotate(-10deg);z-index:1;box-shadow:0 8px 18px rgba(20,20,20,.3)}
+.hme{position:absolute;right:-30px;top:-10px;width:190px;height:200px;z-index:0;pointer-events:none}
+.hme img{width:100%;height:100%;object-fit:cover;border-radius:50%;-webkit-mask-image:radial-gradient(circle at 50% 45%,#000 52%,transparent 71%);mask-image:radial-gradient(circle at 50% 45%,#000 52%,transparent 71%);filter:saturate(.9) contrast(1.05);mix-blend-mode:multiply;opacity:.95}
+.hme.cut img{border-radius:0;object-fit:contain;-webkit-mask-image:linear-gradient(#000 70%,transparent 100%);mask-image:linear-gradient(#000 70%,transparent 100%);mix-blend-mode:normal;filter:drop-shadow(0 12px 18px rgba(60,40,140,.35))}
+.dday.today:not(.on){border-color:#141414}
+.pbig{font-size:34px!important;font-weight:800!important;line-height:1;letter-spacing:-.02em;margin-bottom:2px}
+.bmini{display:flex;align-items:center;gap:12px;width:100%;padding:14px 18px;border:0;text-align:left;font:inherit;color:inherit;cursor:pointer}.bmini b{flex:1;font-size:16px}
+.bgroup.act{box-shadow:0 0 0 2px #141414,0 10px 26px rgba(20,20,20,.08)}
+/* animated highlight for the request you tapped */
+@property --ang{syntax:'<angle>';inherits:false;initial-value:0deg}
+@keyframes spinb{to{--ang:360deg}}
+.rcard{position:relative;isolation:isolate}
+.rcard.sel{box-shadow:0 12px 30px rgba(244,63,94,.18)!important}
+.rcard.sel:before{content:"";position:absolute;inset:-3px;border-radius:29px;padding:3px;background:conic-gradient(from var(--ang),transparent 0 62%,#FF2D55 72%,#FF7A59 80%,transparent 90%);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;animation:spinb 2.2s linear infinite;z-index:3;pointer-events:none}
+.selrow{background:#FFF0F3!important;box-shadow:inset 4px 0 0 #FF2D55}
+/* loader */
+#loader{position:fixed;inset:0;z-index:90;display:none;align-items:center;justify-content:center;background:rgba(242,241,246,.82);backdrop-filter:blur(6px)}
+#loader.show{display:flex;animation:fade .15s}
+.ldbox{display:flex;flex-direction:column;align-items:center;gap:16px}.ldbox b{font-size:16px}
+.ldorb{position:relative;width:120px;height:120px;display:flex;align-items:center;justify-content:center}
+.ldorb img{width:64px;height:64px;border-radius:18px;animation:bob 1.4s ease-in-out infinite;box-shadow:0 10px 24px rgba(20,20,20,.25)}
+.ldorb span{position:absolute;inset:0;border-radius:50%;border:3px solid transparent}
+.ldorb .o1{border-top-color:#B9A7FF;animation:rot 1.1s linear infinite}
+.ldorb .o2{inset:12px;border-right-color:#FFC266;animation:rot 1.6s linear infinite reverse}
+.ldorb .o3{inset:-8px;border-bottom-color:#F6A8EE;animation:rot 2.2s linear infinite}
+.ldbar{width:140px;height:6px;border-radius:99px;background:#E4E1EC;overflow:hidden}.ldbar i{display:block;height:100%;width:40%;border-radius:99px;background:#141414;animation:slide 1.1s ease-in-out infinite}
+@keyframes rot{to{transform:rotate(360deg)}}@keyframes bob{50%{transform:translateY(-6px) rotate(-6deg)}}@keyframes slide{0%{transform:translateX(-110%)}100%{transform:translateX(260%)}}
+.skel i{display:block;height:14px;border-radius:8px;margin:8px 0;background:linear-gradient(90deg,#EEECF3 25%,#F7F6FB 50%,#EEECF3 75%);background-size:300% 100%;animation:shim 1.2s linear infinite}
+@keyframes shim{from{background-position:100% 0}to{background-position:-100% 0}}
+#boot{position:fixed;inset:0;z-index:95;display:flex;align-items:center;justify-content:center;background:var(--bg)}
 </style>
 </head>
 <body>
+<div id="boot"><div class="ldbox"><div class="ldorb"><span class="o1"></span><span class="o2"></span><span class="o3"></span><img src="icon.png" alt=""></div><b>JV Stock Issue</b></div></div>
 <div class="app" id="app"></div>
 <nav class="tabs" id="tabs"><div class="in"></div></nav>
 <div id="sheet"></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <input type="file" id="fileIn" accept=".xlsx,.xls,.csv" class="hidden">
 <input type="file" id="photoIn" accept="image/*" class="hidden">
-<script src="app.js?v=4.0.0"></script>
+<script src="app.js?v=4.1.0"></script>
 </body>
 </html>

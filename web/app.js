@@ -20,7 +20,7 @@ function load() {
 }
 let S = load();
 let syncTimer = null;
-function writeLocal() { const t = JSON.stringify(S); try { if (N) N.storeSet(t); else localStorage.setItem('jvStockIssue', t); } catch (e) {} }
+function writeLocal() { DATAVER++; const t = JSON.stringify(S); try { if (N) N.storeSet(t); else localStorage.setItem('jvStockIssue', t); } catch (e) {} }
 function save(noSync) {
   S.sync.dirty = true; S.sync.changedAt = new Date().toISOString();
   writeLocal();
@@ -267,7 +267,7 @@ function reqCard(r, cont) {
   const PL = plan();
   const tag = r.st === 'full' ? pill('Ready', 'c-ok') : r.st === 'part' ? pill(r.can.length + ' of ' + r.w.length + ' ready', 'c-gd') : r.st === 'done' ? pill('Done', 'c-in') : pill('Waiting', 'c-no');
   const slip = (r.w.find(l => l.slip) || {}).slip, rcv = (r.lines.find(l => l.rcv) || {}).rcv || (S.stores[r.store] || {}).rcv || '';
-  return '<div class="card rcard' + (cont ? ' contcard' : '') + (ui.lastReq === r.req ? ' sel' : '') + '"><div class="scard"><button class="main" data-a="openReq" data-v="' + esc(r.req) + '"><div class="row"><span class="reqno">' + esc(r.req) + '</span>' + tag + '</div><b class="ttl">' + esc(r.store) + '</b>' +
+  return '<div class="card rcard' + (cont ? ' contcard' : '') + (ui.lastReq === r.req ? ' sel' : '') + '"><div class="scard"><button class="main" data-a="openReq" data-v="' + esc(r.req) + '"><div class="row"><span class="reqno" data-req="' + esc(r.req) + '">' + esc(r.req) + '</span>' + tag + '</div><b class="ttl">' + esc(r.store) + '</b>' +
     (cont ? '<div class="contline">Entered before: ' + [...new Set(r.iss.flatMap(l => l.issued.map(x => x.slip + (x.serial ? ' #' + x.serial : ''))))].map(esc).join(', ') + '</div>' : '') +
     meta([fmtShort(r.date), slip ? 'Slip ' + esc(slip) : '<em>No slip</em>', rcv ? 'GA' + esc(rcv) : '<em>No receiver</em>', r.lines.length + ' articles']) + unavail(r.w, PL) + '</button>' +
     '<div class="side"><button class="xbtn" data-a="dropReq" data-v="' + esc(r.req) + '" aria-label="Remove ' + esc(r.store) + ' from the list">' + ico('x', 18) + '</button></div></div>' +
@@ -285,8 +285,8 @@ function appBar() {
 function stockAge() { return S.stockAt ? 'Stock from ' + fmtDT(S.stockAt) : 'No stock uploaded yet'; }
 
 /* ---------------- Home ---------------- */
-function dayRange() {
-  const E = S.entries.filter(e => (e.at || '').slice(0, 10) === today()).slice().sort((a, b) => (a.at || '').localeCompare(b.at || ''));
+function dayRange(d) {
+  const E = S.entries.filter(e => entryDate(e) === (d || today())).slice().sort((a, b) => (a.at || '').localeCompare(b.at || ''));
   if (!E.length) return null;
   const reqs = [...new Set(E.flatMap(e => e.items.map(i => i.req)).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), undefined, { numeric: true }));
   const sers = E.map(e => e.serial).filter(Boolean);
@@ -294,27 +294,32 @@ function dayRange() {
 }
 function vHome() {
   const PL = plan();
-  const t = ui.homeDate || today();
+  const t = ui.homeDate || today(), isToday = t === today();
   const R = requests();
-  const todays = R.filter(r => r.date === t && (r.src !== 'old' || t !== today())).map(r => Object.assign(r, reqState(r, PL))).filter(r => r.st !== 'done');
+  const dayReqs = R.filter(r => r.date === t).map(r => Object.assign(r, reqState(r, PL)));
+  const todays = dayReqs.filter(r => r.st !== 'done' && (r.src !== 'old' || !isToday));
   sortBy(todays, getSort('home'), r => ({ req: r.req, store: r.store, date: r.date, ready: r.can.length, size: r.lines.length }));
+  const dayWait = dayReqs.flatMap(r => r.lines.filter(l => l.status === 'waiting'));
+  const readyNow = dayWait.filter(l => PL[l.id] === 'issue').length;
+  const dayEntries = S.entries.filter(e => entryDate(e) === t);
   const pend = S.lines.filter(isPending);
   const pendCan = pend.filter(l => PL[l.id] === 'issue').length;
-  const issuedToday = S.entries.filter(e => (e.at || '').slice(0, 10) === t).length;
-  const readyNow = todays.reduce((n, r) => n + r.can.length, 0);
-  const issuedToday2 = issuedToday;
+  const issuedToday = dayEntries.length;
+  const rg = dayRange(t);
+  const dl = fmtShort(t);
   let h = '<main style="padding-top:6px">';
-  const rg = dayRange();
-  h += '<section class="hero"><div class="hcopy"><div class="htitle">Daily<br>issue work</div><div class="hsub">' + (todays.length ? readyNow + ' articles ready across ' + todays.length + ' requests' : 'No open requests for this day') + '</div>' +
-    '<div class="hchips"><span>' + todays.length + ' open</span><span>' + pend.length + ' pending</span><span>' + issuedToday2 + ' done</span></div></div><img class="hlogo" src="icon.png" alt="">' +
-    (rg ? '<div class="hrange"><div><span>Slips</span><b>' + esc(rg.slip[0]) + (rg.n > 1 ? ' → ' + esc(rg.slip[1]) : '') + '</b></div><div><span>Serials</span><b>' + (rg.ser ? esc(rg.ser[0]) + (rg.ser[1] !== rg.ser[0] ? ' → ' + esc(rg.ser[1]) : '') : '–') + '</b></div><div><span>Requests</span><b>' + esc(rg.req[0] || '–') + (rg.req[1] && rg.req[1] !== rg.req[0] ? ' → ' + esc(rg.req[1]) : '') + '</b></div></div>' : '') +
+  h += '<section class="hero">' + (S.me.photo ? '<div class="hme' + (S.me.photoCut ? ' cut' : '') + '"><img src="' + S.me.photo + '" alt=""></div>' : '') + '<img class="hlogo' + (S.me.photo ? ' small' : '') + '" src="icon.png" alt="">' +
+    '<div class="hcopy"><div class="hkick">' + (isToday ? 'Today' : dl) + '</div><div class="htitle">Daily<br>issue work</div>' +
+    '<div class="hsub">' + (dayReqs.length ? todays.length + ' of ' + dayReqs.length + ' requests still open' : 'No requests on ' + dl) + '</div></div>' +
+    '<div class="hstat"><div><b>' + todays.length + '</b><span>open requests</span></div><div><b>' + readyNow + '</b><span>ready to issue</span></div><div><b>' + dayWait.length + '</b><span>articles left</span></div><div><b>' + issuedToday + '</b><span>slips done</span></div></div>' +
+    (rg ? '<div class="hrange"><div><span>Slips</span><b>' + esc(rg.slip[0]) + (rg.n > 1 ? '<i>to</i>' + esc(rg.slip[1]) : '') + '</b></div><div><span>Serials</span><b>' + (rg.ser ? esc(rg.ser[0]) + (rg.ser[1] !== rg.ser[0] ? '<i>to</i>' + esc(rg.ser[1]) : '') : '–') + '</b></div><div><span>Requests</span><b>' + esc(rg.req[0] || '–') + (rg.req[1] && rg.req[1] !== rg.req[0] ? '<i>to</i>' + esc(rg.req[1]) : '') + '</b></div></div>' : '<div class="hrange empty">No slips entered on ' + dl + ' yet.</div>') +
     '<div class="hcredit">JV Stock Issue · Built by ' + esc(S.me.builder || S.me.name || 'JV') + '</div></section>';
-  // date strip
   const base = new Date(); base.setHours(12);
   h += '<div class="dstrip">';
   for (let k = -3; k <= 3; k++) { const dd = new Date(base); dd.setDate(base.getDate() + k); const iso = isoOf(dd); const has = R.some(r => r.date === iso && r.lines.some(l => l.status === 'waiting'));
-    h += '<button class="dday' + (iso === t ? ' on' : '') + '" data-a="homeDate" data-v="' + iso + '"><i' + (has ? ' class="dot"' : '') + '></i><span>' + dd.toLocaleString('en-GB', { weekday: 'short' }) + '</span><b>' + dd.getDate() + '</b></button>'; }
+    h += '<button class="dday' + (iso === t ? ' on' : '') + (iso === today() ? ' today' : '') + '" data-a="homeDate" data-v="' + iso + '"><i' + (has ? ' class="dot"' : '') + '></i><span>' + dd.toLocaleString('en-GB', { weekday: 'short' }) + '</span><b>' + dd.getDate() + '</b></button>'; }
   h += '</div>';
+  if (!isToday) h += '<button class="banner tap" data-a="homeDate" data-v="' + today() + '" style="border:0;background:var(--lavBg);color:var(--lavInk)"><b>Showing ' + fmtLong(t) + '.</b> Tap to go back to today.</button>';
   if (S.updateInfo && S.updateInfo.newer) h += '<button class="banner t-in tap" data-a="goUpdate" style="border:0"><b>Update ' + esc(S.updateInfo.tag) + ' available.</b> Tap to install.</button>';
   if (!S.me.name) h += '<button class="banner t-pt tap" data-a="goProfile" style="border:0"><b>Add your name and emp code</b> so entries and PDFs show who made them.</button>';
   if (!S.lines.length && !S.stockAt) {
@@ -323,8 +328,8 @@ function vHome() {
   const qi = (a, label, d) => '<button class="qc" data-a="' + a + '" aria-label="' + label + '"><svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + d + '</svg></button>';
   const oldest = pend.reduce((m, l) => Math.max(m, days(l.date)), 0);
   h += '<div class="shead"><div><h2>Your work</h2></div></div><div class="plan">' +
-    '<button class="pt orange" data-a="tab" data-v="pend"><span class="ptag">' + (oldest > 2 ? 'Urgent' : 'Pending') + '</span><b>Pending</b><span>' + pend.length + ' articles</span><span>' + pendCan + ' ready now</span><span>oldest ' + oldest + ' d</span><span class="pfoot">Open list</span></button>' +
-    '<button class="pt blue" data-a="doneOpen"><span class="ptag">Today</span><b>Done</b><span>' + issuedToday2 + ' slips</span><span>' + fmtShort(today()) + '</span></button>' +
+    '<button class="pt orange" data-a="tab" data-v="pend"><span class="ptag">' + (oldest > 2 ? 'Urgent' : 'All days') + '</span><b>Pending</b><span class="pbig">' + pend.length + '</span><span>articles waiting</span><span>' + pendCan + ' can be issued now</span>' + (oldest ? '<span>oldest ' + oldest + (oldest === 1 ? ' day' : ' days') + '</span>' : '') + '<span class="pfoot">Open Pending</span></button>' +
+    '<button class="pt blue" data-a="doneOpenDay" data-v="' + t + '"><span class="ptag">' + (isToday ? 'Today' : dl) + '</span><b>Done</b><span class="pbig">' + issuedToday + '</span><span>slips entered</span></button>' +
     '<div class="pt pink">' + qi('upload', 'Upload', '<path d="M12 21V9M7 14l5-5 5 5M4 3h16"/>') + qi('newReq', 'Add request', '<path d="M12 5v14M5 12h14"/>') + qi('batchReq', 'Batch add', '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/>') + '</div></div>';
   h += '<div class="grid2"><button class="btn main" data-a="openSite">Issue CUIMS</button><button class="btn lav" data-a="openMgr">Live stock</button></div>';
   const ex = expiryRows().filter(r => r.left <= expDays());
@@ -337,11 +342,11 @@ function vHome() {
     if (cont.length) { h += '<div class="sgroup"><span class="sdot cont"></span><b>Continue</b><span>' + cont.length + ' entered once, articles left</span></div>'; cont.forEach(r => { h += reqCard(r, true); }); }
   } else h += '<div class="card pad note">No open requests for today. Upload today\'s requests, add one, or check Pending.</div>';
   h += '<button class="card pad tap row" data-a="tab" data-v="pend"><span><b class="ttl" style="font-size:16.5px">Older pending</b>' + meta([pend.length + ' articles waiting', pendCan + ' in stock now']) + '</span>' + ico('right', 18) + '</button>';
-  const te = S.entries.filter(e => (e.at || '').slice(0, 10) === t).slice().reverse().slice(0, 5);
+  const te = dayEntries.slice().reverse().slice(0, 5);
   if (te.length) {
-    h += '<div class="shead"><div><h2>Done today</h2><span>Latest ' + te.length + '</span></div><button class="btn sm ghost" data-a="doneOpen">Done list</button></div><div class="card" style="overflow:hidden">';
+    h += '<div class="shead"><div><h2>Done ' + (isToday ? 'today' : 'on ' + dl) + '</h2><span>Latest ' + te.length + '</span></div><button class="btn sm ghost" data-a="doneOpen">Done list</button></div><div class="card" style="overflow:hidden">';
     te.forEach(e => { const rq = [...new Set(e.items.map(i => i.req).filter(Boolean))].join(', ');
-      h += '<div class="line"><div class="row"><span class="reqno">' + esc(rq || '–') + '</span>' + serFmt(e.serial) + '</div>' + meta([esc(e.store), 'Slip ' + esc(e.slip), e.items.length + ' items', esc(entryTime(e))]) + '</div>'; });
+      h += '<div class="line' + (rq.split(', ').includes(ui.lastReq) ? ' selrow' : '') + '"><div class="row"><span class="reqno" data-req="' + esc(rq.split(', ')[0]) + '">' + esc(rq || '–') + '</span>' + serFmt(e.serial) + '</div>' + meta([esc(e.store), 'Slip ' + esc(e.slip), e.items.length + ' items', esc(entryTime(e))]) + '</div>'; });
     h += '</div>';
   }
   h += '<button class="btn" data-a="bulkEdit">Edit all requests</button>';
@@ -410,7 +415,7 @@ function vPend() {
     list.forEach(r => {
       const ready = r.pl.filter(l => PL[l.id] === 'issue'), d0 = days(r.date);
       const slips = [...new Set(r.lines.flatMap(l => l.issued.map(x => x.slip)))];
-      h += '<div class="card rcard' + (cls === 'cont' ? ' contcard' : '') + (ui.lastReq === r.req ? ' sel' : '') + '"><div class="scard"><button class="main" data-a="openReq" data-v="' + esc(r.req) + '"><div class="row"><span class="reqno">' + esc(r.req) + '</span>' + (ready.length === r.pl.length ? pill('All ready', 'c-ok') : ready.length ? pill(ready.length + ' of ' + r.pl.length + ' ready', 'c-gd') : pill('Waiting', 'c-no')) + '</div>' +
+      h += '<div class="card rcard' + (cls === 'cont' ? ' contcard' : '') + (ui.lastReq === r.req ? ' sel' : '') + '"><div class="scard"><button class="main" data-a="openReq" data-v="' + esc(r.req) + '"><div class="row"><span class="reqno" data-req="' + esc(r.req) + '">' + esc(r.req) + '</span>' + (ready.length === r.pl.length ? pill('All ready', 'c-ok') : ready.length ? pill(ready.length + ' of ' + r.pl.length + ' ready', 'c-gd') : pill('Waiting', 'c-no')) + '</div>' +
         '<b class="ttl">' + esc(r.store) + '</b>' + meta([fmtShort(r.date), d0 ? d0 + (d0 === 1 ? ' day' : ' days') + ' old' : 'today', r.pl.length + ' pending', slips.length ? 'done in ' + slips.map(esc).join(', ') : '']) + unavail(r.pl, PL) + '</button>' +
         '<div class="side"><button class="xbtn" data-a="dropReq" data-v="' + esc(r.req) + '" aria-label="Remove pending of ' + esc(r.req) + '">' + ico('x', 18) + '</button></div></div>' +
         (ready.length ? '<div class="cta"><button class="btn main full" data-a="fillReqPend" data-v="' + esc(r.req) + '">Fill on CUIMS · ' + ready.length + ' available</button></div>' : '') + '</div>';
@@ -581,7 +586,22 @@ function nextReturnNo() {
 }
 
 /* ---------------- Search ---------------- */
+let DATAVER = 1, SIDX = null;
+function searchIndex() {
+  if (SIDX && SIDX.ver === DATAVER) return SIDX.recs;
+  const rd = {}; S.lines.forEach(l => { if (!(l.req in rd)) rd[l.req] = l.date; });
+  const out = [];
+  S.entries.forEach(e => out.push({ type: 'Issue', id: 'e' + e.id, date: entryDate(e), time: entryTime(e), store: e.store, who: 'GA' + e.rcv + (e.rname ? ' ' + e.rname : ''), no: e.slip, serial: e.serial || '', reqs: e.reqs || [...new Set(e.items.map(i => i.req).filter(Boolean))].join(', '), by: e.by || {}, remarks: e.remarks || '', items: e.items, kind: e.kind }));
+  S.returns.forEach(r => out.push({ type: 'Return', id: 'r' + r.id, date: r.date, time: r.time, store: r.store, who: 'GA' + r.by + (r.byName ? ' ' + r.byName : ''), no: r.no, serial: r.serial || '', reqs: 'Against ' + r.against, by: r.enteredBy || {}, remarks: r.remarks || '', items: r.items }));
+  out.forEach(x => { x.rdates = new Set(x.items.map(i => rd[i.req]).filter(Boolean)); x.hay = [x.type, x.date, x.date ? fmtLong(x.date) : '', x.store, x.who, x.no, x.serial, x.reqs, x.by.name, x.by.emp, x.remarks, ...x.items.map(i => i.code + ' ' + (i.name || itemName(i.code)) + ' ' + (i.remark || ''))].join(' ').toLowerCase(); x.sk = (x.date || '') + (x.time || ''); });
+  out.sort((a, b) => b.sk.localeCompare(a.sk));
+  SIDX = { ver: DATAVER, recs: out }; return out;
+}
 function searchRecords() {
+  const s = ui.search, terms = s.q.toLowerCase().split(/\s+/).filter(Boolean);
+  return searchIndex().filter(x => (!s.rd || (x.type === 'Issue' && x.rdates.has(s.rd))) && (s.type === 'all' || x.type.toLowerCase() === s.type) && (!s.from || x.date >= s.from) && (!s.to || x.date <= s.to) && (!s.store || x.store === s.store) && terms.every(t => x.hay.includes(t)));
+}
+function searchRecordsOld() {
   const out = [];
   S.entries.forEach(e => out.push({ type: 'Issue', id: 'e' + e.id, date: entryDate(e), time: entryTime(e), store: e.store, who: 'GA' + e.rcv + (e.rname ? ' ' + e.rname : ''), no: e.slip, serial: e.serial || '', reqs: e.reqs || [...new Set(e.items.map(i => i.req).filter(Boolean))].join(', '), by: e.by || {}, remarks: e.remarks || '', items: e.items, kind: e.kind }));
   S.returns.forEach(r => out.push({ type: 'Return', id: 'r' + r.id, date: r.date, time: r.time, store: r.store, who: 'GA' + r.by + (r.byName ? ' ' + r.byName : ''), no: r.no, serial: r.serial || '', reqs: 'Against ' + r.against, by: r.enteredBy || {}, remarks: r.remarks || '', items: r.items }));
@@ -599,17 +619,8 @@ function searchRecords() {
     return terms.every(t => hay.includes(t));
   }).sort((a, b) => (b.date + b.time).localeCompare(a.date + a.time));
 }
-function vFind() {
-  const s = ui.search;
-  const res = searchRecords();
-  const stores = [...new Set([...S.entries.map(e => e.store), ...S.returns.map(r => r.store)])].sort();
-  let h = '<header class="top"><div><h1>Search</h1><div class="sub">Issues and returns: any date, store, item, slip, serial or person.</div></div></header><main>';
-  h += '<input type="text" data-in="q" value="' + esc(s.q) + '" placeholder="Search: atta, JV/912, 20401, LC MESS, GA600043…" autocomplete="off" style="font-size:16px">';
-  h += '<div class="seg">' + [['all', 'All'], ['issue', 'Issue'], ['return', 'Return']].map(([k, l]) => '<button data-a="sType" data-v="' + k + '" class="' + (s.type === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>';
-  h += '<label class="f fdate"><span>Request date</span><span class="fin"><input type="date" data-in="sRd" value="' + esc(s.rd || '') + '">' + (s.rd ? '<button class="fx" data-a="sRdClear" aria-label="Clear request date">' + ico('x', 14) + '</button>' : '') + '</span></label>';
-  h += '<div class="note" style="margin-top:-6px">Issue date range:</div>';
-  h += '<div class="grid2"><label class="f">From<input type="date" data-in="sFrom" value="' + esc(s.from) + '"></label><label class="f">To<input type="date" data-in="sTo" value="' + esc(s.to) + '"></label></div>';
-  h += pickBtn('sStore', { title: 'Store', search: true, full: true, opts: [['', 'All stores']].concat(stores.map(x => [x, x])), val: s.store || '', set: v => { ui.search.store = v; render(); } }, 'Store');
+function sResults(res) {
+  const s = ui.search; let h = '';
   h += '<div class="row"><span class="note">' + res.length + ' records</span><button class="btn sm" data-a="expSearch"' + (res.length ? '' : ' disabled') + '>Export results</button></div>';
   res.slice(0, 150).forEach(x => {
     const open = s.open === x.id;
@@ -619,6 +630,20 @@ function vFind() {
       (open ? '<div class="tblwrap" style="margin-top:6px"><table><tr><th>Code</th><th>Item</th><th>Qty</th><th>Remark</th></tr>' + x.items.map(i => '<tr><td>' + esc(i.code) + '</td><td>' + esc(i.name || itemName(i.code)) + '</td><td>' + num(i.qty) + ' ' + esc(i.uom || '') + '</td><td>' + esc(i.remark || '–') + '</td></tr>').join('') + '</table></div>' + (x.reqs ? '<div class="note">' + esc(x.reqs) + '</div>' : '') : '') + '</button>';
   });
   if (res.length > 150) h += '<div class="note">Showing 150. Narrow the search or export all.</div>';
+  return h;
+}
+function vFind() {
+  const s = ui.search;
+  const res = searchRecords();
+  const stores = [...new Set([...S.entries.map(e => e.store), ...S.returns.map(r => r.store)])].sort();
+  let h = '<header class="top"><div><h1>Search</h1><div class="sub">Issues and returns: any date, store, item, slip, serial or person.</div></div></header><main>';
+  h += '<div class="sbox">' + '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input type="search" data-in="q" value="' + esc(s.q) + '" placeholder="Item, slip, serial, store, request…" autocomplete="off" enterkeyhint="search"></div>';
+  h += '<div class="seg">' + [['all', 'All'], ['issue', 'Issue'], ['return', 'Return']].map(([k, l]) => '<button data-a="sType" data-v="' + k + '" class="' + (s.type === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>';
+  h += '<label class="f fdate"><span>Request date</span><span class="fin"><input type="date" data-in="sRd" value="' + esc(s.rd || '') + '">' + (s.rd ? '<button class="fx" data-a="sRdClear" aria-label="Clear request date">' + ico('x', 14) + '</button>' : '') + '</span></label>';
+  h += '<div class="note" style="margin-top:-6px">Issue date range:</div>';
+  h += '<div class="grid2"><label class="f">From<input type="date" data-in="sFrom" value="' + esc(s.from) + '"></label><label class="f">To<input type="date" data-in="sTo" value="' + esc(s.to) + '"></label></div>';
+  h += pickBtn('sStore', { title: 'Store', search: true, full: true, opts: [['', 'All stores']].concat(stores.map(x => [x, x])), val: s.store || '', set: v => { ui.search.store = v; render(); } }, 'Store');
+  h += '<div id="sres">' + sResults(res) + '</div>';
   return h + '</main>';
 }
 
@@ -1048,7 +1073,7 @@ function vDone() {
   if (!D.length) h += '<div class="card pad note">Nothing done for these dates.</div>';
   D.forEach(({ r, slips, left, issued, total }) => {
     const open = !!ui.doneOpen[r.req];
-    h += '<div class="card" style="overflow:hidden"><div class="pad col" style="gap:8px"><div class="row"><span class="reqno big">' + esc(r.req) + '</span>' + (left.length ? pill(left.length + ' left', 'c-gd') : pill('Fully done', 'c-ok')) + '</div>' +
+    h += '<div class="card rcard' + (ui.lastReq === r.req ? ' sel' : '') + '" style="overflow:hidden"><div class="pad col" style="gap:8px"><div class="row"><span class="reqno big" data-req="' + esc(r.req) + '">' + esc(r.req) + '</span>' + (left.length ? pill(left.length + ' left', 'c-gd') : pill('Fully done', 'c-ok')) + '</div>' +
       '<b class="ttl">' + esc(r.store) + '</b>' + meta(['requested ' + fmtShort(r.date), issued + ' of ' + total + ' issued']) +
       slips.map(e => '<div class="slipline"><span class="sl">' + esc(e.slip) + '</span>' + serFmt(e.serial) + '<span class="st">' + esc(fmtShort(entryDate(e))) + ' · ' + esc(entryTime(e)) + '</span></div>').join('') + '</div>' +
       (left.length ? '<button class="leftbtn" data-a="doneTog" data-v="' + esc(r.req) + '"><span>' + (open ? 'Hide' : 'Show') + ' ' + left.length + ' pending article' + (left.length > 1 ? 's' : '') + '</span>' + ico(open ? 'up' : 'down', 18) + '</button>' : '') +
@@ -1181,7 +1206,8 @@ function shExport() {
   h += '<div class="grid2">' + (R.pdf ? '<button class="btn main" data-a="rpPdf"' + (D.rows.length && cols.length ? '' : ' disabled') + '>Download PDF</button>' : '') + '<button class="btn' + (R.pdf ? '' : ' main') + '" data-a="rpXlsx"' + (D.rows.length && cols.length ? '' : ' disabled') + '>Download Excel</button></div>';
   return h;
 }
-function rpPdf(type) {
+function rpPdf(type) { loader(true, 'Making your PDF'); setTimeout(() => { try { rpPdf2(type); } finally { loader(false); } }, 60); }
+function rpPdf2(type) {
   const p = rptPref(type), D = reportDef(type), R = REPORTS[type];
   const doc = pdfDoc(p.orient === 'l'); if (!doc) return;
   const fs = p.font === 's' ? 7.5 : p.font === 'b' ? 10 : 8.5;
@@ -1196,7 +1222,8 @@ function rpPdf(type) {
   if (p.sign || p.mgr) pdfSign(doc, p.sign, p.mgr);
   pdfFoot(doc, R.name); pdfSave(doc, D.file + '.pdf');
 }
-function rpXlsx(type) {
+function rpXlsx(type) { loader(true, 'Making your Excel file'); setTimeout(() => { try { rpXlsx2(type); } finally { loader(false); } }, 60); }
+function rpXlsx2(type) {
   const p = rptPref(type), D = reportDef(type), R = REPORTS[type];
   const cols = orderedCols(p, D).filter(c => colOn(p, c[0]));
   const rows = D.rows.map(r => { const o = {}; cols.forEach(c => o[c[1]] = cellText(r[c[0]], ', ')); return o; });
@@ -1270,56 +1297,39 @@ function batchAddGroup(store) {
   let slip = ''; if (f.slipStart) { const m = String(f.slipStart).toUpperCase().match(/^(.*?)(\d+)$/); if (m) { const used = allSlips(); f.groups.forEach(g => used.add(g.slip)); let n = parseInt(m[2], 10); do { slip = m[1] + String(n).padStart(m[2].length, '0'); n++; } while (used.has(slip)); } }
   f.groups.push({ store, req, rcv: (S.stores[store] || {}).rcv || '', slip, remark: '', items: [] }); f.act = f.groups.length - 1;
 }
+function itemHits(q, have, n) {
+  q = String(q || '').trim().toUpperCase(); if (q.length < 1) return [];
+  const words = q.split(/\s+/);
+  return Object.entries(S.stock).filter(([c, v]) => !have.has(c) && words.every(w => c.includes(w) || String(v.name).toUpperCase().includes(w)))
+    .sort((a, b) => (a[0] === q ? -2 : 0) - (b[0] === q ? -2 : 0) || (String(a[1].name).toUpperCase().startsWith(q) ? 0 : 1) - (String(b[1].name).toUpperCase().startsWith(q) ? 0 : 1) || String(a[1].name).localeCompare(String(b[1].name))).slice(0, n || 6);
+}
+function batchHits(gi) {
+  const f = ui.form, g = f.groups[gi];
+  const hits = itemHits(f.q, new Set(g.items.map(x => x.code)), 6);
+  return String(f.q || '').trim() ? (hits.length ? hits.map(([c, v], k) => '<button class="hit' + (k === 0 ? ' first' : '') + '" data-a="btPick" data-v="' + esc(c) + '"><span><b>' + esc(v.name) + '</b><span class="mono">' + esc(c) + '</span></span><span class="note">' + num(v.qty) + ' ' + esc(v.uom) + '</span></button>').join('') : '<div class="note">No match in the stock sheet.</div>') : '';
+}
 function shBatch() {
   const f = ui.form, stores = allStores();
   let h = '<div class="row"><h2>Batch add requests</h2><button class="btn sm ghost" data-a="closeSheet">Close</button></div>';
-  h += '<div class="note">Add many stores at once. Request No, receiver and Slip fill themselves. You can also paste rows from Excel.</div>';
-  h += '<div class="grid2"><label class="f">Request date<input type="date" data-bt="date" value="' + esc(f.date) + '"></label><label class="f">First Slip No (optional)<input type="text" data-bt="slipStart" value="' + esc(f.slipStart || '') + '" class="mono" placeholder="e.g. JV/1042" autocapitalize="characters"></label></div>';
+  h += '<div class="grid2"><label class="f">Request date<input type="date" data-bt="date" value="' + esc(f.date) + '"></label><label class="f">First Slip No<input type="text" data-bt="slipStart" value="' + esc(f.slipStart || '') + '" class="mono" placeholder="optional, e.g. JV/1042" autocapitalize="characters"></label></div>';
   f.groups.forEach((g, gi) => {
     const act = f.act === gi;
-    h += '<div class="card bgroup' + (act ? ' act' : '') + '" style="overflow:hidden"><div class="pad col" style="gap:8px"><div class="row"><span class="reqno">' + esc(g.req) + '</span><span style="display:flex;gap:6px"><button class="btn sm ' + (act ? 'main' : 'ghost') + '" data-a="btAct" data-v="' + gi + '">' + (act ? 'Adding items' : 'Add items here') + '</button><button class="xbtn" data-a="btDel" data-v="' + gi + '" aria-label="Remove store">' + ico('x', 16) + '</button></span></div>' +
-      '<b class="ttl">' + esc(g.store) + '</b>' +
+    if (!act) { h += '<button class="card bmini" data-a="btAct" data-v="' + gi + '"><span class="reqno">' + esc(g.req) + '</span><b>' + esc(g.store) + '</b><span class="note">' + g.items.length + ' articles' + (g.items.some(x => !(parseFloat(x.qty) > 0)) ? ' · qty missing' : '') + '</span>' + ico('down', 18) + '</button>'; return; }
+    h += '<div class="card bgroup act" style="overflow:hidden"><div class="pad col" style="gap:10px"><div class="row"><span class="reqno">' + esc(g.req) + '</span><button class="xbtn" data-a="btDel" data-v="' + gi + '" aria-label="Remove store">' + ico('x', 16) + '</button></div><b class="ttl">' + esc(g.store) + '</b>' +
       '<div class="grid3"><label class="f">Request No<input type="text" data-bg="' + gi + '|req" value="' + esc(g.req) + '" class="mono"></label><label class="f">Receiver<input type="text" inputmode="numeric" maxlength="6" data-bg="' + gi + '|rcv" value="' + esc(g.rcv) + '" class="mono"></label><label class="f">Slip No<input type="text" data-bg="' + gi + '|slip" value="' + esc(g.slip) + '" class="mono" autocapitalize="characters"></label></div>' +
       '<label class="f">Custom remark (optional)<input type="text" data-bg="' + gi + '|remark" value="' + esc(g.remark) + '"></label></div>' +
-      (g.items.length ? g.items.map((it, ii) => '<div class="line" style="flex-direction:row;align-items:center;gap:10px"><span style="flex:1;min-width:0"><b>' + esc(it.name) + '</b><div class="meta"><span class="mono">' + esc(it.code) + '</span></div></span><input type="number" inputmode="decimal" data-bq="' + gi + '|' + ii + '" value="' + esc(it.qty) + '" placeholder="Qty" style="width:88px;text-align:right"><span class="note" style="width:32px">' + esc(it.uom) + '</span><button class="xbtn" data-a="btItemDel" data-v="' + gi + '|' + ii + '" aria-label="Remove">' + ico('x', 16) + '</button></div>').join('') : '<div class="line note">No articles yet.</div>') + '</div>';
+      g.items.map((it, ii) => '<div class="line" style="flex-direction:row;align-items:center;gap:10px"><span style="flex:1;min-width:0"><b>' + esc(it.name) + '</b><div class="meta"><span class="mono">' + esc(it.code) + '</span>' + (S.stock[it.code] ? '<i></i><span>stock ' + num(S.stock[it.code].qty) + '</span>' : '') + '</div></span><input type="number" inputmode="decimal" enterkeyhint="next" data-bq="' + gi + '|' + ii + '" value="' + esc(it.qty) + '" placeholder="Qty" style="width:88px;text-align:right"><button class="xbtn" data-a="btItemDel" data-v="' + gi + '|' + ii + '" aria-label="Remove">' + ico('x', 16) + '</button></div>').join('') +
+      '<div class="pad col" style="gap:8px;background:var(--soft)"><div class="sbox"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input type="search" data-bt="q" value="' + esc(f.q || '') + '" placeholder="Add item: type name or code" autocomplete="off" enterkeyhint="done"></div><div id="bthits">' + batchHits(gi) + '</div></div></div>';
   });
-  h += pickBtn('btStore', { title: 'Add a store', search: true, full: true, placeholder: '+ Add a store', opts: stores.map(st => [st, st, (S.stores[st] || {}).rcv ? 'Receiver GA' + S.stores[st].rcv : '']), val: '', set: v => { batchAddGroup(v); renderSheet(); } });
-  if (f.groups.length) {
-    const g = f.groups[f.act] || f.groups[0];
-    h += '<div class="card pad col" style="gap:8px;position:sticky;bottom:0;z-index:2"><label class="f">Find item for <b>' + esc(g.store) + '</b> (' + esc(g.req) + ')<input type="text" data-bt="q" value="' + esc(f.q || '') + '" placeholder="Type name or code" autocomplete="off"></label>';
-    const q = String(f.q || '').trim().toUpperCase();
-    if (q.length >= 2) { const have = new Set(g.items.map(x => x.code));
-      const hits = Object.entries(S.stock).filter(([c, v]) => !have.has(c) && (c.includes(q) || String(v.name).toUpperCase().includes(q))).sort((a, b) => (String(a[1].name).toUpperCase().startsWith(q) ? 0 : 1) - (String(b[1].name).toUpperCase().startsWith(q) ? 0 : 1) || String(a[1].name).localeCompare(String(b[1].name))).slice(0, 6);
-      h += hits.length ? hits.map(([c, v]) => '<button class="hit" data-a="btPick" data-v="' + esc(c) + '"><span><b>' + esc(v.name) + '</b><span class="mono">' + esc(c) + '</span></span><span class="note">' + num(v.qty) + ' ' + esc(v.uom) + '</span></button>').join('') : '<div class="note">No match in the stock sheet.</div>'; }
-    h += '</div>';
-  }
-  h += '<details class="card pad"><summary><b>Paste rows from Excel</b></summary><div class="note" style="margin:8px 0">One row per article: <b>Store, Item code, Qty</b> (tab or comma separated). Optional 4th column: Request No.</div><textarea data-bt="paste" rows="5" placeholder="LC MESS	GR-198	60">' + esc(f.paste || '') + '</textarea><button class="btn" data-a="btPaste" style="margin-top:8px">Add pasted rows</button></details>';
+  h += pickBtn('btStore', { title: 'Add a store', search: true, full: true, placeholder: '+ Add a store', opts: stores.map(st => [st, st, (S.stores[st] || {}).rcv ? 'Receiver GA' + S.stores[st].rcv : '']), val: '', set: v => { batchAddGroup(v); ui.form.q = ''; renderSheet(); const i = document.querySelector('[data-bt="q"]'); if (i) i.focus(); } });
+  h += '<details class="card pad"><summary><b>Paste rows from Excel</b></summary><div class="note" style="margin:8px 0">One row per article: <b>Store, Item code, Qty</b> (tab or comma). Optional 4th column: Request No.</div><textarea data-bt="paste" rows="5">' + esc(f.paste || '') + '</textarea><button class="btn" data-a="btPaste" style="margin-top:8px">Add pasted rows</button></details>';
   const rows = f.groups.flatMap(g => g.items.map(it => ({ g, it })));
-  if (rows.length) {
-    h += '<div class="sect">Preview · ' + rows.length + ' articles · ' + f.groups.length + ' requests</div><div class="card tblwrap"><table><tr><th>Request</th><th>Store</th><th>Item</th><th>Qty</th><th>Receiver</th><th>Slip</th></tr>' +
-      rows.map(({ g, it }) => '<tr><td><b>' + esc(g.req) + '</b></td><td>' + esc(g.store) + '</td><td>' + esc(it.name) + ' <span class="note mono">' + esc(it.code) + '</span></td><td' + (parseFloat(it.qty) > 0 ? '' : ' style="color:var(--noInk);font-weight:700"') + '>' + esc(it.qty || 'missing') + '</td><td>' + esc(g.rcv || '–') + '</td><td>' + esc(g.slip || '–') + '</td></tr>').join('') + '</table></div>';
-  }
+  if (rows.length) h += '<div class="sect">Preview · ' + rows.length + ' articles · ' + f.groups.length + ' requests</div><div class="card tblwrap"><table><tr><th>Request</th><th>Store</th><th>Item</th><th>Qty</th><th>Receiver</th><th>Slip</th></tr>' +
+    rows.map(({ g, it }) => '<tr><td><b>' + esc(g.req) + '</b></td><td>' + esc(g.store) + '</td><td>' + esc(it.name) + ' <span class="note mono">' + esc(it.code) + '</span></td><td' + (parseFloat(it.qty) > 0 ? '' : ' style="color:var(--noInk);font-weight:700"') + '>' + esc(it.qty || 'missing') + '</td><td>' + esc(g.rcv || '–') + '</td><td>' + esc(g.slip || '–') + '</td></tr>').join('') + '</table></div>';
   const bad = f.groups.find(g => !g.req || S.lines.some(l => l.req === g.req) || f.groups.filter(x => x.req === g.req).length > 1);
   if (bad) h += '<div class="err">Request No ' + esc(bad.req) + ' is empty or already used.</div>';
   const ok = rows.length && !bad && rows.every(({ it }) => parseFloat(it.qty) > 0);
   h += '<button class="btn main full" data-a="btSave"' + (ok ? '' : ' disabled') + '>Save all · ' + rows.length + ' articles</button>';
-  return h;
-}
-function corrRows(req) {
-  const L = S.lines.filter(l => l.req === req && l.status !== 'dropped');
-  const by = {}; L.forEach(l => { const o = by[l.code] = by[l.code] || { code: l.code, issued: 0, waiting: 0, slips: [] }; if (l.status === 'issued') { o.issued += l.qty; l.issued.forEach(x => o.slips.push(x.slip + (x.serial ? ' #' + x.serial : ''))); } else o.waiting += l.qty; });
-  return Object.values(by);
-}
-function shCorr() {
-  const f = ui.form;
-  let h = '<div class="row"><h2>Correction · ' + esc(f.req) + '</h2><button class="btn sm ghost" data-a="closeSheet">Close</button></div>';
-  h += '<div class="note">Type the <b>final</b> quantity from the paper. The app keeps what was already issued and makes the rest pending under the same Request No (it gets a new Slip and Serial when you fill it).</div>';
-  h += '<div class="card" style="overflow:hidden">' + f.rows.map((o, i) => { const F = parseFloat(o.final); const rem = isNaN(F) ? null : Math.round((F - o.issued) * 1000) / 1000;
-    return '<div class="line"><div class="row"><b>' + esc(itemName(o.code)) + '</b><span class="mono note">' + esc(o.code) + '</span></div>' +
-      '<div class="row" style="align-items:center">' + meta(['issued ' + num(o.issued), 'pending ' + num(o.waiting), o.slips.length ? esc(o.slips.join(', ')) : '']) + '<input type="number" inputmode="decimal" data-corr="' + i + '" value="' + esc(o.final) + '" style="width:110px;text-align:right"></div>' +
-      (rem === null || (rem === o.waiting) ? '' : rem > 0 ? '<div class="scrow"><span class="sc gd">' + num(rem) + ' ' + esc(itemUom(o.code)) + ' will be pending</span></div>' : rem === 0 ? '<div class="scrow"><span class="sc ok">Fully issued, nothing pending</span></div>' : '<div class="scrow"><span class="sc no">Issued ' + num(-rem) + ' more than final. Make a Return entry.</span></div>') + '</div>'; }).join('') + '</div>';
-  h += '<div class="card pad col" style="gap:8px"><b>Add an article to this request</b><div class="grid2"><input type="text" data-cadd="code" value="' + esc(f.addCode || '') + '" placeholder="Item code e.g. GR-198" class="mono" autocapitalize="characters"><input type="number" inputmode="decimal" data-cadd="qty" value="' + esc(f.addQty || '') + '" placeholder="Qty"></div><button class="btn" data-a="corrAdd">+ Add article</button></div>';
-  h += '<button class="btn main full" data-a="corrSave">Save correction</button>';
   return h;
 }
 function shCrop() {
@@ -1342,7 +1352,7 @@ function shBackups() {
   let h = '<div class="row"><h2>Cloud backups</h2><button class="btn sm ghost" data-a="closeSheet">Close</button></div>';
   h += '<div class="note">Every change is backed up automatically (a new copy every 30 minutes, newest 60 kept). Tap Keep on any copy to protect it forever.</div>';
   h += '<div class="card pad col"><b>Save a backup now</b><input type="text" data-bk="note" value="' + esc(s.note || '') + '" placeholder="Note, e.g. Before month-end cleanup"><button class="btn main" data-a="bkSave">Save backup (kept)</button></div>';
-  if (s.loading) return h + '<div class="card pad note">Loading backups…</div>';
+  if (s.loading) return h + skel(4);
   if (s.err) return h + '<div class="err">' + esc(s.err) + '</div>';
   const items = s.items || [];
   h += '<div class="row"><span class="sect">' + items.length + ' backups</span>' + (s.folder ? '<button class="btn sm ghost" data-a="openUrl" data-v="' + esc(s.folder) + '">Open Drive folder</button>' : '') + '</div>';
@@ -1471,6 +1481,13 @@ function sortBy(list, how, acc) { return list.sort((x, y) => cmpSort(how, acc(x)
 const PICKS = {};
 function pickBtn(id, cfg, label) { PICKS[id] = cfg; const cur = (cfg.opts.find(o => o[0] === cfg.val) || [])[1]; return '<button type="button" class="pickbtn' + (cfg.full ? ' full' : '') + '" data-a="pick" data-v="' + id + '"><span>' + esc(label ? label + (cur ? ': ' + cur : '') : cur || cfg.placeholder || 'Choose') + '</span>' + ico('down', 16) + '</button>'; }
 function sortPick(k) { return pickBtn('sort_' + k, { title: 'Sort by', opts: SORT_OPTS, val: getSort(k), set: v => { setSort(k, v); render(); } }, 'Sort'); }
+function loader(on, msg) {
+  let el = document.getElementById('loader'); if (!el) { el = document.createElement('div'); el.id = 'loader'; document.body.appendChild(el); }
+  if (!on) { el.className = ''; el.innerHTML = ''; return; }
+  el.className = 'show';
+  el.innerHTML = '<div class="ldbox"><div class="ldorb"><span class="o1"></span><span class="o2"></span><span class="o3"></span><img src="icon.png" alt=""></div><b>' + esc(msg || 'Working') + '</b><div class="ldbar"><i></i></div></div>';
+}
+const skel = n => Array.from({ length: n || 3 }, () => '<div class="card pad skel"><i style="width:34%"></i><i style="width:72%"></i><i style="width:55%"></i></div>').join('');
 function renderPicker() {
   let el = document.getElementById('picker'); if (!el) { el = document.createElement('div'); el.id = 'picker'; document.body.appendChild(el); }
   const p = ui.picker; if (!p) { el.innerHTML = ''; return; }
@@ -1545,6 +1562,17 @@ function blankItem() { return { code: '', name: '', uom: '', qty: '', remark: ''
 function fillItemMeta(it) { it.code = String(it.code || '').trim().toUpperCase(); if (S.stock[it.code]) { it.name = S.stock[it.code].name; it.uom = S.stock[it.code].uom; } else { const f = findItemAnywhere(it.code); if (f) { it.name = f.name; it.uom = f.uom; } } }
 function cleanItems(items) { return items.map(i => { fillItemMeta(i); return { code: i.code, name: i.name || '', uom: i.uom || '', qty: parseFloat(i.qty), remark: (i.remark || '').trim(), req: i.req || '', lineId: i.lineId }; }).filter(i => i.code && i.qty > 0); }
 
+document.addEventListener('keydown', ev => {
+  if (ev.key !== 'Enter') return;
+  const el = ev.target;
+  if (el.dataset && el.dataset.bt === 'q') { ev.preventDefault(); const f = document.querySelector('#bthits .hit'); if (f) f.click(); }
+  else if (el.dataset && el.dataset.bq) { ev.preventDefault(); const [gi, ii] = el.dataset.bq.split('|'); ui.form.groups[+gi].items[+ii].qty = el.value; renderSheet(); const i = document.querySelector('[data-bt="q"]'); if (i) { i.focus(); i.scrollIntoView({ block: 'center' }); } }
+  else if (el.dataset && el.dataset.nr === 'q') { ev.preventDefault(); const f = document.querySelector('[data-a=nrPick]'); if (f) f.click(); }
+});
+document.addEventListener('click', ev => {
+  const q = ev.target.closest && ev.target.closest('[data-req]');
+  if (q && q.dataset.req && q.dataset.req !== '–') { ui.lastReq = q.dataset.req; document.querySelectorAll('.rcard.sel,.selrow').forEach(x => x.classList.remove('sel', 'selrow')); document.querySelectorAll('[data-req="' + CSS.escape(ui.lastReq) + '"]').forEach(x => { const c = x.closest('.rcard,.card,.line'); if (c) c.classList.add(c.classList.contains('line') ? 'selrow' : 'sel'); }); }
+}, true);
 document.addEventListener('click', async ev => {
   const t = ev.target.closest('[data-a]'); if (!t) return;
   const a = t.dataset.a, v = t.dataset.v;
@@ -1620,8 +1648,8 @@ document.addEventListener('click', async ev => {
     case 'cropSave': { const c = ui.sheet; const out = document.createElement('canvas'); out.width = out.height = 320; const g = out.getContext('2d');
       const img = c.img; const V = 280; const base = Math.max(V / img.width, V / img.height) * c.zoom;
       const dw = img.width * base, dh = img.height * base; const dx = (V - dw) / 2 + c.x, dy = (V - dh) / 2 + c.y; const k = 320 / V;
-      g.fillStyle = '#fff'; g.fillRect(0, 0, 320, 320); g.drawImage(img, dx * k, dy * k, dw * k, dh * k);
-      S.me.photo = out.toDataURL('image/jpeg', 0.88); save(); ui.sheet = null; renderSheet(); render(); toast('Photo updated.'); break; }
+      const png = /^data:image\/(png|webp)/.test(c.src); if (!png) { g.fillStyle = '#fff'; g.fillRect(0, 0, 320, 320); } g.drawImage(img, dx * k, dy * k, dw * k, dh * k);
+      S.me.photo = png ? out.toDataURL('image/png') : out.toDataURL('image/jpeg', 0.88); S.me.photoCut = png; save(); ui.sheet = null; renderSheet(); render(); toast('Photo updated.'); break; }
     case 'photoDel': delete S.me.photo; save(); render(); break;
     case 'expPendXlsx': openExport('pending'); break;
     case 'closeSheet': ui.sheet = null; renderSheet(); break;
@@ -1635,6 +1663,7 @@ document.addEventListener('click', async ev => {
       f.items.forEach(it => S.lines.push({ id: nid(), req: f.req.trim(), store: st, date: f.date || today(), code: it.code, qty: parseFloat(it.qty), rcv: f.rcv || '', slip: (f.slip || '').trim().toUpperCase(), remark: (f.remark || '').trim(), src: 'new', earlier: '', status: 'waiting', issued: [] }));
       if (!S.stores[st]) S.stores[st] = { rcv: f.rcv || '', rname: '' };
       save(); ui.sheet = null; renderSheet(); render(); toast('Request ' + f.req + ' saved for ' + st + '.'); break; }
+    case 'doneOpenDay': { const f = fltGet('done'); f.id = v; f.rd = ''; ui.view = 'done'; render(); window.scrollTo(0, 0); break; }
     case 'doneOpen': ui.drawer = false; ui.view = 'done'; render(); window.scrollTo(0, 0); break;
     case 'doneExport': openExport('done'); break;
     case 'doneMode': ui.doneMode = v; render(); break;
@@ -1642,7 +1671,7 @@ document.addEventListener('click', async ev => {
     case 'btAct': ui.form.act = +v; ui.form.q = ''; renderSheet(); break;
     case 'btDel': ui.form.groups.splice(+v, 1); ui.form.act = Math.max(0, ui.form.groups.length - 1); renderSheet(); break;
     case 'btItemDel': { const [a1, b1] = v.split('|').map(Number); ui.form.groups[a1].items.splice(b1, 1); renderSheet(); break; }
-    case 'btPick': { const g = ui.form.groups[ui.form.act]; const st = S.stock[v]; g.items.push({ code: v, name: st.name, uom: st.uom, qty: '' }); ui.form.q = ''; renderSheet(); const el = document.querySelector('[data-bq="' + ui.form.act + '|' + (g.items.length - 1) + '"]'); if (el) el.focus(); break; }
+    case 'btPick': { const g = ui.form.groups[ui.form.act]; const st = S.stock[v]; g.items.push({ code: v, name: st.name, uom: st.uom, qty: '' }); ui.form.q = ''; renderSheet(); const el = document.querySelector('[data-bq="' + ui.form.act + '|' + (g.items.length - 1) + '"]'); if (el) { el.focus(); el.scrollIntoView({ block: 'center' }); } break; }
     case 'btPaste': { const f = ui.form; let n = 0, skip = 0;
       String(f.paste || '').split(/\r?\n/).forEach(line => { const c = line.split(/	|,/).map(x => x.trim()); if (c.length < 3 || !c[0] || !c[1]) return; const q = parseFloat(c[2]); if (!(q > 0)) { skip++; return; }
         const store = c[0].toUpperCase(), code = c[1].toUpperCase(); let g = f.groups.find(x => x.store === store && (!c[3] || x.req === c[3]));
@@ -1792,7 +1821,7 @@ document.addEventListener('click', async ev => {
 document.addEventListener('input', ev => {
   const el = ev.target;
   if (el.dataset.in === 'slip' || el.dataset.in === 'rcv') { const k = focusKey(el); ui.sheet[el.dataset.in] = el.dataset.in === 'slip' ? el.value.trim().toUpperCase() : el.value.replace(/\D/g, ''); renderSheet(); refocus(k); return; }
-  if (el.dataset.in === 'q') { const k = focusKey(el); ui.search.q = el.value; render(); refocus(k); return; }
+  if (el.dataset.in === 'q') { ui.search.q = el.value; clearTimeout(ui.sT); ui.sT = setTimeout(() => { const box = document.getElementById('sres'); if (box) box.innerHTML = sResults(searchRecords()); }, 120); return; }
   if (el.dataset.pkq) { ui.picker.q = el.value; const k = focusKey(el); renderPicker(); const i = document.querySelector('[data-pkq]'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } return; }
   if (el.dataset.bk) { ui.sheet[el.dataset.bk] = el.value; return; }
   if (el.dataset.cr) { const [w, k] = el.dataset.cr.split('|'); ui.cred = ui.cred || {}; ui.cred[w] = ui.cred[w] || {}; ui.cred[w][k] = el.value; return; }
@@ -1802,7 +1831,7 @@ document.addEventListener('input', ev => {
   if (el.dataset.nr) { const k = el.dataset.nr; ui.form[k] = k === 'rcv' ? el.value.replace(/\D/g, '') : el.value;
     if (k === 'store') { const d = (S.stores[el.value] || {}).rcv; if (d && !ui.form.rcv) ui.form.rcv = d; }
     if (k === 'q' || k === 'req' || k === 'slip') { const fk = focusKey(el); renderSheet(); refocus(fk); } return; }
-  if (el.dataset.bt) { const k = el.dataset.bt; ui.form[k] = el.value; if (k === 'q') { const fk = focusKey(el); renderSheet(); refocus(fk); } return; }
+  if (el.dataset.bt) { const k = el.dataset.bt; ui.form[k] = el.value; if (k === 'q') { const box = document.getElementById('bthits'); if (box) box.innerHTML = batchHits(ui.form.act); } return; }
   if (el.dataset.bg) { const [gi, k] = el.dataset.bg.split('|'); ui.form.groups[+gi][k] = k === 'rcv' ? el.value.replace(/\D/g, '') : k === 'slip' ? el.value.toUpperCase() : el.value; return; }
   if (el.dataset.bq) { const [gi, ii] = el.dataset.bq.split('|').map(Number); ui.form.groups[gi].items[ii].qty = el.value; return; }
   if (el.dataset.nrq != null) { ui.form.items[+el.dataset.nrq].qty = el.value; const b = document.querySelector('[data-a=nrSave]'); if (b) { const f = ui.form; b.disabled = !(f.store && f.req && f.items.length && f.items.every(x => parseFloat(x.qty) > 0)); } return; }
@@ -1831,18 +1860,19 @@ document.addEventListener('change', async ev => {
     fr.readAsDataURL(f); return;
   }
   if (el.id === 'fileIn') {
-    const f = el.files[0]; el.value = ''; if (!f || !ui.upload) return;
-    if (!window.XLSX) { ui.upload.error = 'Excel tools not loaded yet. Check internet and try again.'; renderSheet(); return; }
+    loader(true, 'Reading your file');
+    const f = el.files[0]; el.value = ''; if (!f || !ui.upload) { loader(false); return; }
+    if (!window.XLSX) { loader(false); ui.upload.error = 'Excel tools not loaded yet. Check internet and try again.'; renderSheet(); return; }
     try {
       const wb = await readWorkbook(f);
       const r = ui.upload.kind === 'stock' ? parseStock(wb) : parseRequests(wb, ui.upload.kind);
       if (r.error) ui.upload.error = r.error; else ui.upload.result = r;
     } catch (e) { ui.upload.error = 'Could not read this file. Use .xlsx or .csv.'; }
-    renderSheet(); return;
+    loader(false); renderSheet(); return;
   }
   if (el.dataset.sort) { ui.sort[el.dataset.sort] = el.value; render(); return; }
   if (el.dataset.rp) { later(() => renderSheet()); return; }
-  if (el.dataset.bq || el.dataset.bg || el.dataset.corr != null) { later(() => renderSheet()); return; }
+  if (el.dataset.bq || el.dataset.bg || el.dataset.corr != null) { later(() => { const k = focusKey(document.activeElement); renderSheet(); refocus(k); }); return; }
   if (el.dataset.cnt != null || el.dataset.var || el.dataset.expdays) { later(() => render()); return; }
   if (el.dataset.flt) { const [k, key] = el.dataset.flt.split('|'); const f = fltGet(k); f[key] = el.value; if ((k === 'done' || k === 'reg') && !f.rd && !f.id) f.id = today(); if (k === 'reg' && key === 'id' && el.value) ui.reg.date = el.value; render(); return; }
   if (el.dataset.in === 'sRd') { ui.search.rd = el.value; render(); return; }
@@ -1873,5 +1903,6 @@ function doImport() {
 
 /* ---------------- start ---------------- */
 render();
+setTimeout(() => { const b = document.getElementById('boot'); if (b) { b.style.transition = 'opacity .35s'; b.style.opacity = '0'; setTimeout(() => b.remove(), 400); } }, 650);
 if (S.sync.url && S.sync.auto && (S.sync.dirty || !S.sync.at)) setTimeout(() => syncNow(true), 5000);
 if (Date.now() - (S.lastUpdateCheck || 0) > 12 * 3600e3) setTimeout(() => checkUpdate(false), 3000);
