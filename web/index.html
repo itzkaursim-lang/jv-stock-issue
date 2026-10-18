@@ -419,6 +419,14 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
 .dlgmsg{font-size:17px;font-weight:600;line-height:1.4}
 .btn.danger{background:#E11D48;border-color:#E11D48}
 .rcard.sel:before{border-radius:26px}
+.okbox{display:flex;gap:10px;align-items:center;padding:14px 16px;border-radius:20px;background:#D6F5E5;color:#0B5E3D;font-weight:600}
+.ireason{border-top:1px solid #F0EEF5}
+.ireason summary{display:flex;align-items:center;gap:10px;padding:13px 18px;font-weight:600;font-size:15px}
+.ireason summary b{font-size:15px}.ireason summary svg{color:var(--mute);transition:transform .2s}
+.ireason[open] summary svg{transform:rotate(180deg)}
+.ireason .tblwrap{padding:0 12px 12px}
+.ireason table{font-size:13.5px}
+.dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}.dot.no{background:#E11D48}.dot.gd{background:#F59E0B}
 </style>
 </head>
 <body>
@@ -429,6 +437,6 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <input type="file" id="fileIn" accept=".xlsx,.xls,.csv" class="hidden">
 <input type="file" id="photoIn" accept="image/*" class="hidden">
-<script src="app.js?v=4.2.0"></script>
+<script src="app.js?v=4.2.1"></script>
 </body>
 </html>

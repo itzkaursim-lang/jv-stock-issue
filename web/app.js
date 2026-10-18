@@ -209,32 +209,35 @@ function parseReqSheet(ws, kind, sheetName) {
   const slipI = hm.hd.findIndex((c, k) => k !== reqI && /slip/.test(c) && !/earlier/.test(c));
   const ci = { req: reqI, slip: slipI, store: col(/store|mess|project|area/), date: col(/date/), code: col(/item code|^code|code/), qty: col(/qty|quant/), rcv: col(/receiver/), earlier: col(/earlier/) };
   const have = new Set(S.lines.map(l => l.req.toUpperCase() + '|' + l.code));
-  const out = [], dup = [], warn = new Set(), badQty = [];
+  const out = [], dup = [], warn = new Set(), badQty = [], skipped = [], notes = [];
   let ex = 0, data = 0;
+  const skip = (i, r, why) => skipped.push({ row: i + 1, req: String(r[ci.req] == null ? '' : r[ci.req]).trim(), store: String(r[ci.store] == null ? '' : r[ci.store]).trim(), code: String(r[ci.code] == null ? '' : r[ci.code]).trim().toUpperCase(), qty: String(r[ci.qty] == null ? '' : r[ci.qty]).trim(), why });
   for (let i = hm.h + 1; i < rows.length; i++) {
     const r = rows[i];
     const req = String(r[ci.req]).trim(), code = String(r[ci.code]).trim().toUpperCase(), qty = parseFloat(String(r[ci.qty]).replace(/[^\d.]/g, ''));
     if (!req && !code) continue;
     data++;
-    if (/^EX[-\/]/i.test(req)) { ex++; continue; }
-    if (!req || !code) { warn.add('Row ' + (i + 1) + ': missing Request No or Item code'); continue; }
-    if (!(qty > 0)) { badQty.push(i + 1); continue; }
+    if (/^EX[-\/]/i.test(req)) { ex++; skip(i, r, 'Example row (EX-…) from the template'); continue; }
+    if (!req || !code) { skip(i, r, !req ? 'Request No is empty' : 'Item code is empty'); continue; }
+    if (!(qty > 0)) { skip(i, r, String(r[ci.qty]).trim() === '' ? 'Qty is empty' : 'Qty is not a number above 0'); continue; }
     const key = req.toUpperCase() + '|' + code;
-    if (have.has(key)) { dup.push(req + ' ' + code); continue; }
+    if (have.has(key)) { const already = S.lines.some(l => l.req.toUpperCase() + '|' + l.code === key); skip(i, r, already ? 'Already in the app (same Request No + item)' : 'Same Request No + item appears twice in this file'); dup.push(req + ' ' + code); continue; }
     have.add(key);
     const store = String(r[ci.store]).trim().toUpperCase();
-    if (!store) { warn.add('Row ' + (i + 1) + ': store is empty'); continue; }
+    if (!store) { skip(i, r, 'Store is empty'); continue; }
     const date = (ci.date >= 0 && toISO(r[ci.date])) || today();
     const rcv = ci.rcv >= 0 ? String(r[ci.rcv]).replace(/\D/g, '') : '';
-    if (rcv && rcv.length !== 6) warn.add('Row ' + (i + 1) + ': receiver must be 6 digits, ignored');
-    if (Object.keys(S.stock).length && !S.stock[code]) warn.add(code + ' is not in the current stock sheet');
+    const nb = [];
+    if (rcv && rcv.length !== 6) nb.push('Receiver "' + r[ci.rcv] + '" is not 6 digits, so the store default is used');
+    if (Object.keys(S.stock).length && !S.stock[code]) nb.push('Item code is not in the current stock sheet');
     const slip = ci.slip >= 0 ? String(r[ci.slip]).trim().toUpperCase() : '';
-    if (slip && !SLIP_RE.test(slip)) warn.add('Row ' + (i + 1) + ': Slip No ' + slip + ' is not valid (2–10 chars with a digit), ignored');
+    if (slip && !SLIP_RE.test(slip)) nb.push('Slip No ' + slip + ' is not valid, so it is left empty');
+    if (ci.date >= 0 && String(r[ci.date]).trim() && !toISO(r[ci.date])) nb.push('Date "' + r[ci.date] + '" not understood, so today is used');
+    nb.forEach(w => notes.push({ row: i + 1, req, store, code, qty: String(qty), why: w }));
     out.push({ req, store, date, code, qty, rcv: rcv.length === 6 ? rcv : '', slip: slip && SLIP_RE.test(slip) ? slip : '', src: kind, earlier: ci.earlier >= 0 ? String(r[ci.earlier]).trim() : '' });
   }
-  if (badQty.length) warn.add('Rows with a bad Qty were skipped: ' + badQty.slice(0, 8).join(', ') + (badQty.length > 8 ? '…' : ''));
   const info = 'Read sheet "' + sheetName + '", headers on row ' + (hm.h + 1) + ', ' + data + ' filled rows' + (ex ? ', ' + ex + ' example rows (EX-…) skipped' : '') + '.';
-  return { rows: out, dup, warn: [...warn], info };
+  return { rows: out, dup, warn: [...warn], info, skipped, notes };
 }
 function parseStock(wb) {
   const rows = rowsOf(wb.Sheets[wb.SheetNames[0]]);
@@ -242,13 +245,13 @@ function parseStock(wb) {
   if (!hm) return { error: 'This is not the CUIMS Item Stock Statement (no "Item Code" and "Closing" columns).' };
   const f = re => hm.hd.findIndex(c => re.test(c));
   const ci = { code: f(/item code|^code$/), name: f(/name/), uom: f(/uom|unit/), qty: f(/closing/) >= 0 ? f(/closing/) : f(/stock|qty|quantity/) };
-  const st = {};
+  const st = {}, skippedS = [];
   for (let i = hm.h + 1; i < rows.length; i++) {
     const r = rows[i]; const code = String(r[ci.code]).trim().toUpperCase(); const q = parseFloat(r[ci.qty]);
-    if (!code.includes('-') || isNaN(q)) continue;
+    if (!code.includes('-') || isNaN(q)) { if (code && code !== 'ITEM CODE' && !/total/i.test(code)) skippedS.push({ row: i + 1, code, qty: String(r[ci.qty] == null ? '' : r[ci.qty]), why: !code.includes('-') ? 'Not an item code' : 'Closing stock is not a number' }); continue; }
     st[code] = { name: ci.name >= 0 ? String(r[ci.name]).trim() : code, uom: ci.uom >= 0 ? String(r[ci.uom]).trim().toUpperCase().replace(/^KGS$/, 'KG').replace(/^LT$/, 'LTR') : '', qty: q };
   }
-  return { stock: st, count: Object.keys(st).length };
+  return { stock: st, count: Object.keys(st).length, skipped: skippedS, notes: [] };
 }
 
 /* ================= UI state ================= */
@@ -483,6 +486,24 @@ function queueBox() {
 }
 
 /* ---------------- Upload sheet ---------------- */
+function importReport(r, kind) {
+  const sk = r.skipped || [], nt = r.notes || [];
+  if (!sk.length && !nt.length) return '<div class="okbox">' + ico('right', 16).replace('M9 6l6 6-6 6', 'M5 12.5l4.5 4.5L19 7.5') + '<span>Nothing will be skipped. Every row is clean.</span></div>';
+  const group = list => { const g = {}; list.forEach(x => (g[x.why] = g[x.why] || []).push(x)); return Object.entries(g).sort((a, b) => b[1].length - a[1].length); };
+  const table = (list, stock) => '<div class="tblwrap"><table><tr><th>Row</th>' + (stock ? '' : '<th>Request</th><th>Store</th>') + '<th>Item</th><th>Qty</th></tr>' + list.map(x => '<tr><td>' + x.row + '</td>' + (stock ? '' : '<td><b>' + esc(x.req || '–') + '</b></td><td>' + esc(x.store || '–') + '</td>') + '<td class="mono">' + esc(x.code || '–') + (S.stock[x.code] ? '<div class="note">' + esc(S.stock[x.code].name) + '</div>' : '') + '</td><td>' + esc(x.qty || '–') + '</td></tr>').join('') + '</table></div>';
+  let h = '';
+  if (sk.length) {
+    h += '<div class="card" style="overflow:hidden"><div class="pad row"><b class="ttl" style="font-size:17px">Will be skipped</b>' + pill(sk.length + ' row' + (sk.length > 1 ? 's' : ''), 'c-no') + '</div>';
+    group(sk).forEach(([why, list], k) => { h += '<details class="ireason"' + (k === 0 ? ' open' : '') + '><summary><span class="dot no"></span><span style="flex:1">' + esc(why) + '</span><b>' + list.length + '</b>' + ico('down', 16) + '</summary>' + table(list, kind === 'stock') + '</details>'; });
+    h += '</div>';
+  }
+  if (nt.length) {
+    h += '<div class="card" style="overflow:hidden"><div class="pad row"><b class="ttl" style="font-size:17px">Imported with a note</b>' + pill(nt.length, 'c-gd') + '</div>';
+    group(nt).forEach(([why, list]) => { h += '<details class="ireason"><summary><span class="dot gd"></span><span style="flex:1">' + esc(why) + '</span><b>' + list.length + '</b>' + ico('down', 16) + '</summary>' + table(list, false) + '</details>'; });
+    h += '</div>';
+  }
+  return h;
+}
 function shUpload() {
   const u = ui.upload;
   let h = '<div class="row"><h2>Upload</h2><button class="btn sm ghost" data-a="closeSheet">Close</button></div>';
@@ -496,17 +517,19 @@ function shUpload() {
   }
   const r = u.result;
   if (u.kind === 'stock') {
-    h += '<div class="card pad col"><b>' + r.count + ' items found</b><div class="note">This replaces the current stock (' + Object.keys(S.stock).length + ' items). Everything is re-planned.</div></div>';
+    h += '<div class="card pad col"><b>' + r.count + ' items will be imported</b><div class="note">This replaces the current stock (' + Object.keys(S.stock).length + ' items). Everything is re-planned.</div></div>';
   } else {
     const stores = [...new Set(r.rows.map(x => x.store))];
     const reqs = [...new Set(r.rows.map(x => x.req))];
-    h += '<div class="card pad col"><b>' + r.rows.length + ' articles · ' + reqs.length + ' requests · ' + stores.length + ' stores</b><div class="note">' + esc(stores.join(', ')) + '</div>' +
-      (r.dup.length ? '<div class="note">Skipped ' + r.dup.length + ' already loaded (same Request No + code).</div>' : '') + (r.info ? '<div class="note">' + esc(r.info) + '</div>' : '') + '</div>';
+    h += '<div class="card pad col"><b>' + r.rows.length + ' articles will be imported · ' + reqs.length + ' requests · ' + stores.length + ' stores</b><div class="note">' + esc(stores.join(', ')) + '</div>' +
+      (r.info ? '<div class="note">' + esc(r.info) + '</div>' : '') + '</div>';
     const unknownStores = S.areas.length ? stores.filter(s => !S.areas.some(a => a.toUpperCase() === s)) : [];
     if (unknownStores.length) r.warn.unshift('Not in the CUIMS Project Area list: ' + unknownStores.join(', '));
-    if (r.warn.length) h += '<div class="card pad col" style="gap:4px">' + r.warn.slice(0, 12).map(w => '<div class="err" style="font-weight:500">' + esc(w) + '</div>').join('') + (r.warn.length > 12 ? '<div class="note">…and ' + (r.warn.length - 12) + ' more</div>' : '') + '</div>';
+    if (r.warn.length) h += '<div class="card pad col" style="gap:4px">' + r.warn.map(w => '<div class="err" style="font-weight:500">' + esc(w) + '</div>').join('') + '</div>';
   }
-  h += '<div class="grid2"><button class="btn" data-a="uploadCancel">Back</button><button class="btn main" data-a="uploadOk"' + ((r.rows && !r.rows.length) ? ' disabled' : '') + '>Import</button></div>';
+  h += importReport(r, u.kind);
+  const nImp = u.kind === 'stock' ? r.count : r.rows.length, nSk = (r.skipped || []).length;
+  h += '<div class="grid2"><button class="btn" data-a="uploadCancel">Back</button><button class="btn main" data-a="uploadOk"' + (!nImp ? ' disabled' : '') + '>Import ' + nImp + (nSk ? ', skip ' + nSk : '') + '</button></div>';
   return h;
 }
 
