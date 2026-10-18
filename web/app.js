@@ -413,6 +413,7 @@ function vPend() {
   let h = '<header class="top"><div><h1>Pending</h1><div class="sub">Each request on its own card. Tap one to see every article and why it waits.</div></div></header><main>';
   h += '<div class="grid3"><div class="tile t-pt"><b>' + all.length + '</b><span>Articles pending</span></div><div class="tile t-ok"><b>' + can.length + '</b><span>Ready now</span></div><div class="tile t-no"><b>' + oldest + ' d</b><span>Oldest</span></div></div>';
   h += fltBar('pend', false);
+  h += '<button class="btn main full" data-a="artsOpen">Manage pending articles</button>';
   h += '<div class="grid2"><button class="btn sm" data-a="expPendPdf"' + (all.length ? '' : ' disabled') + '>Pending PDF</button><button class="btn sm" data-a="bulkEdit">Edit all requests</button></div>';
   if (!R.length) return h + '<div class="card pad note">Nothing pending' + (f.rd || f.id ? ' for these dates' : '') + '.</div></main>';
   sortBy(R, getSort('pend'), r => ({ req: r.req, store: r.store, date: r.date, ready: r.pl.filter(l => PL[l.id] === 'issue').length, size: r.pl.length }));
@@ -1147,6 +1148,7 @@ function renderDrawer() {
     item('doneOpen', 'Done list', 'Slips, serials and articles still left', '<path d="M4 12l5 5L20 6"/>') +
     item('newReq', 'Add store request', 'Type a request directly in the app', '<path d="M12 5v14M5 12h14"/>') +
     item('batchReq', 'Batch add requests', 'Many stores at once, or paste from Excel', '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/>') +
+    item('artsOpen', 'Pending articles', 'Edit qty, hold or remove, one or many', '<path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6l1 1 2-2M3 12l1 1 2-2M3 18l1 1 2-2"/>') +
     item('dcOpen', 'Data check', 'Find clashes and errors, fix on the spot', '<path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/><path d="M9 12l2 2 4-4"/>') +
     item('testToggle', S.testMode ? 'Leave Test mode' : 'Test mode', S.testMode ? 'Back to your real data' : 'Try things without touching real data', '<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3"/>') +
     item('countLog', 'Count history', 'All past counts and differences', '<path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 5-6"/>') +
@@ -1487,7 +1489,7 @@ window.jvBack = () => {
 function render() {
   const app = document.getElementById('app');
   const y = window.scrollY;
-  app.innerHTML = appBar() + (S.testMode ? '<div class="testbar"><span><b>TEST MODE</b> · your real data is safe and hidden. Cloud backup is paused. Entries submitted on CUIMS are still real.</span><button class="btn sm" data-a="testToggle">Exit</button></div>' : '') + (ui.view === 'check' ? vCheck() : ui.view === 'done' ? vDone() : ui.view === 'expiry' ? vExpiry() : ui.view === 'count' ? vCount() : ui.view === 'countLog' ? vCountLog() : ui.view === 'taskLog' ? vTaskLog() : ui.view === 'req' ? vReq() : ({ home: vHome, pend: vPend, reg: vReg, find: vFind, set: vSet })[ui.tab]());
+  app.innerHTML = appBar() + (S.testMode ? '<div class="testbar"><span><b>TEST MODE</b> · your real data is safe and hidden. Cloud backup is paused. Entries submitted on CUIMS are still real.</span><button class="btn sm" data-a="testToggle">Exit</button></div>' : '') + (ui.view === 'arts' ? vArts() : ui.view === 'check' ? vCheck() : ui.view === 'done' ? vDone() : ui.view === 'expiry' ? vExpiry() : ui.view === 'count' ? vCount() : ui.view === 'countLog' ? vCountLog() : ui.view === 'taskLog' ? vTaskLog() : ui.view === 'req' ? vReq() : ({ home: vHome, pend: vPend, reg: vReg, find: vFind, set: vSet })[ui.tab]());
   document.querySelector('#tabs .in').innerHTML = TABS.map(([k, l]) => '<button data-a="tab" data-v="' + k + '" class="' + (ui.tab === k && !ui.view ? 'on' : '') + '" aria-label="' + l + '"><span class="nic">' + ICON[k] + '</span><span class="nl">' + l + '</span></button>').join('');
   renderDrawer();
   paintSync();
@@ -1579,6 +1581,44 @@ function dataIssues() {
   const miss = S.lines.filter(l => l.status === 'waiting' && Object.keys(S.stock).length && !S.stock[l.code]);
   if (miss.length) out.push({ kind: 'nostock', n: miss.length, codes: [...new Set(miss.map(l => l.code))] });
   return out;
+}
+function audit(action, l, extra) { S.audit = S.audit || []; S.audit.push(Object.assign({ at: new Date().toISOString(), by: S.me.name || '', action, req: l.req, store: l.store, code: l.code, qty: l.qty }, extra || {})); if (S.audit.length > 3000) S.audit = S.audit.slice(-3000); }
+function artsList() {
+  const A = ui.arts, PL = plan(), q = String(A.q || '').trim().toUpperCase();
+  let L = S.lines.filter(l => l.status === 'waiting').map(l => ({ l, k: S.hold[l.id] ? 'hold' : PL[l.id] }));
+  if (A.store) L = L.filter(x => x.l.store === A.store);
+  if (A.st !== 'all') L = L.filter(x => A.st === 'ready' ? x.k === 'issue' : A.st === 'wait' ? (x.k === 'short' || x.k === 'missing') : x.k === A.st);
+  if (q) L = L.filter(x => (x.l.code + ' ' + itemName(x.l.code) + ' ' + x.l.store + ' ' + x.l.req).toUpperCase().includes(q));
+  return sortBy(L, getSort('arts'), x => ({ req: x.l.req, store: x.l.store, date: x.l.date, ready: x.k === 'issue' ? 1 : 0, size: x.l.qty }));
+}
+function artsResults() {
+  const A = ui.arts, L = artsList(), selN = Object.keys(A.sel).length;
+  const allSel = L.length && L.every(x => A.sel[x.l.id]);
+  let h = '<div class="row" style="align-items:center"><label class="chk" style="min-height:40px"><input type="checkbox" data-a="artsAll"' + (allSel ? ' checked' : '') + '> Select all ' + L.length + '</label><span class="note">' + L.reduce((n, x) => n + 1, 0) + ' articles</span></div>';
+  if (!L.length) return h + '<div class="card pad note">No pending articles match.</div>';
+  h += '<div class="card" style="overflow:hidden">' + L.slice(0, 300).map(({ l, k }) => {
+    const st = k === 'issue' ? pill('Ready', 'c-ok') : k === 'short' ? pill('Short', 'c-no') : k === 'missing' ? pill('Not in stock', 'c-no') : pill('On hold', 'c-gd');
+    const d0 = days(l.date);
+    return '<div class="art' + (A.sel[l.id] ? ' on' : '') + '"><input type="checkbox" data-a="artsSel" data-v="' + l.id + '"' + (A.sel[l.id] ? ' checked' : '') + ' aria-label="Select">' +
+      '<div class="ab"><div class="row"><b class="an">' + esc(itemName(l.code)) + '</b>' + st + '</div>' +
+      '<div class="meta"><span class="mono">' + esc(l.code) + '</span><i></i><span>' + esc(l.store) + '</span><i></i><span class="reqno sm" data-req="' + esc(l.req) + '">' + esc(l.req) + '</span><i></i><span>' + fmtShort(l.date) + (d0 ? ' · ' + d0 + ' d' : '') + '</span></div>' +
+      '<div class="aa"><button class="aq" data-a="artQty" data-v="' + l.id + '" aria-label="Edit quantity">' + num(l.qty) + ' <small>' + esc(itemUom(l.code)) + '</small><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg></button>' +
+      '<button class="btn sm ghost" data-a="artHold" data-v="' + l.id + '">' + (S.hold[l.id] ? 'Release' : 'Keep on hold') + '</button><button class="btn sm ghost danger-t" data-a="artDel" data-v="' + l.id + '">Remove</button></div></div></div>';
+  }).join('') + '</div>' + (L.length > 300 ? '<div class="note">Showing 300. Narrow with search or filters.</div>' : '');
+  return h;
+}
+function vArts() {
+  ui.arts = ui.arts || { q: '', store: '', st: 'all', sel: {} };
+  const A = ui.arts, stores = [...new Set(S.lines.filter(l => l.status === 'waiting').map(l => l.store))].sort(byStore);
+  const selN = Object.keys(A.sel).length;
+  let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Pending articles</h1><div class="sub">Every article still waiting, with its store and quantity. Edit, hold or remove one by one, or select many.</div></div></header><main>';
+  h += '<div class="sbox"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input type="search" data-arts="q" value="' + esc(A.q) + '" placeholder="Item, code, store or Request No" autocomplete="off"></div>';
+  h += '<div class="seg">' + [['all', 'All'], ['ready', 'Ready'], ['wait', 'Short'], ['hold', 'On hold']].map(([k, l]) => '<button data-a="artsSt" data-v="' + k + '" class="' + (A.st === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>';
+  h += '<div class="grid2">' + pickBtn('artsStore', { title: 'Store', search: true, full: true, opts: [['', 'All stores']].concat(stores.map(x => [x, x])), val: A.store, set: v => { A.store = v; render(); } }) + sortPick('arts') + '</div>';
+  h += '<div id="artsres">' + artsResults() + '</div>';
+  h += '</main>';
+  if (selN) h += '<div class="selbar"><b>' + selN + ' selected</b><button class="btn sm" data-a="artsBHold">Hold</button><button class="btn sm" data-a="artsBRel">Release</button><button class="btn sm danger" data-a="artsBDel">Remove</button><button class="xbtn" data-a="artsBClear" aria-label="Clear selection">' + ico('x', 16) + '</button></div>';
+  return h;
 }
 function vCheck() {
   const I = dataIssues();
@@ -1696,7 +1736,7 @@ function shEditReq() {
 }
 
 /* ---------------- lock ---------------- */
-const GUARDED = new Set(['testToggle', 'testClear', 'dcRenum', 'dcMerge', 'dcKeepFirst', 'dcDate', 'dcBad', 'renumReq', 'impRenum', 'impDrop', 'credSave', 'credDel', 'corrOpen', 'corrSave', 'bulkEdit', 'bulkSave', 'dropReq', 'dropStore', 'editReq', 'saveReq', 'markDone', 'markSave', 'newManual', 'saveEntry', 'delEntry', 'newReturn', 'saveReturn', 'delReturn',
+const GUARDED = new Set(['artQty', 'artHold', 'artDel', 'artsBHold', 'artsBRel', 'artsBDel', 'testToggle', 'testClear', 'dcRenum', 'dcMerge', 'dcKeepFirst', 'dcDate', 'dcBad', 'renumReq', 'impRenum', 'impDrop', 'credSave', 'credDel', 'corrOpen', 'corrSave', 'bulkEdit', 'bulkSave', 'dropReq', 'dropStore', 'editReq', 'saveReq', 'markDone', 'markSave', 'newManual', 'saveEntry', 'delEntry', 'newReturn', 'saveReturn', 'delReturn',
   'rmStore', 'addStore', 'wipe', 'restore', 'bkRestore', 'bkDel', 'bkKeep', 'bkSave', 'bkNoteSave', 'photo', 'photoDel', 'mode', 'lockToggle', 'syncAuto', 'mgrToggle', 'moveStore', 'saveUrls', 'resetZoom', 'hold', 'cropSave']);
 let pendingAuth = null;
 function askUnlock(after) {
@@ -1731,7 +1771,7 @@ document.addEventListener('click', async ev => {
   if (a === 'lockTap') { if (ui.locked) askUnlock(); else { ui.locked = true; render(); renderSheet(); toast('Locked.'); } return; }
   if (ui.locked && GUARDED.has(a)) { ev.preventDefault(); if (t.type === 'checkbox') t.checked = !t.checked; const sel = '[data-a="' + a + '"]' + (v != null ? '[data-v="' + CSS.escape(v) + '"]' : ''); askUnlock(() => { const el = document.querySelector(sel); if (el) el.click(); }); return; }
   if (a === 'bgClose') { if (ev.target === t) { ui.sheet = null; renderSheet(); } return; }
-  if (t.type === 'checkbox' && !['hold', 'queueToggle', 'regItems', 'mgrToggle', 'syncAuto', 'lockToggle', 'markPick', 'stOn', 'rpTog', 'rpCol', 'autoSubToggle', 'queuePend', 'credAuto'].includes(a)) return;
+  if (t.type === 'checkbox' && !['hold', 'queueToggle', 'regItems', 'mgrToggle', 'syncAuto', 'lockToggle', 'markPick', 'stOn', 'rpTog', 'rpCol', 'autoSubToggle', 'queuePend', 'credAuto', 'artsSel', 'artsAll'].includes(a)) return;
   switch (a) {
     case 'tab': ui.tab = v; ui.view = null; if (v === 'set') ui.setPage = null; render(); window.scrollTo(0, 0); break;
     case 'openSite': if (N) N.openSite(); else toast('Open this inside the app.'); break;
@@ -1845,6 +1885,27 @@ document.addEventListener('click', async ev => {
     case 'dcDate': S.lines.forEach(l => { if (l.req === v) l.date = t.dataset.d; }); save(); render(); break;
     case 'dcBad': { const ids = v.split(',').map(Number); S.lines.forEach(l => { if (ids.includes(l.id)) l.status = 'dropped'; }); save(); render(); break; }
     case 'dcSlip': ui.view = null; ui.tab = 'find'; ui.search.q = v; ui.search.type = 'all'; render(); break;
+    case 'artsOpen': ui.drawer = false; ui.view = 'arts'; render(); window.scrollTo(0, 0); break;
+    case 'artsSt': ui.arts.st = v; render(); break;
+    case 'artsSel': if (t.checked) ui.arts.sel[v] = 1; else delete ui.arts.sel[v]; render(); break;
+    case 'artsAll': { const L = artsList(); if (t.checked) L.forEach(x => ui.arts.sel[x.l.id] = 1); else L.forEach(x => delete ui.arts.sel[x.l.id]); render(); break; }
+    case 'artsBClear': ui.arts.sel = {}; render(); break;
+    case 'artQty': { const l = S.lines.find(x => String(x.id) === v); if (!l) break; const nv = await uiPrompt('New quantity for ' + itemName(l.code) + ' (' + l.store + ', ' + l.req + '). Now ' + num(l.qty) + ' ' + itemUom(l.code) + '.', String(l.qty), 'Save');
+      if (nv == null) break; const q = parseFloat(nv); if (!(q > 0)) { toast('Enter a quantity above 0.'); break; }
+      if (!(await uiConfirm('Change ' + itemName(l.code) + ' from ' + num(l.qty) + ' to ' + num(q) + ' ' + itemUom(l.code) + '?', 'Change'))) break;
+      audit('qty', l, { from: l.qty, to: q }); l.qty = q; save(); render(); toast('Quantity updated.'); break; }
+    case 'artHold': { const l = S.lines.find(x => String(x.id) === v); if (!l) break; const on = !S.hold[l.id];
+      if (!(await uiConfirm((on ? 'Keep ' : 'Release ') + itemName(l.code) + ' (' + l.store + ') ' + (on ? 'on hold? It stays pending but is not filled until you release it.' : 'from hold?'), on ? 'Keep on hold' : 'Release'))) break;
+      if (on) S.hold[l.id] = true; else delete S.hold[l.id]; audit(on ? 'hold' : 'release', l); save(); render(); break; }
+    case 'artDel': { const l = S.lines.find(x => String(x.id) === v); if (!l) break;
+      if (!(await uiConfirm('Remove ' + itemName(l.code) + ' ' + num(l.qty) + ' ' + itemUom(l.code) + ' (' + l.store + ', ' + l.req + ') from pending?', 'Remove', true))) break;
+      audit('remove', l); l.status = 'dropped'; delete ui.arts.sel[l.id]; save(); render(); toast('Removed.'); break; }
+    case 'artsBHold': case 'artsBRel': case 'artsBDel': { const ids = Object.keys(ui.arts.sel); const L = S.lines.filter(l => ids.includes(String(l.id)) && l.status === 'waiting'); if (!L.length) break;
+      const stores = [...new Set(L.map(l => l.store))];
+      const what = a === 'artsBDel' ? 'Remove' : a === 'artsBHold' ? 'Keep on hold' : 'Release';
+      if (!(await uiConfirm(what + ' ' + L.length + ' article' + (L.length > 1 ? 's' : '') + ' from ' + stores.length + ' store' + (stores.length > 1 ? 's' : '') + ' (' + stores.slice(0, 4).join(', ') + (stores.length > 4 ? '…' : '') + ')?', what, a === 'artsBDel'))) break;
+      L.forEach(l => { if (a === 'artsBDel') { audit('remove', l); l.status = 'dropped'; } else if (a === 'artsBHold') { S.hold[l.id] = true; audit('hold', l); } else { delete S.hold[l.id]; audit('release', l); } });
+      ui.arts.sel = {}; save(); render(); toast(what + ': ' + L.length + ' done.'); break; }
     case 'renumReq': { const to = await uiPrompt('New Request No for ' + v, v, 'Renumber'); if (to && renumberReq(v, to)) { save(); render(); toast('Renumbered to ' + to + '.'); } break; }
     case 'impRenum': { const to = await uiPrompt('Give the app\'s request ' + v + ' a new Request No. Your file\'s ' + v + ' will then import normally.', v + '-T', 'Renumber'); if (to && renumberReq(v, to)) { save(); reparseUpload(); toast(v + ' in the app is now ' + to + '.'); } break; }
     case 'impDrop': { if (!(await uiConfirm('Remove the waiting articles of the app\'s request ' + v + '? Issued records stay. Your file\'s ' + v + ' will then import.', 'Remove', true))) break; S.lines.forEach(l => { if (l.req === v && l.status === 'waiting') l.status = 'dropped'; }); S.lines = S.lines.filter(l => !(l.req === v && l.status === 'dropped' && !l.issued.length)); save(); reparseUpload(); break; }
@@ -1992,6 +2053,7 @@ document.addEventListener('input', ev => {
   if (el.dataset.cr) { const [w, k] = el.dataset.cr.split('|'); ui.cred = ui.cred || {}; ui.cred[w] = ui.cred[w] || {}; ui.cred[w][k] = el.value; return; }
   if (el.dataset.corr != null) { ui.form.rows[+el.dataset.corr].final = el.value; return; }
   if (el.dataset.cadd) { ui.form[el.dataset.cadd === 'code' ? 'addCode' : 'addQty'] = el.value; return; }
+  if (el.dataset.arts) { ui.arts.q = el.value; clearTimeout(ui.aT); ui.aT = setTimeout(() => { const b = document.getElementById('artsres'); if (b) b.innerHTML = artsResults(); }, 120); return; }
   if (el.dataset.tk) { ui.newTask = el.value; return; }
   if (el.dataset.nr) { const k = el.dataset.nr; ui.form[k] = k === 'rcv' ? el.value.replace(/\D/g, '') : el.value;
     if (k === 'store') { const d = (S.stores[el.value] || {}).rcv; if (d && !ui.form.rcv) ui.form.rcv = d; }

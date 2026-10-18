@@ -434,6 +434,16 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
 .testbar b{font-weight:800;letter-spacing:.04em}.testbar .btn{min-height:38px;flex-shrink:0;background:#141414;color:#fff;border-color:#141414}
 .inbtns{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;flex:1 1 100%}.inbtns .btn{min-height:34px;font-size:13px;padding:0 12px}
 .btn.danger-t{color:#C0264A;border-color:#F4C6D0}
+.art{display:flex;gap:12px;align-items:flex-start;padding:14px 16px;border-bottom:1px solid #F0EEF5;transition:background .15s}
+.art.on{background:#F3EFFF}.art input[type=checkbox]{margin-top:2px}
+.ab{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
+.an{font-size:15.5px}.reqno.sm{font-size:12px;padding:1px 8px}
+.aa{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.aq{display:inline-flex;align-items:center;gap:6px;height:38px;padding:0 12px;border-radius:99px;border:1.5px solid #141414;background:#fff;font:800 16px 'Outfit',sans-serif;color:#141414;cursor:pointer}
+.aq small{font-size:11px;color:var(--mute);font-weight:700}.aq svg{color:var(--mute)}
+.aa .btn.sm{min-height:38px;font-size:13px}
+.selbar{position:fixed;left:12px;right:12px;bottom:calc(96px + env(safe-area-inset-bottom,0px));z-index:30;display:flex;align-items:center;gap:8px;padding:10px 10px 10px 16px;border-radius:24px;background:#141414;color:#fff;box-shadow:0 14px 30px rgba(20,20,20,.35);animation:up .18s}
+.selbar{gap:6px;padding:8px 8px 8px 14px}.selbar b{flex:1;white-space:nowrap;font-size:14px}.selbar .btn{min-height:38px;padding:0 11px;font-size:13px;background:#fff;color:#141414;border-color:#fff}.selbar .xbtn{width:34px;height:34px;flex-shrink:0}.selbar .btn.danger{background:#E11D48;border-color:#E11D48;color:#fff}.selbar .xbtn{background:#333;color:#fff}
 </style>
 </head>
 <body>
@@ -444,6 +454,6 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <input type="file" id="fileIn" accept=".xlsx,.xls,.csv" class="hidden">
 <input type="file" id="photoIn" accept="image/*" class="hidden">
-<script src="app.js?v=4.3.0"></script>
+<script src="app.js?v=4.3.1"></script>
 </body>
 </html>
