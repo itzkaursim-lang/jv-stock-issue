@@ -76,6 +76,10 @@ public class MainActivity extends AppCompatActivity {
 
     FrameLayout root;
     WebView appView, siteView, mgrView;
+    android.widget.ImageView cover;
+    boolean coverMode = false;
+    final android.os.Handler h = new android.os.Handler(android.os.Looper.getMainLooper());
+    final Runnable uncoverR = () -> { if (cover != null) { cover.setVisibility(View.GONE); cover.setImageBitmap(null); } };
     SharedPreferences prefs;
     File dataFile, jobFile, fillCache;
     ValueCallback<Uri[]> fileCb;
@@ -98,6 +102,11 @@ public class MainActivity extends AppCompatActivity {
         mgrView = makeView("manager");
         FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
         root.addView(siteView, lp);
+        cover = new android.widget.ImageView(this);
+        cover.setScaleType(android.widget.ImageView.ScaleType.FIT_XY);
+        cover.setVisibility(View.GONE);
+        cover.setClickable(true);
+        root.addView(cover, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         root.addView(mgrView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         root.addView(appView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         siteView.setVisibility(View.GONE);
@@ -244,6 +253,16 @@ public class MainActivity extends AppCompatActivity {
             }
             @Override
             public void onPageStarted(WebView wv, String url, android.graphics.Bitmap fav) {
+                if ("emp".equals(who) && coverMode && wv.getVisibility() == View.VISIBLE && wv.getWidth() > 0 && wv.getHeight() > 0) {
+                    try {
+                        android.graphics.Bitmap bm = android.graphics.Bitmap.createBitmap(wv.getWidth(), wv.getHeight(), android.graphics.Bitmap.Config.RGB_565);
+                        wv.draw(new android.graphics.Canvas(bm));
+                        cover.setImageBitmap(bm);
+                        cover.setVisibility(View.VISIBLE);
+                        h.removeCallbacks(uncoverR);
+                        h.postDelayed(uncoverR, 9000);
+                    } catch (Throwable ignored) { }
+                }
                 float sc2 = prefs.getFloat("scale_" + who, 0f);
                 if (sc2 > 0) wv.setInitialScale(Math.round(sc2 * 100));
             }
@@ -477,6 +496,8 @@ public class MainActivity extends AppCompatActivity {
         Bridge(String w) { who = w; }
 
         @JavascriptInterface public String who() { return who; }
+        @JavascriptInterface public void setCover(boolean on) { coverMode = on; if (!on) runOnUiThread(uncoverR); }
+        @JavascriptInterface public void uncover() { h.removeCallbacks(uncoverR); h.postDelayed(uncoverR, 60); }
         @JavascriptInterface public void markLogin() { if (!"app".equals(who)) prefs.edit().putLong("login_" + who, System.currentTimeMillis()).apply(); }
         @JavascriptInterface public void progress(String title, String text, int done, int total, boolean ongoing) { runOnUiThread(() -> postProgress(title, text, done, total, ongoing)); }
         @JavascriptInterface public void progress2(String json, boolean ongoing) { runOnUiThread(() -> postData(json, ongoing)); }
