@@ -161,30 +161,35 @@ public class MainActivity extends AppCompatActivity {
             ch.setDescription("Shows the CUIMS entry the app is filling");
             ((NotificationManager) getSystemService(NOTIFICATION_SERVICE)).createNotificationChannel(ch);
         }
+        ContextCompat.registerReceiver(this, actReceiver, new IntentFilter("com.jv.stockissue.ACT"), ContextCompat.RECEIVER_NOT_EXPORTED);
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 7);
         }
     }
 
+    boolean svcOn = false;
     void postProgress(String title, String text, int done, int total, boolean ongoing) {
+        boolean paused = text != null && text.startsWith("Paused");
         try {
-            Intent i = new Intent(this, MainActivity.class);
-            i.setFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-            PendingIntent pi = PendingIntent.getActivity(this, 0, i, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-            NotificationCompat.Builder nb = new NotificationCompat.Builder(this, "jvjob")
-                    .setSmallIcon(android.R.drawable.stat_sys_upload)
-                    .setContentTitle(title)
-                    .setContentText(text)
-                    .setStyle(new NotificationCompat.BigTextStyle().bigText(text))
-                    .setOnlyAlertOnce(true)
-                    .setOngoing(ongoing)
-                    .setContentIntent(pi)
-                    .setColor(0xFF0F1B3D)
-                    .setPriority(NotificationCompat.PRIORITY_LOW);
-            if (total > 0) nb.setProgress(total, done, false);
-            NotificationManagerCompat.from(this).notify(77, nb.build());
+            if (ongoing) {
+                Intent si = new Intent(this, JobService.class);
+                si.putExtra("title", title); si.putExtra("text", text); si.putExtra("done", done); si.putExtra("total", total); si.putExtra("paused", paused);
+                if (!svcOn) { ContextCompat.startForegroundService(this, si); svcOn = true; }
+                else NotificationManagerCompat.from(this).notify(JobService.ID, JobService.build(this, title, text, done, total, true, paused));
+            } else {
+                if (svcOn) { stopService(new Intent(this, JobService.class)); svcOn = false; }
+                NotificationManagerCompat.from(this).notify(JobService.ID, JobService.build(this, title, text, done, total, false, false));
+            }
         } catch (SecurityException ignored) { } catch (Exception ignored) { }
     }
+
+    final BroadcastReceiver actReceiver = new BroadcastReceiver() {
+        @Override public void onReceive(Context c, Intent i) {
+            String cmd = i.getStringExtra("cmd");
+            if (cmd == null) return;
+            siteView.evaluateJavascript("window.JVFill&&window.JVFill.cmd&&window.JVFill.cmd(" + JSONObject.quote(cmd) + ")", null);
+        }
+    };
 
     void setFull(boolean on) {
         WindowInsetsControllerCompat c = WindowCompat.getInsetsController(getWindow(), root);
@@ -225,6 +230,7 @@ public class MainActivity extends AppCompatActivity {
         s.setLoadWithOverviewMode(true);
         s.setTextZoom(100);
         s.setLayoutAlgorithm(WebSettings.LayoutAlgorithm.NORMAL);
+        s.setOffscreenPreRaster(true);
         float sc = prefs.getFloat("scale_" + who, 0f);
         if (sc > 0) v.setInitialScale(Math.round(sc * 100));
         v.setWebViewClient(new WebViewClient() {
@@ -240,6 +246,8 @@ public class MainActivity extends AppCompatActivity {
                 float sc2 = prefs.getFloat("scale_" + who, 0f);
                 if (sc2 > 0) wv.setInitialScale(Math.round(sc2 * 100));
             }
+            @Override
+            public void onPageCommitVisible(WebView wv, String url) { injectFill(wv); }
             @Override
             public void onPageFinished(WebView wv, String url) { injectFill(wv); }
             @Override
@@ -403,6 +411,12 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
+    protected void onNewIntent(Intent i) {
+        super.onNewIntent(i);
+        if (i != null && i.getBooleanExtra("showSite", false)) show("emp");
+    }
+
+    @Override
     protected void onActivityResult(int req, int res, Intent data) {
         super.onActivityResult(req, res, data);
         if (req == 42 && fileCb != null) {
@@ -464,7 +478,7 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface public String who() { return who; }
         @JavascriptInterface public void markLogin() { if (!"app".equals(who)) prefs.edit().putLong("login_" + who, System.currentTimeMillis()).apply(); }
         @JavascriptInterface public void progress(String title, String text, int done, int total, boolean ongoing) { runOnUiThread(() -> postProgress(title, text, done, total, ongoing)); }
-        @JavascriptInterface public void progressClear() { try { NotificationManagerCompat.from(MainActivity.this).cancel(77); } catch (Exception ignored) { } }
+        @JavascriptInterface public void progressClear() { runOnUiThread(() -> { try { if (svcOn) { stopService(new Intent(MainActivity.this, JobService.class)); svcOn = false; } NotificationManagerCompat.from(MainActivity.this).cancel(77); } catch (Exception ignored) { } }); }
         @JavascriptInterface public void setFullscreen(boolean on) { runOnUiThread(() -> setFull(on)); }
         @JavascriptInterface public void keepAwake(boolean on) { runOnUiThread(() -> { if (on) getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); else getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); }); }
         @JavascriptInterface public String getCred() {

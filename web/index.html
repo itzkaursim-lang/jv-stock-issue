@@ -378,7 +378,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#141414;box-sh
 @keyframes spinb{to{--ang:360deg}}
 .rcard{position:relative;isolation:isolate}
 .rcard.sel{box-shadow:0 12px 30px rgba(244,63,94,.18)!important}
-.rcard.sel:before{content:"";position:absolute;inset:-3px;border-radius:29px;padding:3px;background:conic-gradient(from var(--ang),transparent 0 62%,#FF2D55 72%,#FF7A59 80%,transparent 90%);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;animation:spinb 2.2s linear infinite;z-index:3;pointer-events:none}
+.rcard.sel:before{content:"";position:absolute;inset:0;border-radius:inherit;padding:3px;background:conic-gradient(from var(--ang),transparent 0 62%,#FF2D55 72%,#FF7A59 80%,transparent 90%);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;animation:spinb 2.2s linear infinite;z-index:3;pointer-events:none}
 .selrow{background:#FFF0F3!important;box-shadow:inset 4px 0 0 #FF2D55}
 /* loader */
 #loader{position:fixed;inset:0;z-index:90;display:none;align-items:center;justify-content:center;background:rgba(242,241,246,.82);backdrop-filter:blur(6px)}
@@ -395,6 +395,30 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#141414;box-sh
 .skel i{display:block;height:14px;border-radius:8px;margin:8px 0;background:linear-gradient(90deg,#EEECF3 25%,#F7F6FB 50%,#EEECF3 75%);background-size:300% 100%;animation:shim 1.2s linear infinite}
 @keyframes shim{from{background-position:100% 0}to{background-position:-100% 0}}
 #boot{position:fixed;inset:0;z-index:95;display:flex;align-items:center;justify-content:center;background:var(--bg)}
+
+/* ===== v4.2: in-app controls (no native look) ===== */
+input[type=checkbox]{-webkit-appearance:none;appearance:none;width:24px;height:24px;border-radius:8px;border:2px solid #CFCBDA;background:#fff;display:inline-grid;place-content:center;flex-shrink:0;cursor:pointer;transition:background .15s,border-color .15s;margin:0}
+input[type=checkbox]:checked{background:#141414;border-color:#141414}
+input[type=checkbox]:checked:after{content:"";width:6px;height:11px;border:solid #fff;border-width:0 2.5px 2.5px 0;transform:rotate(45deg) translate(-1px,-1px)}
+input[type=checkbox]:focus-visible{box-shadow:0 0 0 4px rgba(185,167,255,.45)}
+input[type=search]::-webkit-search-cancel-button{-webkit-appearance:none}
+input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.datebtn{display:flex;align-items:center;gap:10px;width:100%;min-height:52px;padding:0 16px;border-radius:18px;border:1.5px solid #E4E1EC;background:#fff;color:#141414;font:500 15.5px 'Outfit',sans-serif;cursor:pointer;text-align:left}
+.datebtn svg{color:#8C7BE0;flex-shrink:0}.datebtn.empty span{color:#9A97A8}
+.datebtn:active{transform:scale(.98)}
+.fin .datebtn{padding-right:40px}
+#cal .pkbg,#dlg .pkbg{z-index:80}
+.calbox{position:fixed;left:12px;right:12px;bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:81;background:#fff;border-radius:30px;padding:18px;box-shadow:0 20px 50px rgba(20,20,20,.3);animation:up .18s ease-out;display:flex;flex-direction:column;gap:12px}
+.calhead{display:flex;align-items:center;justify-content:space-between}.calhead b{font-size:18px}
+.calgrid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center}
+.calgrid.wk span{font-size:12px;font-weight:700;color:#9A97A8}
+.cd{aspect-ratio:1;border:0;border-radius:50%;background:none;font:600 15px 'Outfit',sans-serif;color:#141414;cursor:pointer}
+.cd.td{box-shadow:inset 0 0 0 1.5px #141414}.cd.on{background:#141414;color:#fff}.cd:active{background:#ECE6FF}
+.dlgbox{position:fixed;left:20px;right:20px;top:50%;transform:translateY(-50%);z-index:81;background:#fff;border-radius:30px;padding:22px 20px 18px;box-shadow:0 20px 50px rgba(20,20,20,.3);display:flex;flex-direction:column;gap:14px;animation:fade .15s}
+.dlgic{width:52px;height:52px;border-radius:50%;background:#ECE6FF;color:#4B3BA8;display:flex;align-items:center;justify-content:center}.dlgic.no{background:#FFD9E3;color:#8E1B3A}
+.dlgmsg{font-size:17px;font-weight:600;line-height:1.4}
+.btn.danger{background:#E11D48;border-color:#E11D48}
+.rcard.sel:before{border-radius:26px}
 </style>
 </head>
 <body>
@@ -405,6 +429,6 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#141414;box-sh
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <input type="file" id="fileIn" accept=".xlsx,.xls,.csv" class="hidden">
 <input type="file" id="photoIn" accept="image/*" class="hidden">
-<script src="app.js?v=4.1.0"></script>
+<script src="app.js?v=4.2.0"></script>
 </body>
 </html>

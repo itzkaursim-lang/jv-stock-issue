@@ -308,7 +308,7 @@ function vHome() {
   const rg = dayRange(t);
   const dl = fmtShort(t);
   let h = '<main style="padding-top:6px">';
-  h += '<section class="hero">' + (S.me.photo ? '<div class="hme' + (S.me.photoCut ? ' cut' : '') + '"><img src="' + S.me.photo + '" alt=""></div>' : '') + '<img class="hlogo' + (S.me.photo ? ' small' : '') + '" src="icon.png" alt="">' +
+  h += '<section class="hero"><img class="hlogo" src="icon.png" alt="">' +
     '<div class="hcopy"><div class="hkick">' + (isToday ? 'Today' : dl) + '</div><div class="htitle">Daily<br>issue work</div>' +
     '<div class="hsub">' + (dayReqs.length ? todays.length + ' of ' + dayReqs.length + ' requests still open' : 'No requests on ' + dl) + '</div></div>' +
     '<div class="hstat"><div><b>' + todays.length + '</b><span>open requests</span></div><div><b>' + readyNow + '</b><span>ready to issue</span></div><div><b>' + dayWait.length + '</b><span>articles left</span></div><div><b>' + issuedToday + '</b><span>slips done</span></div></div>' +
@@ -1263,6 +1263,10 @@ function nextReqNo() {
   let mx = 0; S.lines.forEach(l => { if (String(l.req).startsWith(pre)) { const n = parseInt(String(l.req).slice(pre.length), 10); if (n > mx) mx = n; } });
   return pre + String(mx + 1).padStart(2, '0');
 }
+function nrHits() {
+  const f = ui.form; const hits = itemHits(f.q, new Set(f.items.map(x => x.code)), 8);
+  return String(f.q || '').trim() ? (hits.length ? hits.map(([c, v], k) => '<button class="hit' + (k === 0 ? ' first' : '') + '" data-a="nrPick" data-v="' + esc(c) + '"><span><b>' + esc(v.name) + '</b><span class="mono">' + esc(c) + '</span></span><span class="note">' + num(v.qty) + ' ' + esc(v.uom) + '</span></button>').join('') : '<div class="note">No item matches "' + esc(f.q) + '".</div>') : '';
+}
 function shNewReq() {
   const f = ui.form, stores = [...new Set([...(S.storeOrder || []), ...Object.keys(S.stores), ...S.lines.map(l => l.store)])].sort(byStore);
   const reqClash = S.lines.some(l => l.req === f.req);
@@ -1273,13 +1277,8 @@ function shNewReq() {
   h += '<label class="f">Custom remark (optional)<input type="text" data-nr="remark" value="' + esc(f.remark || '') + '" placeholder="Replaces Requisition Requested on …"></label>';
   h += '<div class="sect">Articles (' + f.items.length + ')</div>';
   if (f.items.length) h += '<div class="card" style="overflow:hidden">' + f.items.map((it, i) => '<div class="line" style="flex-direction:row;align-items:center;gap:10px"><span style="flex:1;min-width:0"><b>' + esc(it.name) + '</b><div class="meta"><span class="mono">' + esc(it.code) + '</span>' + (S.stock[it.code] ? '<i></i><span>stock ' + num(S.stock[it.code].qty) + '</span>' : '') + '</div></span><input type="number" inputmode="decimal" data-nrq="' + i + '" value="' + esc(it.qty) + '" placeholder="Qty" style="width:92px;text-align:right"><span class="note" style="width:34px">' + esc(it.uom) + '</span><button class="xbtn" data-a="nrDel" data-v="' + i + '" aria-label="Remove">' + ico('x', 16) + '</button></div>').join('') + '</div>';
-  h += '<div class="card pad col" style="gap:8px"><label class="f">Find item by name or code<input type="text" data-nr="q" value="' + esc(f.q || '') + '" placeholder="Type e.g. atta, sugar, GR-198" autocomplete="off"></label>';
-  const q = String(f.q || '').trim().toUpperCase();
-  if (q.length >= 2) {
-    const have = new Set(f.items.map(x => x.code));
-    const hits = Object.entries(S.stock).filter(([c, v]) => !have.has(c) && (c.includes(q) || String(v.name).toUpperCase().includes(q))).sort((a, b) => (String(a[1].name).toUpperCase().startsWith(q) ? 0 : 1) - (String(b[1].name).toUpperCase().startsWith(q) ? 0 : 1) || String(a[1].name).localeCompare(String(b[1].name))).slice(0, 8);
-    h += hits.length ? hits.map(([c, v]) => '<button class="hit" data-a="nrPick" data-v="' + esc(c) + '"><span><b>' + esc(v.name) + '</b><span class="mono">' + esc(c) + '</span></span><span class="note">' + num(v.qty) + ' ' + esc(v.uom) + '</span></button>').join('') : '<div class="note">No item matches "' + esc(f.q) + '" in the stock sheet.</div>';
-  }
+  h += '<div class="card pad col" style="gap:8px"><label class="f">Find item by name or code<input type="search" data-nr="q" value="' + esc(f.q || '') + '" placeholder="Type e.g. atta, sugar, GR-198" autocomplete="off" enterkeyhint="done"></label>';
+  h += '<div id="nrhits">' + nrHits() + '</div>';
   h += '</div>';
   const ok = f.store && f.req && !reqClash && f.items.length && f.items.every(x => parseFloat(x.qty) > 0) && (!f.rcv || /^\d{6}$/.test(f.rcv)) && (!f.slip || !slipProblem(f.slip));
   if (f.slip && slipProblem(f.slip)) h += '<div class="err">' + esc(slipProblem(f.slip)) + '</div>';
@@ -1367,7 +1366,7 @@ function shBackups() {
   return h;
 }
 async function restoreNow() {
-  if (!confirm('Replace all data on this phone with the last Google Sheet backup?')) return;
+  if (!await uiConfirm('Replace all data on this phone with the last Google Sheet backup?')) return;
   try {
     const r = await fetch(S.sync.url + (S.sync.url.includes('?') ? '&' : '?') + 'action=restore');
     const j = await r.json();
@@ -1451,6 +1450,7 @@ function render() {
   document.querySelector('#tabs .in').innerHTML = TABS.map(([k, l]) => '<button data-a="tab" data-v="' + k + '" class="' + (ui.tab === k && !ui.view ? 'on' : '') + '" aria-label="' + l + '"><span class="nic">' + ICON[k] + '</span><span class="nl">' + l + '</span></button>').join('');
   renderDrawer();
   paintSync();
+  enhanceDates(document.getElementById('app'));
   window.scrollTo(0, y);
 }
 function renderSheet() {
@@ -1461,6 +1461,7 @@ function renderSheet() {
   const sc = el.querySelector('.sheet') ? el.querySelector('.sheet').scrollTop : 0;
   el.innerHTML = '<div class="sheetbg" data-a="bgClose"><div class="sheet" role="dialog" aria-modal="true">' + body + '</div></div>';
   el.querySelector('.sheet').scrollTop = sc;
+  enhanceDates(document.getElementById('sheet'));
 }
 const SORT_OPTS = [['reqdate', 'Day, then Request No'], ['req_asc', 'Request No, low to high'], ['req_desc', 'Request No, high to low'], ['name_asc', 'Store name A to Z'], ['name_desc', 'Store name Z to A'],
   ['date_asc', 'Date, oldest first'], ['date_desc', 'Date, newest first'], ['custom', 'My store order'], ['stock', 'Stock priority (most ready first)'], ['size', 'Most articles first']];
@@ -1488,16 +1489,52 @@ function loader(on, msg) {
   el.innerHTML = '<div class="ldbox"><div class="ldorb"><span class="o1"></span><span class="o2"></span><span class="o3"></span><img src="icon.png" alt=""></div><b>' + esc(msg || 'Working') + '</b><div class="ldbar"><i></i></div></div>';
 }
 const skel = n => Array.from({ length: n || 3 }, () => '<div class="card pad skel"><i style="width:34%"></i><i style="width:72%"></i><i style="width:55%"></i></div>').join('');
+function uiConfirm(msg, okLabel, danger) {
+  return new Promise(res => {
+    let el = document.getElementById('dlg'); if (!el) { el = document.createElement('div'); el.id = 'dlg'; document.body.appendChild(el); }
+    el.innerHTML = '<div class="pkbg"></div><div class="dlgbox" role="dialog" aria-modal="true"><div class="dlgic' + (danger ? ' no' : '') + '">' + ico('alert', 26) + '</div><div class="dlgmsg">' + esc(msg) + '</div><div class="grid2"><button class="btn" data-dlg="0">Cancel</button><button class="btn main' + (danger ? ' danger' : '') + '" data-dlg="1">' + esc(okLabel || 'OK') + '</button></div></div>';
+    el.querySelectorAll('[data-dlg]').forEach(b => b.onclick = e => { e.stopPropagation(); el.innerHTML = ''; res(b.dataset.dlg === '1'); });
+  });
+}
+function enhanceDates(root) {
+  (root || document).querySelectorAll('input[type="date"]').forEach(inp => {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'datebtn'; b.dataset.dp = '1';
+    const paint = () => { b.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><span>' + (inp.value ? fmtLong(inp.value) : 'Choose date') + '</span>'; b.classList.toggle('empty', !inp.value); };
+    inp.type = 'hidden'; inp.parentNode.insertBefore(b, inp); paint();
+    b.onclick = e => { e.preventDefault(); e.stopPropagation(); openCal(inp, paint); };
+  });
+}
+function openCal(inp, paint) {
+  let el = document.getElementById('cal'); if (!el) { el = document.createElement('div'); el.id = 'cal'; document.body.appendChild(el); }
+  const sel = inp.value || '', base = sel ? new Date(sel + 'T12:00') : new Date();
+  let y = base.getFullYear(), m = base.getMonth();
+  const draw = () => {
+    const first = new Date(y, m, 1, 12), start = (first.getDay() + 6) % 7, dim = new Date(y, m + 1, 0).getDate();
+    let cells = ''; for (let i = 0; i < start; i++) cells += '<span></span>';
+    for (let d = 1; d <= dim; d++) { const iso = y + '-' + pad(m + 1) + '-' + pad(d); cells += '<button class="cd' + (iso === sel ? ' on' : '') + (iso === today() ? ' td' : '') + '" data-cd="' + iso + '">' + d + '</button>'; }
+    el.innerHTML = '<div class="pkbg" data-cx="1"></div><div class="calbox" role="dialog" aria-label="Choose date"><div class="calhead"><button class="xbtn" data-cm="-1" aria-label="Previous month">' + ico('up', 18).replace('M6 15l6-6 6 6', 'M15 6l-6 6 6 6') + '</button><b>' + new Date(y, m, 1).toLocaleString('en-GB', { month: 'long', year: 'numeric' }) + '</b><button class="xbtn" data-cm="1" aria-label="Next month">' + ico('right', 18) + '</button></div>' +
+      '<div class="calgrid wk">' + ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map(w => '<span>' + w + '</span>').join('') + '</div><div class="calgrid">' + cells + '</div>' +
+      '<div class="grid3"><button class="btn" data-cq="clear">Clear</button><button class="btn" data-cq="today">Today</button><button class="btn main" data-cx="1">Close</button></div></div>';
+  };
+  const done = v => { inp.value = v; paint(); el.innerHTML = ''; inp.dispatchEvent(new Event('input', { bubbles: true })); inp.dispatchEvent(new Event('change', { bubbles: true })); };
+  el.onclick = e => { const t = e.target.closest('[data-cd],[data-cm],[data-cq],[data-cx]'); if (!t) return; e.stopPropagation();
+    if (t.dataset.cd) done(t.dataset.cd); else if (t.dataset.cm) { m += +t.dataset.cm; if (m < 0) { m = 11; y--; } if (m > 11) { m = 0; y++; } draw(); }
+    else if (t.dataset.cq === 'today') done(today()); else if (t.dataset.cq === 'clear') done(''); else el.innerHTML = ''; };
+  draw();
+}
 function renderPicker() {
   let el = document.getElementById('picker'); if (!el) { el = document.createElement('div'); el.id = 'picker'; document.body.appendChild(el); }
   const p = ui.picker; if (!p) { el.innerHTML = ''; return; }
   const cfg = PICKS[p.id]; if (!cfg) { el.innerHTML = ''; return; }
-  const q = String(p.q || '').toUpperCase();
-  const list = cfg.opts.filter(o => !q || String(o[1]).toUpperCase().includes(q) || String(o[0]).toUpperCase().includes(q));
   const search = cfg.search || cfg.opts.length > 8;
   el.innerHTML = '<div class="pkbg" data-a="pickClose"></div><div class="pkpanel" role="dialog" aria-label="' + esc(cfg.title) + '"><div class="pkhead"><b>' + esc(cfg.title) + '</b><button class="xbtn" data-a="pickClose" aria-label="Close">' + ico('x', 18) + '</button></div>' +
     (search ? '<div style="padding:0 16px 8px"><input type="text" data-pkq="1" value="' + esc(p.q || '') + '" placeholder="Search" autocomplete="off"></div>' : '') +
-    '<div class="pklist">' + (list.length ? list.map(o => '<button class="pkitem' + (o[0] === cfg.val ? ' on' : '') + '" data-a="pickSet" data-v="' + esc(o[0]) + '"><span>' + esc(o[1]) + (o[2] ? '<small>' + esc(o[2]) + '</small>' : '') + '</span>' + (o[0] === cfg.val ? '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>' : '') + '</button>').join('') : '<div class="note" style="padding:14px 18px">No match.</div>') + '</div></div>';
+    '<div class="pklist">' + pickList() + '</div></div>';
+}
+function pickList() {
+  const p = ui.picker, cfg = PICKS[p.id]; const q = String(p.q || '').toUpperCase();
+  const list = cfg.opts.filter(o => !q || String(o[1]).toUpperCase().includes(q) || String(o[0]).toUpperCase().includes(q));
+  return (list.length ? list.map(o => '<button class="pkitem' + (o[0] === cfg.val ? ' on' : '') + '" data-a="pickSet" data-v="' + esc(o[0]) + '"><span>' + esc(o[1]) + (o[2] ? '<small>' + esc(o[2]) + '</small>' : '') + '</span>' + (o[0] === cfg.val ? '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>' : '') + '</button>').join('') : '<div class="note" style="padding:14px 18px">No match.</div>');
 }
 function sortSel(k, opts) { return '<select data-sort="' + k + '" style="width:auto;min-height:38px;font-size:14px;padding:0 8px">' + opts.map(([v, l]) => '<option value="' + v + '"' + (ui.sort[k] === v ? ' selected' : '') + '>Sort: ' + l + '</option>').join('') + '</select>'; }
 function storeRank(st) { const o = S.storeOrder || []; const i = o.indexOf(st); return i < 0 ? 9999 : i; }
@@ -1549,7 +1586,7 @@ const GUARDED = new Set(['credSave', 'credDel', 'corrOpen', 'corrSave', 'bulkEdi
 let pendingAuth = null;
 function askUnlock(after) {
   pendingAuth = after || null;
-  if (N && N.authenticate) N.authenticate(); else window.jvAuth(confirm('Unlock editing?'));
+  if (N && N.authenticate) N.authenticate(); else uiConfirm('Unlock editing?').then(ok => window.jvAuth(ok));
 }
 window.jvAuth = ok => { if (ok) { ui.locked = false; render(); renderSheet(); toast('Unlocked. Editing is on.'); const f = pendingAuth; pendingAuth = null; if (f) f(); } else toast('Still locked.'); };
 window.jvRelock = () => { if (!ui.locked) { ui.locked = true; render(); renderSheet(); } };
@@ -1596,7 +1633,7 @@ document.addEventListener('click', async ev => {
     case 'editReq': { const r = requests().find(x => x.req === v); const w = r.lines.filter(l => l.status === 'waiting');
       ui.form = { req: v, store: r.store, date: r.date, rcv: (r.lines.find(l => l.rcv) || {}).rcv || '', slip: (w.find(l => l.slip) || {}).slip || '', remark: (w.find(l => l.remark) || {}).remark || '', items: w.map(l => ({ lineId: l.id, code: l.code, qty: l.qty, name: itemName(l.code), uom: itemUom(l.code) })) };
       ui.sheet = { kind: 'editReq' }; renderSheet(); break; }
-    case 'dropReq': if (confirm('Remove request ' + v + ' (' + ((requests().find(x => x.req === v) || {}).store || '') + ') from the list? Waiting articles are removed; issued ones stay in the records.')) { S.lines.forEach(l => { if (l.req === v && l.status === 'waiting') l.status = 'dropped'; }); save(); ui.view = null; render(); } break;
+    case 'dropReq': if (await uiConfirm('Remove request ' + v + ' (' + ((requests().find(x => x.req === v) || {}).store || '') + ') from the list? Waiting articles are removed; issued ones stay in the records.')) { S.lines.forEach(l => { if (l.req === v && l.status === 'waiting') l.status = 'dropped'; }); save(); ui.view = null; render(); } break;
     case 'saveReq': { const f = ui.form; if (f.rcv && !/^\d{6}$/.test(f.rcv)) { toast('Receiver must be 6 digits or blank.'); break; }
       const items = cleanItems(f.items); const keep = new Set(items.filter(i => i.lineId).map(i => i.lineId));
       const sl = (f.slip || '').trim().toUpperCase(); if (sl && !SLIP_RE.test(sl)) { toast('Slip No must be 2–10 characters with a digit.'); break; }
@@ -1637,7 +1674,7 @@ document.addEventListener('click', async ev => {
     case 'goProfile': ui.tab = 'set'; ui.view = null; ui.setPage = 'profile'; render(); window.scrollTo(0, 0); break;
     case 'togStore': ui.openStore[v] = !ui.openStore[v]; render(); break;
     case 'dropStore': { const n = S.lines.filter(l => isPending(l) && l.store === v).length;
-      if (confirm('Remove all ' + n + ' pending articles of ' + v + '? Issued records stay. (You can restore from a cloud backup if needed.)')) { S.lines.forEach(l => { if (isPending(l) && l.store === v) l.status = 'dropped'; }); save(); render(); toast(v + ' removed from Pending.'); } break; }
+      if (await uiConfirm('Remove all ' + n + ' pending articles of ' + v + '? Issued records stay. (You can restore from a cloud backup if needed.)')) { S.lines.forEach(l => { if (isPending(l) && l.store === v) l.status = 'dropped'; }); save(); render(); toast(v + ' removed from Pending.'); } break; }
     case 'photo': document.getElementById('photoIn').click(); break;
     case 'openMgr': if (N && N.openMgr) N.openMgr(); else toast('Update the app (Settings > App and updates) to use Manager CUIMS.'); break;
     case 'saveUrls': { const e = ui.urlEmp != null ? ui.urlEmp : INFO.urlEmp, m = ui.urlMgr != null ? ui.urlMgr : INFO.urlMgr;
@@ -1689,7 +1726,7 @@ document.addEventListener('click', async ev => {
       const u = (f.u != null ? f.u : c.u || '').trim(); if (!u) { toast('Enter the User ID.'); break; }
       if (!f.p && !c.has) { toast('Enter the password.'); break; }
       N.setCred(v, u, f.p ? f.p : '__keep__', f.auto != null ? f.auto : c.auto !== false); ui.cred[v] = {}; render(); toast('Login saved on this phone.'); break; }
-    case 'credDel': if (N && N.setCred && confirm('Remove the saved login?')) { N.setCred(v, '', '', false); ui.cred = ui.cred || {}; ui.cred[v] = {}; render(); toast('Login removed.'); } break;
+    case 'credDel': if (N && N.setCred && await uiConfirm('Remove the saved login?', 'Delete', true)) { N.setCred(v, '', '', false); ui.cred = ui.cred || {}; ui.cred[v] = {}; render(); toast('Login removed.'); } break;
     case 'homeDate': ui.homeDate = v === today() ? null : v; render(); break;
     case 'corrOpen': ui.form = { req: v, rows: corrRows(v).map(o => Object.assign(o, { final: String(Math.round((o.issued + o.waiting) * 1000) / 1000) })), addCode: '', addQty: '' }; ui.sheet = { kind: 'corr' }; renderSheet(); break;
     case 'corrAdd': { const f = ui.form; const c = String(f.addCode || '').trim().toUpperCase(), q = parseFloat(f.addQty); if (!c || !(q > 0)) { toast('Enter item code and qty.'); break; } const ex = f.rows.find(o => o.code === c); if (ex) ex.final = String(q); else f.rows.push({ code: c, issued: 0, waiting: 0, slips: [], final: String(q) }); f.addCode = ''; f.addQty = ''; renderSheet(); break; }
@@ -1718,7 +1755,7 @@ document.addEventListener('click', async ev => {
     case 'taskTog': { const d = today(); S.taskLog = S.taskLog || {}; S.taskLog[d] = S.taskLog[d] || {}; const cur = taskStatus(v, d);
       S.taskLog[d][v] = cur === 'done' ? { status: 'pending', at: new Date().toISOString(), by: S.me.name || '' } : { status: 'done', at: new Date().toISOString(), by: S.me.name || '' }; save(); render(); break; }
     case 'taskAdd': { const tt = String(ui.newTask || '').trim(); if (!tt) break; S.customTasks = S.customTasks || []; S.customTasks.push({ id: 'c' + nid(), title: tt }); ui.newTask = ''; save(); render(); break; }
-    case 'taskDel': if (confirm('Delete this task? Its history stays.')) { S.customTasks = (S.customTasks || []).filter(x => x.id !== v); save(); render(); } break;
+    case 'taskDel': if (await uiConfirm('Delete this task? Its history stays.', 'Delete', true)) { S.customTasks = (S.customTasks || []).filter(x => x.id !== v); save(); render(); } break;
     case 'countDone': { const c = (S.counts || []).find(x => String(x.id) === String(ui.countId)); if (!c) break; c.status = 'done'; c.doneAt = new Date().toISOString(); S.taskLog = S.taskLog || {}; S.taskLog[c.date] = S.taskLog[c.date] || {}; S.taskLog[c.date].count = { status: 'done', at: c.doneAt, by: S.me.name || '' }; save(); render(); toast('Count finished and logged.'); break; }
     case 'countExport': ui.countExportId = v; openExport('counts'); break;
     case 'countExportAll': ui.countExportId = null; openExport('counts'); break;
@@ -1726,7 +1763,7 @@ document.addEventListener('click', async ev => {
     case 'varDel': { const c = curCount(); if (!c) break; const [a1, k] = v.split('|').map(Number); const it = c.items[a1]; it.variants.splice(k, 1); syncPhysical(it); if (!it.variants.length) it.physical = ''; save(); render(); break; }
     case 'expOpen': ui.drawer = false; ui.view = 'expiry'; render(); window.scrollTo(0, 0); break;
     case 'expExport': openExport('expiry'); break;
-    case 'expClear': { const [cid, idx, k] = v.split('|'); const c = (S.counts || []).find(x => String(x.id) === cid); if (c && confirm('Mark this batch as cleared (used, issued or removed)? It leaves the tracker.')) { c.items[+idx].variants[+k].cleared = true; save(); render(); } break; }
+    case 'expClear': { const [cid, idx, k] = v.split('|'); const c = (S.counts || []).find(x => String(x.id) === cid); if (c && await uiConfirm('Mark this batch as cleared (used, issued or removed)? It leaves the tracker.')) { c.items[+idx].variants[+k].cleared = true; save(); render(); } break; }
     case 'countRepick': { const c = (S.counts || []).find(x => String(x.id) === String(ui.countId)); if (c && c.items.every(i => i.physical === '' || i.physical == null)) { S.counts = S.counts.filter(x => x !== c); const n = todayCount(true); if (n) ui.countId = n.id; save(); render(); toast('New list picked.'); } break; }
     case 'tasksTog': S.uiPrefs = S.uiPrefs || {}; S.uiPrefs.tasksOpen = !S.uiPrefs.tasksOpen; writeLocal(); render(); break;
     case 'syncTap': if (S.sync.url) syncNow(false); else { ui.tab = 'set'; ui.setPage = 'cloud'; ui.view = null; render(); } break;
@@ -1764,13 +1801,13 @@ document.addEventListener('click', async ev => {
     case 'saveEntry': { const f = ui.form; const items = cleanItems(f.items);
       if (!f.slip.trim() || !f.store.trim() || !/^\d{6}$/.test(f.rcv)) { toast('Slip No, store and a 6-digit receiver are needed.'); break; }
       const clash = S.entries.find(e => e.id !== f.id && String(e.slip).toUpperCase() === f.slip.trim().toUpperCase());
-      if (clash && !confirm('Slip ' + f.slip + ' is already used for ' + clash.store + '. Save anyway?')) break;
+      if (clash && !await uiConfirm('Slip ' + f.slip + ' is already used for ' + clash.store + '. Save anyway?')) break;
       if (!items.length) { toast('Add at least one item with code and qty.'); break; }
       const rec = { id: f.id || nid(), slip: f.slip.trim().toUpperCase(), serial: (f.serial || '').trim(), store: f.store.trim().toUpperCase(), rcv: f.rcv, rname: (f.rname || '').trim(), at: f.at || new Date(f.date + 'T' + (f.time || '00:00')).toISOString(), date: f.date, time: f.time, reqs: (f.reqs || '').trim(), remarks: (f.remarks || '').trim(), by: { name: f.byName.trim(), emp: f.byEmp.trim() }, kind: f.kind || 'manual', items };
       if (rec.rname) { S.rnames = S.rnames || {}; S.rnames[rec.rcv] = rec.rname; }
       const i = S.entries.findIndex(e => e.id === rec.id); if (i >= 0) S.entries[i] = rec; else S.entries.push(rec);
       save(); ui.sheet = null; renderSheet(); render(); toast('Entry saved.'); break; }
-    case 'delEntry': if (confirm('Delete this register entry? Stock and pending are not changed.')) { S.entries = S.entries.filter(e => e.id !== ui.form.id); save(); ui.sheet = null; renderSheet(); render(); } break;
+    case 'delEntry': if (await uiConfirm('Delete this register entry? Stock and pending are not changed.', 'Delete', true)) { S.entries = S.entries.filter(e => e.id !== ui.form.id); save(); ui.sheet = null; renderSheet(); render(); } break;
     case 'newReturn': ui.form = { _new: true, no: nextReturnNo(), against: '1111', store: '', by: '', byName: '', date: ui.reg.date, time: timeNow(), serial: '', remarks: '', ebName: S.me.name, ebEmp: S.me.emp, items: [blankItem()] }; ui.sheet = { kind: 'return' }; renderSheet(); break;
     case 'editReturn': { const r = S.returns.find(x => String(x.id) === v); ui.form = Object.assign(JSON.parse(JSON.stringify(r)), { ebName: (r.enteredBy || {}).name || '', ebEmp: (r.enteredBy || {}).emp || '' }); ui.sheet = { kind: 'return' }; renderSheet(); break; }
     case 'saveReturn': { const f = ui.form; const items = cleanItems(f.items);
@@ -1780,7 +1817,7 @@ document.addEventListener('click', async ev => {
       if (rec.byName) { S.rnames = S.rnames || {}; S.rnames[rec.by] = rec.byName; }
       const i = S.returns.findIndex(x => x.id === rec.id); if (i >= 0) S.returns[i] = rec; else S.returns.push(rec);
       save(); ui.sheet = null; renderSheet(); render(); toast('Return saved.'); break; }
-    case 'delReturn': if (confirm('Delete this return?')) { S.returns = S.returns.filter(x => x.id !== ui.form.id); save(); ui.sheet = null; renderSheet(); render(); } break;
+    case 'delReturn': if (await uiConfirm('Delete this return?', 'Delete', true)) { S.returns = S.returns.filter(x => x.id !== ui.form.id); save(); ui.sheet = null; renderSheet(); render(); } break;
     case 'rmItem': ui.form.items.splice(+v, 1); if (!ui.form.items.length) ui.form.items.push(blankItem()); renderSheet(); break;
     case 'addItem': ui.form.items.push(blankItem()); renderSheet(); break;
     case 'sType': ui.search.type = v; render(); break;
@@ -1789,7 +1826,7 @@ document.addEventListener('click', async ev => {
     case 'expSearchOld': { const res = searchRecords(); const rows = []; res.forEach(x => x.items.forEach(i => rows.push({ Type: x.type, Date: x.date ? fmtLong(x.date) : '', Time: x.time || '', 'Slip / Return No': x.no, 'Serial No': x.serial, Store: x.store, 'Issued to / Returned by': x.who, 'Request / Against': x.reqs, 'Item code': i.code, Item: i.name || itemName(i.code), Qty: Number(i.qty), UOM: i.uom || '', 'Item remark': i.remark || '', 'Entered by': x.by.name || '', 'Emp code': x.by.emp || '' })));
       saveWb([['Search results', rows]], 'Search-' + today() + '.xlsx'); break; }
     case 'mgrToggle': S.mgr.on = t.checked; save(); render(); break;
-    case 'rmStore': if (confirm('Remove ' + v + ' from your store list? Records stay.')) { delete S.stores[v]; save(); render(); } break;
+    case 'rmStore': if (await uiConfirm('Remove ' + v + ' from your store list? Records stay.')) { delete S.stores[v]; save(); render(); } break;
     case 'addStore': { const el = document.getElementById('newStore'); const nm = (el.value || '').trim().toUpperCase(); if (!nm) break; if (!S.stores[nm]) S.stores[nm] = { rcv: '', rname: '' }; save(); render(); break; }
     case 'syncAuto': S.sync.auto = t.checked; save(true); break;
     case 'syncNow': syncNow(false); break;
@@ -1797,10 +1834,10 @@ document.addEventListener('click', async ev => {
     case 'backups': ui.sheet = { kind: 'backups' }; loadBackups(); break;
     case 'openUrl': if (N) N.openUrl(v); else window.open(v); break;
     case 'bkSave': { const note = ui.sheet.note || ''; await syncNow(false, 'manual', note); ui.sheet.note = ''; loadBackups(); break; }
-    case 'bkRestore': { if (!confirm('Replace ALL data on this phone with this backup? (Tip: save a backup of the current data first.)')) break;
+    case 'bkRestore': { if (!await uiConfirm('Replace ALL data on this phone with this backup? (Tip: save a backup of the current data first.)')) break;
       try { const j = await apiGet('action=get&id=' + encodeURIComponent(v)); const url = S.sync.url; S = Object.assign(blank(), JSON.parse(j.backup)); S.sync.url = url; save(true); ui.sheet = null; renderSheet(); render(); toast('Backup restored.'); } catch (e) { toast('Restore failed: ' + e.message); } break; }
     case 'bkKeep': try { await apiPost({ action: 'meta', id: v, keep: t.dataset.k === '1' }); loadBackups(); } catch (e) { toast('Failed: ' + e.message); } break;
-    case 'bkDel': if (confirm('Delete this backup copy from Drive?')) { try { await apiPost({ action: 'delete', id: v }); loadBackups(); } catch (e) { toast('Failed: ' + e.message); } } break;
+    case 'bkDel': if (await uiConfirm('Delete this backup copy from Drive?', 'Delete', true)) { try { await apiPost({ action: 'delete', id: v }); loadBackups(); } catch (e) { toast('Failed: ' + e.message); } } break;
     case 'bkNote': { const b = (ui.sheet.items || []).find(x => x.id === v); ui.sheet.editing = v; ui.sheet.rename = b ? b.note : ''; renderSheet(); break; }
     case 'bkNoteCancel': ui.sheet.editing = null; renderSheet(); break;
     case 'bkNoteSave': try { await apiPost({ action: 'meta', id: v, note: ui.sheet.rename || '' }); ui.sheet.editing = null; loadBackups(); } catch (e) { toast('Failed: ' + e.message); } break;
@@ -1813,8 +1850,8 @@ document.addEventListener('click', async ev => {
     case 'lockToggle': if (N) { N.setLock(t.checked); INFO.lock = t.checked; toast(t.checked ? 'Lock on. Fingerprint or PIN needed when opening.' : 'Lock off.'); } break;
     case 'checkUpdate': checkUpdate(true); break;
     case 'installUpdate': if (S.updateInfo && S.updateInfo.url && N) N.installUpdate(S.updateInfo.url); break;
-    case 'mode': if (N && INFO.mode !== v) { if (confirm(v === 'bundled' ? 'Use the built-in screens from the installed APK? (rollback)' : 'Use the latest screens from GitHub?')) N.setMode(v); } break;
-    case 'wipe': if (confirm('Delete ALL requests, entries, returns, stock and settings on this phone?') && confirm('Really delete everything? Back up first if unsure.')) { const url = S.sync.url; S = blank(); S.sync.url = url; save(true); render(); toast('All data cleared.'); } break;
+    case 'mode': if (N && INFO.mode !== v) { if (await uiConfirm(v === 'bundled' ? 'Use the built-in screens from the installed APK? (rollback)' : 'Use the latest screens from GitHub?')) N.setMode(v); } break;
+    case 'wipe': if (await uiConfirm('Delete ALL requests, entries, returns, stock and settings on this phone?') && await uiConfirm('Really delete everything? Back up first if unsure.')) { const url = S.sync.url; S = blank(); S.sync.url = url; save(true); render(); toast('All data cleared.'); } break;
   }
 });
 
@@ -1822,7 +1859,7 @@ document.addEventListener('input', ev => {
   const el = ev.target;
   if (el.dataset.in === 'slip' || el.dataset.in === 'rcv') { const k = focusKey(el); ui.sheet[el.dataset.in] = el.dataset.in === 'slip' ? el.value.trim().toUpperCase() : el.value.replace(/\D/g, ''); renderSheet(); refocus(k); return; }
   if (el.dataset.in === 'q') { ui.search.q = el.value; clearTimeout(ui.sT); ui.sT = setTimeout(() => { const box = document.getElementById('sres'); if (box) box.innerHTML = sResults(searchRecords()); }, 120); return; }
-  if (el.dataset.pkq) { ui.picker.q = el.value; const k = focusKey(el); renderPicker(); const i = document.querySelector('[data-pkq]'); if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); } return; }
+  if (el.dataset.pkq) { ui.picker.q = el.value; const box = document.querySelector('#picker .pklist'); if (box) box.innerHTML = pickList(); return; }
   if (el.dataset.bk) { ui.sheet[el.dataset.bk] = el.value; return; }
   if (el.dataset.cr) { const [w, k] = el.dataset.cr.split('|'); ui.cred = ui.cred || {}; ui.cred[w] = ui.cred[w] || {}; ui.cred[w][k] = el.value; return; }
   if (el.dataset.corr != null) { ui.form.rows[+el.dataset.corr].final = el.value; return; }
@@ -1830,7 +1867,8 @@ document.addEventListener('input', ev => {
   if (el.dataset.tk) { ui.newTask = el.value; return; }
   if (el.dataset.nr) { const k = el.dataset.nr; ui.form[k] = k === 'rcv' ? el.value.replace(/\D/g, '') : el.value;
     if (k === 'store') { const d = (S.stores[el.value] || {}).rcv; if (d && !ui.form.rcv) ui.form.rcv = d; }
-    if (k === 'q' || k === 'req' || k === 'slip') { const fk = focusKey(el); renderSheet(); refocus(fk); } return; }
+    if (k === 'q') { const box = document.getElementById('nrhits'); if (box) box.innerHTML = nrHits(); return; }
+    if (k === 'req' || k === 'slip') { const fk = focusKey(el); renderSheet(); refocus(fk); } return; }
   if (el.dataset.bt) { const k = el.dataset.bt; ui.form[k] = el.value; if (k === 'q') { const box = document.getElementById('bthits'); if (box) box.innerHTML = batchHits(ui.form.act); } return; }
   if (el.dataset.bg) { const [gi, k] = el.dataset.bg.split('|'); ui.form.groups[+gi][k] = k === 'rcv' ? el.value.replace(/\D/g, '') : k === 'slip' ? el.value.toUpperCase() : el.value; return; }
   if (el.dataset.bq) { const [gi, ii] = el.dataset.bq.split('|').map(Number); ui.form.groups[gi].items[ii].qty = el.value; return; }

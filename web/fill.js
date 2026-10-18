@@ -1,5 +1,6 @@
 /* JV Stock Issue – CUIMS fill engine. Injected by the app on every CUIMS page load. */
 (function () {
+ var __go = function () {
   if (window.JVFill && window.JVFill.loaded) return;
   var B = window.JVS;
   if (!B) return;
@@ -44,12 +45,12 @@
 
   /* ---------- page kinds ---------- */
   var isIssue = !!$('ContentPlaceHolder1_ddldoctype');
-  var isLogin = !isIssue && !!document.querySelector('input[type="password"]');
+  var isLogin = !isIssue && (!!document.querySelector('input[type="password"]') || /login|signin|default\.aspx|^\/?$/i.test(location.pathname) && !!document.querySelector('input[type="text"],input:not([type])'));
 
   /* ---------- control bar ---------- */
   var bar = document.createElement('div');
   bar.id = 'jvbar';
-  bar.style.cssText = 'position:absolute;left:-9999px;top:0;transition:none;will-change:transform;z-index:2147483647;background:#FBFAF6;color:#14161A;border-radius:22px;padding:0;font:16px/1.45 system-ui,sans-serif;box-shadow:0 12px 40px rgba(15,23,42,.35),0 0 0 1px rgba(201,162,75,.45);max-height:62vh;overflow:auto;transform-origin:0 0;box-sizing:border-box';
+  bar.style.cssText = 'position:absolute;left:-9999px;top:0;transition:none;will-change:transform;z-index:2147483647;background:#F7F6FB;color:#141414;border-radius:24px;padding:0;font:16px/1.45 system-ui,sans-serif;box-shadow:0 12px 40px rgba(15,23,42,.35),0 0 0 1px rgba(201,162,75,.45);max-height:62vh;overflow:auto;transform-origin:0 0;box-sizing:border-box';
   document.body.appendChild(bar);
   var mini = false, portal = false, immersive = false; try { mini = localStorage.getItem('jvBarMini') === '1'; portal = localStorage.getItem('jvPortal') === '1'; } catch (e) {}
   function place() {
@@ -67,14 +68,16 @@
     var L = Math.round((mini ? pl + vw - (bw + gap) * inv : pl + gap * inv) * 10) / 10 + 'px', Tp = Math.round((pt + vh - (h + gap) * inv) * 10) / 10 + 'px';
     if (bar.style.left !== L) bar.style.left = L;
     if (bar.style.top !== Tp) bar.style.top = Tp;
+    try { sessionStorage.setItem('jvBarGeo', JSON.stringify({ w: bar.style.width, l: bar.style.left, t: bar.style.top, tr: bar.style.transform, html: bar.innerHTML.length < 60000 ? bar.innerHTML : '' })); } catch (e) {}
   }
   if (window.visualViewport) { visualViewport.addEventListener('resize', place); visualViewport.addEventListener('scroll', place); }
   window.addEventListener('scroll', place); window.addEventListener('resize', place);
   setInterval(place, 800);
+  try { var g0 = JSON.parse(sessionStorage.getItem('jvBarGeo') || 'null'); if (g0) { bar.style.width = g0.w; bar.style.left = g0.l; bar.style.top = g0.t; bar.style.transform = g0.tr; if (g0.html) bar.innerHTML = g0.html; } } catch (e) {}
   var BTN = 'min-height:46px;padding:0 16px;border-radius:999px;font:600 15px system-ui,sans-serif;cursor:pointer;';
   var WHO = (B.who && B.who()) || 'emp';
   function btn(id, label, kind) {
-    var st = kind === 'main' ? 'background:linear-gradient(160deg,#1B2540,#0B1220);color:#F1E2B4;border:1px solid rgba(212,175,55,.45);box-shadow:0 4px 12px rgba(7,12,26,.3);' : kind === 'gold' ? 'background:linear-gradient(160deg,#E6C873,#C49A3A);color:#1A1203;border:0;box-shadow:0 4px 12px rgba(196,154,58,.35);' : kind === 'warn' ? 'background:#fff;color:#9B1C2E;border:1.5px solid #EBC3CA;' : kind === 'link' ? 'background:none;color:#8E1B2A;border:0;padding:0 8px;' : kind === 'ghost' ? 'background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.25);min-height:38px;padding:0 12px;font-size:13.5px;' : 'background:#fff;color:#0D1528;border:1.5px solid #E2D9C3;';
+    var st = kind === 'main' ? 'background:#141414;color:#fff;border:0;box-shadow:0 8px 16px rgba(20,20,20,.2);' : kind === 'gold' ? 'background:#B9A7FF;color:#141414;border:0;' : kind === 'warn' ? 'background:#FFD9E3;color:#8E1B3A;border:0;' : kind === 'link' ? 'background:none;color:#C0264A;border:0;padding:0 8px;' : kind === 'ghost' ? 'background:#fff;color:#141414;border:0;min-height:38px;padding:0 12px;font-size:13.5px;' : 'background:#fff;color:#141414;border:1.5px solid #E4E1EC;';
     return '<button type="button" data-jv="' + id + '" style="' + BTN + st + 'display:inline-flex;align-items:center;gap:8px">' + label + '</button>';
   }
   function curItem(j) {
@@ -93,14 +96,15 @@
   function ic(n, sz, col) { return '<svg viewBox="0 0 24 24" width="' + (sz || 18) + '" height="' + (sz || 18) + '" fill="none" stroke="' + (col || 'currentColor') + '" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;vertical-align:-3px">' + IC[n] + '</svg>'; }
   function head(title, sub) {
     var who = ME.builder || ME.name || '';
-    var photo = ME.photo ? '<img src="' + ME.photo + '" alt="" style="width:40px;height:40px;border-radius:50%;object-fit:cover;border:2px solid #D4AF37;box-shadow:0 0 0 3px rgba(212,175,55,.18);flex-shrink:0">' : '';
-    return '<div style="background:linear-gradient(160deg,#1B2540 0%,#0D1528 55%,#070C1A 100%);color:#fff;padding:12px 12px 12px 14px;display:flex;align-items:center;gap:12px;border-bottom:1px solid rgba(212,175,55,.55);box-shadow:inset 0 1px 0 rgba(255,255,255,.06)">' +
-      '<img src="' + LOGO + '" alt="JV Stock Issue" style="width:42px;height:42px;border-radius:12px;flex-shrink:0">' +
-      '<span style="flex:1;min-width:0"><span style="display:block;font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;color:#E3C878;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(title) + '</span><b style="display:block;font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + sub + '</b>' + (who ? '<span style="display:block;font-size:11.5px;color:#AEB4BE">Built by ' + esc(who) + '</span>' : '') + '</span>' +
-      photo + '<button type="button" data-jv="hide" aria-label="Hide panel" style="width:40px;height:40px;border-radius:12px;border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.08);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0">' + ic('down', 20) + '</button></div>';
+    var photo = ME.photo ? '<img src="' + ME.photo + '" alt="" style="width:42px;height:42px;border-radius:50%;object-fit:cover;border:3px solid #fff;box-shadow:0 4px 10px rgba(20,20,20,.15);flex-shrink:0">' : '';
+    return '<div style="background:#B9A7FF;color:#141414;padding:14px 12px 14px 14px;display:flex;align-items:center;gap:12px;border-radius:22px 22px 0 0">' +
+      '<img src="' + LOGO + '" alt="JV Stock Issue" style="width:44px;height:44px;border-radius:14px;flex-shrink:0;box-shadow:0 6px 14px rgba(60,40,140,.3)">' +
+      '<span style="flex:1;min-width:0"><span style="display:inline-block;font-size:11.5px;font-weight:800;background:rgba(255,255,255,.6);border-radius:99px;padding:2px 10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%">' + esc(title) + '</span><b style="display:block;font-size:18px;font-weight:800;letter-spacing:-.01em;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + sub + '</b>' + (who ? '<span style="display:block;font-size:11.5px;font-weight:600;color:#3D3270">Built by ' + esc(who) + '</span>' : '') + '</span>' +
+      photo + '<button type="button" data-jv="hide" aria-label="Hide panel" style="width:42px;height:42px;border-radius:50%;border:0;background:#fff;color:#141414;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;box-shadow:0 2px 8px rgba(20,20,20,.1)">' + ic('down', 20) + '</button></div>';
   }
+
   function sw(id, label, on) {
-    return '<button type="button" data-jv="' + id + '" style="display:inline-flex;align-items:center;gap:8px;border:0;background:none;padding:4px 0;font:600 13.5px system-ui;color:#3A3E45;cursor:pointer"><span style="width:38px;height:22px;border-radius:99px;background:' + (on ? 'linear-gradient(160deg,#E6C873,#C49A3A)' : '#D9D5CC') + ';position:relative;flex-shrink:0;transition:background .2s"><span style="position:absolute;top:2px;left:' + (on ? 18 : 2) + 'px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:left .2s"></span></span>' + label + '</button>';
+    return '<button type="button" data-jv="' + id + '" style="display:inline-flex;align-items:center;gap:8px;border:0;background:none;padding:4px 0;font:600 13.5px system-ui;color:#3A3E45;cursor:pointer"><span style="width:38px;height:22px;border-radius:99px;background:' + (on ? '#141414' : '#D9D6E3') + ';position:relative;flex-shrink:0;transition:background .2s"><span style="position:absolute;top:2px;left:' + (on ? 18 : 2) + 'px;width:18px;height:18px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:left .2s"></span></span>' + label + '</button>';
   }
   function toggles(j) { return '<div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:12px;padding-top:10px;border-top:1px solid #EFEDE8">' + sw('tQueue', 'Queue mode', !!j.queue) + sw('tAuto', 'Auto submit', !!j.autoSubmit) + sw('tPortal', 'Big panel', portal) + sw('tFull', 'Full screen', immersive) + '</div>' + (j.queue && j.next ? '<div style="font-size:12.5px;color:#6B6F76;margin-top:4px">Next in queue: <b style="color:#0D1528">' + esc(j.next) + '</b></div>' : ''); }
   var autoTimer = null;
@@ -159,10 +163,10 @@
       var tt = j && j.items ? j.items.filter(function (x) { return !x.skip; }).length : 0;
       var dd = j && j.items ? j.items.filter(function (x) { return !x.skip && inGrid(x.code); }).length : 0;
       var lab = WHO === 'mgr' ? 'Manager' : !active(j) ? 'Ready' : dd + ' / ' + tt;
-      bar.innerHTML = '<button type="button" data-jv="expand" aria-label="Show panel" style="min-height:48px;padding:0 14px 0 6px;border-radius:999px;background:linear-gradient(160deg,#1B2540,#0B1220);color:#F1E2B4;border:1.5px solid #D4AF37;display:flex;align-items:center;gap:10px;font:700 15px system-ui;cursor:pointer"><img src="' + LOGO + '" alt="" style="width:34px;height:34px;border-radius:10px">' + (active(j) && j.paused ? ic('pause', 16, '#E8C97A') : '') + esc(lab) + ic('up', 18) + '</button>';
+      bar.innerHTML = '<button type="button" data-jv="expand" aria-label="Show panel" style="min-height:48px;padding:0 14px 0 6px;border-radius:999px;background:#141414;color:#fff;border:0;box-shadow:0 10px 24px rgba(20,20,20,.3);display:flex;align-items:center;gap:10px;font:700 15px system-ui;cursor:pointer"><img src="' + LOGO + '" alt="" style="width:34px;height:34px;border-radius:10px">' + (active(j) && j.paused ? ic('pause', 16, '#E8C97A') : '') + esc(lab) + ic('up', 18) + '</button>';
       bar.style.borderRadius = '999px'; bar.style.boxShadow = '0 8px 24px rgba(15,23,42,.35)'; return;
     }
-    bar.style.borderRadius = '22px'; bar.style.boxShadow = '0 18px 50px rgba(7,12,26,.45),0 0 0 1px rgba(212,175,55,.55)';
+    bar.style.borderRadius = '24px'; bar.style.boxShadow = '0 18px 44px rgba(20,20,20,.28)';
     var body = 'padding:14px 16px 16px';
     if (WHO === 'mgr') {
       bar.innerHTML = head('Manager CUIMS', 'Live stock report') + '<div style="' + body + '"><div style="font-size:14px;color:#6B6F76">Separate login for the manager ID. Download the Item Stock Statement, then upload it in the app.</div><div style="display:flex;gap:8px;margin-top:12px">' + btn('app', ic('back', 16) + ' Back to app', 'main') + '</div></div>';
@@ -208,7 +212,7 @@
     else if (j.phase === 'dupfound') { status = j.slip + ' already exists on CUIMS (Serial ' + (j.dupSerial || '?') + ').'; tone = '#8E1B2A'; bg = '#FBE6E9'; icon = 'alert'; }
     else if (j.phase === 'fill') status = 'Filling the form';
     else if (j.phase === 'capture') status = 'Finding the Serial No for ' + j.slip;
-    h += '<div style="height:6px;border-radius:99px;background:#EFEDE8;overflow:hidden"><div style="height:6px;width:' + pct + '%;background:linear-gradient(90deg,#C49A3A,#E6C873,#F3E2AE);border-radius:99px"></div></div>';
+    h += '<div style="height:6px;border-radius:99px;background:#EFEDE8;overflow:hidden"><div style="height:6px;width:' + pct + '%;background:#141414;border-radius:99px"></div></div>';
     h += '<div style="margin-top:12px;display:flex;align-items:flex-start;gap:10px;padding:10px 12px;border-radius:12px;background:' + bg + ';color:' + tone + ';font-weight:650;font-size:15px">' + (icon ? ic(icon, 20) : '') + '<span>' + esc(status) + '</span></div>';
     var L = (j.log || []).slice(-2);
     if (L.length && !j.paused) h += '<div style="font-size:13px;color:#6B6F76;margin-top:10px;line-height:1.6">' + L.map(function (x) { return ic(x[1] ? 'no' : 'ok', 14, x[1] ? '#B42335' : '#0E7A4F') + ' ' + esc(x[0]); }).join('<br>') + '</div>';
@@ -326,7 +330,7 @@
     var it = live('ddlIssueType'); if (!it) pauseWith('Issue Type box is disabled');
     if (it.value !== 'Offline') { await act(j, 'itype', 'Issue Type', function () { it.value = 'Offline'; fire(it, 'change'); }); log(job(), 'Issue Type = Offline'); return; }
     var sb = $('ContentPlaceHolder1_txtRequisitonSlipno') || document.querySelector('input[id*="RequisitonSlipno"]');
-    if (!sb) pauseWith('Slip No box not found');
+    if (!sb) { j.tries.slipbox = (j.tries.slipbox || 0) + 1; save(j); if (j.tries.slipbox > 20) pauseWith('Slip No box not found on CUIMS'); await sleep(700); return; }
     if (sb.value.trim() !== j.slip) { await act(j, 'slip', 'Slip No', function () { sb.value = j.slip; fire(sb, 'change'); }); log(job(), 'Slip No = ' + j.slip); return; }
 
     var rc = $('txtIssueTo'); if (!rc) pauseWith('Received By box not found');
@@ -531,6 +535,12 @@
     running = false; paint();
   }
 
+  J.cmd = function (c) {
+    var j = job(); if (!j) return;
+    if (c === 'pause' && active(j)) { j.paused = true; j.pauseMsg = 'by you'; save(j); paint(); }
+    else if (c === 'resume' && active(j)) { j.paused = false; j.pauseMsg = ''; j.tries = {}; save(j); paint(); run(); }
+    else if (c === 'cancel' && active(j)) { ui.confirmCancel = false; j.phase = 'cancelled'; j.paused = false; save(j); ev('cancelled'); paint(); }
+  };
   J.onAlertMsg = function (msg) { J.onAlertClosed(msg); };
   J.onAlertClosed = function (given) {
     var msg = given != null ? given : (B.lastAlert() || ''); var j = job();
@@ -547,20 +557,35 @@
     if (!c.u || !c.p) return;
     var tries = 0;
     var setV = function (el, v) { try { var d = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value'); el.focus(); d.set.call(el, v); } catch (e) { el.value = v; } ['input', 'change', 'keyup', 'blur'].forEach(function (t) { el.dispatchEvent(new Event(t, { bubbles: true })); }); };
+    var vis = function (x) { return x && x.offsetParent !== null && !x.disabled; };
+    var clickable = function (root, re) { return [].slice.call(root.querySelectorAll('input[type="submit"],input[type="button"],button,a')).filter(function (x) { return vis(x) && re.test((x.value || '') + ' ' + x.textContent + ' ' + x.id + ' ' + (x.name || '')); })[0]; };
     (function attempt() {
       tries++;
-      var pw = [].slice.call(document.querySelectorAll('input[type="password"]')).filter(function (x) { return x.offsetParent !== null; })[0];
-      if (!pw) { if (tries < 40) setTimeout(attempt, 250); return; }
-      var all = [].slice.call(document.querySelectorAll('input')).filter(function (x) { return x.offsetParent !== null && /^(text|email|tel|number|)$/i.test(x.type || 'text') && !/captcha/i.test(x.id + x.name + x.placeholder); });
-      var before = all.filter(function (x) { return x.compareDocumentPosition(pw) & Node.DOCUMENT_POSITION_FOLLOWING; });
-      var user = before.pop() || all[0];
-      if (!user) { if (tries < 40) setTimeout(attempt, 250); return; }
-      setV(user, c.u); setV(pw, c.p);
-      var cap = [].slice.call(document.querySelectorAll('input')).filter(function (x) { return x.offsetParent !== null && x !== user && x !== pw && /^(text|number|tel|)$/i.test(x.type || 'text') && !x.value; });
+      var pw = [].slice.call(document.querySelectorAll('input[type="password"]')).filter(vis)[0];
+      var texts = [].slice.call(document.querySelectorAll('input')).filter(function (x) { return vis(x) && /^(text|email|tel|number|)$/i.test(x.type || 'text') && !/captcha|search/i.test(x.id + x.name + (x.placeholder || '')); });
+      if (!pw) {
+        // two-step login: User ID first, then NEXT
+        var u1 = texts.filter(function (x) { return /user|emp|login|id|uid/i.test(x.id + x.name + (x.placeholder || '')); })[0] || (texts.length === 1 ? texts[0] : null);
+        var nx = u1 && clickable(document, /next|continue|proceed/i);
+        var stepKey = 'jvLoginStep1:' + location.pathname;
+        if (u1 && nx && !sessionStorage.getItem(stepKey)) {
+          setV(u1, c.u);
+          try { sessionStorage.setItem(stepKey, String(Date.now())); } catch (e) {}
+          setTimeout(function () { nx.click(); }, 500);
+          setTimeout(attempt, 1500); return;
+        }
+        if (tries < 60) setTimeout(attempt, 250);
+        return;
+      }
+      var before = texts.filter(function (x) { return x.compareDocumentPosition(pw) & Node.DOCUMENT_POSITION_FOLLOWING; });
+      var user = before.pop() || null;
+      if (user && !user.value) setV(user, c.u);
+      setV(pw, c.p);
+      var cap = [].slice.call(document.querySelectorAll('input')).filter(function (x) { return vis(x) && x !== user && x !== pw && /^(text|number|tel|)$/i.test(x.type || 'text') && !x.value; });
       var n = 0; try { var k = JSON.parse(sessionStorage.getItem('jvLoginTry') || '{"n":0,"t":0}'); n = Date.now() - k.t < 120000 ? k.n : 0; } catch (e) {}
       if (c.auto && !cap.length && n < 2) {
         var root = pw.form || document;
-        var btn = root.querySelector('input[type="submit"],button[type="submit"],input[id*="ogin" i],button[id*="ogin" i],input[value*="ogin" i],a[id*="ogin" i]') || [].slice.call(root.querySelectorAll('button,a,input[type="button"]')).filter(function (x) { return /log\s*in|sign\s*in/i.test(x.textContent + ' ' + (x.value || '')); })[0];
+        var btn = root.querySelector('input[type="submit"],button[type="submit"]') || clickable(root, /log\s*in|sign\s*in|submit|ogin/i);
         if (btn) { try { sessionStorage.setItem('jvLoginTry', JSON.stringify({ n: n + 1, t: Date.now() })); } catch (e) {} setTimeout(function () { btn.click(); }, 600); }
       }
     })();
@@ -590,4 +615,6 @@
     if (active(j0) && j0.phase === 'await') hookSubmit();
     run();
   }
+};
+ if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', __go); else __go();
 })();
