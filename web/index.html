@@ -464,6 +464,24 @@ input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-
 button.slipline{width:100%;text-align:left;font:inherit;cursor:pointer}
 #undobar .undob{position:fixed;left:16px;right:16px;bottom:calc(98px + env(safe-area-inset-bottom,0px));z-index:70;display:flex;align-items:center;gap:12px;padding:10px 10px 10px 18px;border-radius:22px;background:#141414;color:#fff;box-shadow:0 14px 30px rgba(20,20,20,.35);animation:up .18s}
 #undobar .undob span{flex:1;font-weight:600}#undobar button{border:0;border-radius:99px;background:#B9A7FF;color:#141414;font:800 14px 'Outfit',sans-serif;height:40px;padding:0 16px;cursor:pointer}
+.slips{display:flex;flex-direction:column;gap:6px;padding:0 18px 14px}
+.slipline{position:relative;display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;padding:10px 12px 10px 14px;border-radius:16px;border:0;font:inherit;color:inherit}
+.slipline.app{background:#F1EDFF;box-shadow:inset 4px 0 0 #8C7BE0}.slipline.man{background:#FFF4E0;box-shadow:inset 4px 0 0 #FFB648}.slipline.none{background:#FFF0F3;color:#C0264A;font-weight:600}
+.slipline .st{margin-left:auto;font-size:12px;color:var(--mute)}
+.stag{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:800;letter-spacing:.03em;text-transform:uppercase;border-radius:99px;padding:3px 8px}
+.slipline.app .stag{background:#8C7BE0;color:#fff}.slipline.man .stag,.stag.man{background:#FFB648;color:#3A2600}
+.rqbtns{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 18px 16px}
+.donutwrap{display:flex;align-items:center;gap:16px}
+.donut{position:relative;width:180px;height:180px;flex-shrink:0}.donut .dc{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}.donut .dc b{font-size:30px;font-weight:800}.donut .dc span{font-size:12px;color:var(--mute)}
+.legend{flex:1;min-width:0;display:flex;flex-direction:column;gap:7px}.legend div{display:flex;align-items:center;gap:8px;font-size:13px}.legend i{width:10px;height:10px;border-radius:3px;flex-shrink:0}.legend span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.legend b{font-size:13px}
+@media (max-width:380px){.donutwrap{flex-direction:column}}
+.consh{display:flex;align-items:center;gap:10px;width:100%;padding:13px 16px;border:0;border-bottom:1px solid #F0EEF5;background:none;text-align:left;font:inherit;color:inherit;cursor:pointer}
+.consh .cn{width:40%;min-width:0}.consh .cn b{display:block;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.consh .cn span{font-size:11.5px;color:var(--mute)}
+.consh .cv{min-width:44px;text-align:right;font-size:15px}.consh .cv small{font-size:10.5px;color:var(--mute)}
+.cdot{width:10px;height:10px;border-radius:3px;flex-shrink:0}
+.consh svg{color:var(--mute);flex-shrink:0}
+.slipline.tap{display:flex!important;background-color:transparent;height:auto;min-height:0}
+.slipline.tap.app{background:#F1EDFF}.slipline.tap.man{background:#FFF4E0}
 </style>
 </head>
 <body>
@@ -474,6 +492,6 @@ button.slipline{width:100%;text-align:left;font:inherit;cursor:pointer}
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <input type="file" id="fileIn" accept=".xlsx,.xls,.csv" class="hidden">
 <input type="file" id="photoIn" accept="image/*" class="hidden">
-<script src="app.js?v=5.3.0"></script>
+<script src="app.js?v=5.4.0"></script>
 </body>
 </html>

@@ -436,6 +436,8 @@ public class MainActivity extends AppCompatActivity {
     }
 
     void show(String which) {
+        if ("app".equals(which)) appView.bringToFront();
+        else { WebView w = "mgr".equals(which) ? mgrView : siteView; w.bringToFront(); cover.bringToFront(); shield.bringToFront(); }
         siteView.setVisibility("emp".equals(which) ? View.VISIBLE : View.GONE);
         mgrView.setVisibility("mgr".equals(which) ? View.VISIBLE : View.GONE);
         appView.setVisibility("app".equals(which) ? View.VISIBLE : View.GONE);

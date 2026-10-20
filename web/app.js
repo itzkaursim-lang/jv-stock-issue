@@ -276,16 +276,34 @@ const ICON = {
 };
 const TABS = [['home', 'Home'], ['pend', 'Pending'], ['find', 'Search'], ['reg', 'Registers'], ['set', 'Settings']];
 
+function slipRow(e, req) {
+  const man = e.kind === 'manual';
+  return '<button class="slipline tap ' + (man ? 'man' : 'app') + '" data-a="editEntry" data-v="' + e.id + '"><span class="stag">' + (man ? '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg>Manual' : '<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg>App') + '</span><span class="sl">' + esc(e.slip) + '</span>' + serFmt(e.serial) +
+    '<span class="st">' + esc(fmtShort(entryDate(e))) + ' · ' + esc(entryTime(e)) + ' · ' + (req ? e.items.filter(i => i.req === req).length : e.items.length) + ' art.</span></button>';
+}
+function rqCard(o) {
+  const key = 'rq:' + o.where + ':' + o.req, open = !!(ui.rqOpen || {})[key];
+  let h = '<div class="card rcard' + (o.cont ? ' contcard' : '') + (ui.lastReq === o.req ? ' sel' : '') + '"><div class="scard"><' + (o.tap === false ? 'div' : 'button data-a="openReq" data-v="' + esc(o.req) + '"') + ' class="main"><div class="row"><span class="reqno" data-req="' + esc(o.req) + '">' + esc(o.req) + '</span>' + (o.status ? pill(o.status[0], o.status[1]) : '') + '</div>' +
+    '<b class="ttl">' + esc(o.store) + '</b>' + meta(o.meta || []) + (o.chips || '') + '</' + (o.tap === false ? 'div' : 'button') + '>' +
+    (o.x ? '<div class="side"><button class="xbtn" data-a="' + o.x + '" data-v="' + esc(o.req) + '" aria-label="Remove">' + ico('x', 18) + '</button></div>' : '') + '</div>';
+  if (o.slips) h += '<div class="slips">' + (o.slips.length ? o.slips.map(e => slipRow(e, o.req)).join('') : '<div class="slipline none">No slip entered yet</div>') + '</div>';
+  if (o.btns) h += '<div class="rqbtns">' + o.btns + '</div>';
+  if (o.left && o.left.length) {
+    h += '<button class="leftbtn" data-a="rqTog" data-v="' + esc(key) + '"><span>' + (open ? 'Hide' : 'Show') + ' ' + o.left.length + ' pending article' + (o.left.length > 1 ? 's' : '') + '</span>' + ico(open ? 'up' : 'down', 18) + '</button>';
+    if (open) h += '<div class="leftbox">' + o.left.map(l => '<div class="leftrow"><span><b>' + esc(itemName(l.code)) + '</b><span class="mono">' + esc(l.code) + '</span></span><b class="qty">' + num(l.qty) + ' ' + esc(itemUom(l.code)) + '</b></div>').join('') + '</div>';
+  }
+  if (o.cta) h += '<div class="cta">' + o.cta + '</div>';
+  return h + '</div>';
+}
+function reqSlips(req, onlyDate) { return S.entries.filter(e => e.items.some(i => i.req === req) && (!onlyDate || entryDate(e) === onlyDate)).sort((a, b) => (a.at || '').localeCompare(b.at || '')); }
 function reqCard(r, cont) {
-  const PL = plan();
-  const later = r.date > today();
-  const tag = later ? pill('Scheduled · ' + fmtShort(r.date), 'c-in') : r.st === 'full' ? pill('Ready', 'c-ok') : r.st === 'part' ? pill(r.can.length + ' of ' + r.w.length + ' ready', 'c-gd') : r.st === 'done' ? pill('Done', 'c-in') : pill('Waiting', 'c-no');
+  const PL = plan(), later = r.date > today();
+  const tag = later ? ['Scheduled · ' + fmtShort(r.date), 'c-in'] : r.st === 'full' ? ['Ready', 'c-ok'] : r.st === 'part' ? [r.can.length + ' of ' + r.w.length + ' ready', 'c-gd'] : r.st === 'done' ? ['Done', 'c-in'] : ['Waiting', 'c-no'];
   const slip = (r.w.find(l => l.slip) || {}).slip, rcv = (r.lines.find(l => l.rcv) || {}).rcv || (S.stores[r.store] || {}).rcv || '';
-  return '<div class="card rcard' + (cont ? ' contcard' : '') + (ui.lastReq === r.req ? ' sel' : '') + '"><div class="scard"><button class="main" data-a="openReq" data-v="' + esc(r.req) + '"><div class="row"><span class="reqno" data-req="' + esc(r.req) + '">' + esc(r.req) + '</span>' + tag + '</div><b class="ttl">' + esc(r.store) + '</b>' +
-    (cont ? '<div class="contline">Entered before: ' + [...new Set(r.iss.flatMap(l => l.issued.map(x => x.slip + (x.serial ? ' #' + x.serial : ''))))].map(esc).join(', ') + '</div>' : '') +
-    meta([fmtShort(r.date), slip ? 'Slip ' + esc(slip) : '<em>No slip</em>', rcv ? 'GA' + esc(rcv) : '<em>No receiver</em>', r.lines.length + ' articles']) + unavail(r.w, PL) + '</button>' +
-    '<div class="side"><button class="xbtn" data-a="dropReq" data-v="' + esc(r.req) + '" aria-label="Remove ' + esc(r.store) + ' from the list">' + ico('x', 18) + '</button></div></div>' +
-    (later ? '<div class="cta"><div class="note" style="text-align:center">Fills from ' + fmtLong(r.date) + '. No stock is kept for it before then.</div></div>' : '') + (!later && r.can && r.can.length ? '<div class="cta"><button class="btn main full" data-a="fillReq" data-v="' + esc(r.req) + '">Fill on CUIMS · ' + r.can.length + ' available</button></div>' : '') + '</div>';
+  const sl = reqSlips(r.req);
+  return rqCard({ where: 'home', req: r.req, store: r.store, status: tag, cont, x: 'dropReq',
+    meta: [fmtShort(r.date), slip ? 'next slip ' + esc(slip) : '<em>No slip</em>', rcv ? 'GA' + esc(rcv) : '<em>No receiver</em>', r.lines.length + ' articles'], chips: unavail(r.w, PL),
+    slips: sl.length ? sl : null, cta: later ? '<div class="note" style="text-align:center">Fills from ' + fmtLong(r.date) + '. No stock is kept for it before then.</div>' : (r.can && r.can.length ? '<button class="btn main full" data-a="fillReq" data-v="' + esc(r.req) + '">Fill on CUIMS · ' + r.can.length + ' available</button>' : '') });
 }
 function appBar() {
   const lk = '<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="' + (ui.locked ? 'M8 11V7a4 4 0 0 1 8 0v4' : 'M8 11V7a4 4 0 0 1 7.5-1.8') + '"/></svg>';
@@ -446,12 +464,10 @@ function vPend() {
     if (!list.length) return;
     h += '<div class="sgroup"><span class="sdot ' + cls + '"></span><b>' + title + '</b><span>' + list.length + '</span></div>';
     list.forEach(r => {
-      const ready = r.pl.filter(l => PL[l.id] === 'issue'), d0 = days(r.date);
-      const slips = [...new Set(r.lines.flatMap(l => l.issued.map(x => x.slip)))];
-      h += '<div class="card rcard' + (cls === 'cont' ? ' contcard' : '') + (ui.lastReq === r.req ? ' sel' : '') + '"><div class="scard"><button class="main" data-a="openReq" data-v="' + esc(r.req) + '"><div class="row"><span class="reqno" data-req="' + esc(r.req) + '">' + esc(r.req) + '</span>' + (ready.length === r.pl.length ? pill('All ready', 'c-ok') : ready.length ? pill(ready.length + ' of ' + r.pl.length + ' ready', 'c-gd') : pill('Waiting', 'c-no')) + '</div>' +
-        '<b class="ttl">' + esc(r.store) + '</b>' + meta([fmtShort(r.date), d0 ? d0 + (d0 === 1 ? ' day' : ' days') + ' old' : 'today', r.pl.length + ' pending', slips.length ? 'done in ' + slips.map(esc).join(', ') : '']) + unavail(r.pl, PL) + '</button>' +
-        '<div class="side"><button class="xbtn" data-a="dropReq" data-v="' + esc(r.req) + '" aria-label="Remove pending of ' + esc(r.req) + '">' + ico('x', 18) + '</button></div></div>' +
-        (ready.length ? '<div class="cta"><button class="btn main full" data-a="fillReqPend" data-v="' + esc(r.req) + '">Fill on CUIMS · ' + ready.length + ' available</button></div>' : '') + '</div>';
+      const ready = r.pl.filter(l => PL[l.id] === 'issue'), d0 = days(r.date), sl = reqSlips(r.req);
+      h += rqCard({ where: 'pend', req: r.req, store: r.store, cont: cls === 'cont', x: 'dropReq', status: ready.length === r.pl.length ? ['All ready', 'c-ok'] : ready.length ? [ready.length + ' of ' + r.pl.length + ' ready', 'c-gd'] : ['Waiting', 'c-no'],
+        meta: [fmtShort(r.date), d0 ? d0 + (d0 === 1 ? ' day' : ' days') + ' old' : 'today', r.pl.length + ' pending'], chips: unavail(r.pl, PL), slips: sl.length ? sl : null,
+        cta: ready.length ? '<button class="btn main full" data-a="fillReqPend" data-v="' + esc(r.req) + '">Fill on CUIMS · ' + ready.length + ' available</button>' : '' });
     });
   });
   return h + '</main>';
@@ -586,14 +602,9 @@ function vReg() {
     h += '<div class="grid2"><button class="btn main" data-a="pdfIssue"' + (list.length ? '' : ' disabled') + '>Make PDF</button><button class="btn" data-a="newManual">+ Manual entry</button></div>';
     if (!list.length) h += '<div class="card pad note">Nothing for these dates.</div>';
     list.forEach(g => {
-      const open = !!(ui.regOpen || {})[g.req];
-      h += '<div class="card rcard' + (ui.lastReq === g.req ? ' sel' : '') + '" style="overflow:hidden"><div class="pad col" style="gap:10px"><div class="row"><span class="reqno big" data-req="' + esc(g.req) + '">' + esc(g.req) + '</span>' +
-        (g.left.length ? pill('Pending · ' + g.left.length + ' of ' + g.total + ' left', 'c-gd') : g.total ? pill('Completed', 'c-ok') : pill('No articles', 'c-gy')) + '</div>' +
-        '<b class="ttl">' + esc(g.store) + '</b>' + meta(['requested ' + (g.date ? fmtShort(g.date) : '–'), g.issued + ' of ' + g.total + ' issued', g.closed ? g.closed + ' closed' : '']) +
-        (g.slips.length ? g.slips.map(e => '<button class="slipline tap" data-a="editEntry" data-v="' + e.id + '"><span class="sl">' + esc(e.slip) + '</span>' + serFmt(e.serial) + '<span class="st">' + esc(fmtShort(entryDate(e))) + ' · ' + esc(entryTime(e)) + ' · ' + e.items.filter(i => i.req === g.req).length + ' art.' + (e.kind === 'manual' ? ' · manual' : '') + '</span></button>').join('') : '<div class="slipline" style="color:var(--noInk)">No slip entered yet</div>') +
-        '<div class="grid2"><button class="btn sm" data-a="markDone" data-v="' + esc(g.req) + '"' + (g.left.length ? '' : ' disabled') + '>+ Add slip & serial</button><button class="btn sm ghost" data-a="reqStatus" data-v="' + esc(g.req) + '">Pending / completed</button></div></div>' +
-        (g.left.length ? '<button class="leftbtn" data-a="regTog" data-v="' + esc(g.req) + '"><span>' + (open ? 'Hide' : 'Show') + ' ' + g.left.length + ' pending article' + (g.left.length > 1 ? 's' : '') + '</span>' + ico(open ? 'up' : 'down', 18) + '</button>' : '') +
-        (g.left.length && open ? '<div class="leftbox">' + g.left.map(l => '<div class="leftrow"><span><b>' + esc(itemName(l.code)) + '</b><span class="mono">' + esc(l.code) + '</span></span><b class="qty">' + num(l.qty) + ' ' + esc(itemUom(l.code)) + '</b></div>').join('') + '</div>' : '') + '</div>';
+      h += rqCard({ where: 'reg', req: g.req, store: g.store, status: g.left.length ? ['Pending · ' + g.left.length + ' of ' + g.total + ' left', 'c-gd'] : g.total ? ['Completed', 'c-ok'] : ['No articles', 'c-gy'],
+        meta: ['requested ' + (g.date ? fmtShort(g.date) : '–'), g.issued + ' of ' + g.total + ' issued', g.closed ? g.closed + ' closed' : ''], slips: g.slips, left: g.left,
+        btns: '<button class="btn sm" data-a="mslips" data-v="' + esc(g.req) + '">+ Add slips & serials</button><button class="btn sm ghost" data-a="reqStatus" data-v="' + esc(g.req) + '">Pending / completed</button>' });
     });
   } else {
     const list = S.returns.filter(x => x.date === r.date).sort((a, b) => (a.time || '').localeCompare(b.time || ''));
@@ -1150,12 +1161,7 @@ function vDone() {
   h += '<div class="grid3"><div class="tile t-in"><b>' + D.length + '</b><span>Requests</span></div><div class="tile t-ok"><b>' + full + '</b><span>Fully done</span></div><div class="tile t-pt"><b>' + (D.length - full) + '</b><span>Partly done</span></div></div>';
   if (!D.length) h += '<div class="card pad note">Nothing done for these dates.</div>';
   D.forEach(({ r, slips, left, issued, total }) => {
-    const open = !!ui.doneOpen[r.req];
-    h += '<div class="card rcard' + (ui.lastReq === r.req ? ' sel' : '') + '" style="overflow:hidden"><div class="pad col" style="gap:8px"><div class="row"><span class="reqno big" data-req="' + esc(r.req) + '">' + esc(r.req) + '</span>' + (left.length ? pill(left.length + ' left', 'c-gd') : pill('Fully done', 'c-ok')) + '</div>' +
-      '<b class="ttl">' + esc(r.store) + '</b>' + meta(['requested ' + fmtShort(r.date), issued + ' of ' + total + ' issued']) +
-      slips.map(e => '<div class="slipline"><span class="sl">' + esc(e.slip) + '</span>' + serFmt(e.serial) + '<span class="st">' + esc(fmtShort(entryDate(e))) + ' · ' + esc(entryTime(e)) + '</span></div>').join('') + '</div>' +
-      (left.length ? '<button class="leftbtn" data-a="doneTog" data-v="' + esc(r.req) + '"><span>' + (open ? 'Hide' : 'Show') + ' ' + left.length + ' pending article' + (left.length > 1 ? 's' : '') + '</span>' + ico(open ? 'up' : 'down', 18) + '</button>' : '') +
-      (left.length && open ? '<div class="leftbox">' + left.map(l => '<div class="leftrow"><span><b>' + esc(itemName(l.code)) + '</b><span class="mono">' + esc(l.code) + '</span></span><b class="qty">' + num(l.qty) + ' ' + esc(itemUom(l.code)) + '</b></div>').join('') + '</div>' : '') + '</div>';
+    h += rqCard({ where: 'done', req: r.req, store: r.store, status: left.length ? [left.length + ' left', 'c-gd'] : ['Completed', 'c-ok'], meta: ['requested ' + fmtShort(r.date), issued + ' of ' + total + ' issued'], slips, left });
   });
   if (D.length) h += '<button class="btn" data-a="doneExport">Download done list</button>';
   return h + '</main>';
@@ -1429,6 +1435,23 @@ function shReqStatus() {
   h += '<div class="grid2"><button class="btn danger-t" data-a="rsAll"' + (left ? '' : ' disabled') + '>Mark completed</button><button class="btn" data-a="corrOpen" data-v="' + esc(f.req) + '">Correct quantities</button></div>';
   return h;
 }
+function shMslips() {
+  const f = ui.form, r = requests().find(x => x.req === f.req);
+  if (!r) return '<div class="row"><h2>Request ' + esc(f.req) + '</h2><button class="btn sm ghost" data-a="closeSheet">Close</button></div><div class="card pad note">This request is not in the app.</div>';
+  const W = r.lines.filter(l => l.status === 'waiting'), sl = reqSlips(r.req);
+  let h = '<div class="row"><h2>Slips for ' + esc(r.req) + '</h2><button class="btn sm ghost" data-a="closeSheet">Done</button></div>';
+  h += '<div class="note">' + esc(r.store) + ' · ' + W.length + ' pending of ' + r.lines.filter(l => l.status !== 'dropped').length + '. Add as many slips as were made on CUIMS, one after another.</div>';
+  h += '<div class="slips card" style="padding:10px">' + (sl.length ? sl.map(e => slipRow(e, r.req)).join('') : '<div class="slipline none">No slip entered yet</div>') + '</div>';
+  if (!W.length) return h + '<div class="okbox"><span>All articles of this request are issued or closed.</span></div>';
+  h += '<div class="card pad col" style="gap:10px"><div class="row"><b class="ttl" style="font-size:17px">Add slip ' + (sl.length + 1) + '</b><span class="stag man" style="position:static">Manual</span></div>' +
+    '<div class="grid2"><label class="f">Slip No<input type="text" data-f="slip" value="' + esc(f.slip) + '" class="mono" autocapitalize="characters"></label><label class="f">Serial No<input type="text" data-f="serial" value="' + esc(f.serial) + '" class="mono" inputmode="numeric"></label></div>' +
+    '<div class="grid2"><label class="f">Date<input type="date" data-f="date" value="' + esc(f.date) + '"></label><label class="f">Time<input type="time" data-f="time" value="' + esc(f.time) + '"></label></div>' +
+    '<label class="f">Receiver (6 digits)<input type="text" data-f="rcv" value="' + esc(f.rcv) + '" class="mono" inputmode="numeric" maxlength="6"></label>' +
+    '<div class="row"><b>Articles in this slip</b><button class="btn sm ghost" data-a="msAll">' + (W.every(l => f.pick[l.id]) ? 'Untick all' : 'Tick all') + '</button></div>' +
+    W.map(l => '<label class="chk" style="min-height:44px;gap:12px"><input type="checkbox" data-a="markPick" data-v="' + l.id + '"' + (f.pick[l.id] ? ' checked' : '') + '><span style="flex:1"><b>' + esc(itemName(l.code)) + '</b><span class="note mono" style="display:block">' + esc(l.code) + '</span></span><b class="qty">' + num(l.qty) + ' ' + esc(itemUom(l.code)) + '</b></label>').join('') +
+    '<button class="btn main full" data-a="msSave">Save slip ' + (sl.length + 1) + ' · ' + W.filter(l => f.pick[l.id]).length + ' articles</button></div>';
+  return h;
+}
 function shCrop() {
   const c = ui.sheet, V = 280, base = Math.max(V / c.img.width, V / c.img.height) * c.zoom;
   const dw = c.img.width * base, dh = c.img.height * base;
@@ -1555,7 +1578,7 @@ function renderSheet() {
   const el = document.getElementById('sheet');
   if (!ui.sheet) { el.innerHTML = ''; return; }
   const k = ui.sheet.kind;
-  const body = k === 'reqStatus' ? shReqStatus() : k === 'corr' ? shCorr() : k === 'batch' ? shBatch() : k === 'newReq' ? shNewReq() : k === 'export' ? shExport() : k === 'crop' ? shCrop() : k === 'backups' ? shBackups() : k === 'start' ? shStart() : k === 'upload' ? shUpload() : k === 'entry' ? shEntry() : k === 'return' ? shReturn() : k === 'editReq' ? shEditReq() : k === 'bulk' ? shBulk() : k === 'mark' ? shMark() : '';
+  const body = k === 'mslips' ? shMslips() : k === 'reqStatus' ? shReqStatus() : k === 'corr' ? shCorr() : k === 'batch' ? shBatch() : k === 'newReq' ? shNewReq() : k === 'export' ? shExport() : k === 'crop' ? shCrop() : k === 'backups' ? shBackups() : k === 'start' ? shStart() : k === 'upload' ? shUpload() : k === 'entry' ? shEntry() : k === 'return' ? shReturn() : k === 'editReq' ? shEditReq() : k === 'bulk' ? shBulk() : k === 'mark' ? shMark() : '';
   const sc = el.querySelector('.sheet') ? el.querySelector('.sheet').scrollTop : 0;
   el.innerHTML = '<div class="sheetbg" data-a="bgClose"><div class="sheet" role="dialog" aria-modal="true">' + body + '</div></div>';
   el.querySelector('.sheet').scrollTop = sc;
@@ -1730,31 +1753,46 @@ function consData() {
 }
 function consRows() { const D = consData(), rows = []; D.stores.forEach(so => Object.values(so.items).sort((a, b) => b.qty - a.qty).forEach(x => rows.push({ Store: so.store, 'Item code': x.code, Item: itemName(x.code), UOM: itemUom(x.code), Qty: Math.round(x.qty * 1000) / 1000, Times: x.n }))); return rows; }
 function bar(v, max, col) { return '<span class="cbar"><i style="width:' + Math.max(3, Math.round(v / (max || 1) * 100)) + '%;background:' + (col || '#141414') + '"></i></span>'; }
+function donut(parts, size) {
+  const tot = parts.reduce((n, p) => n + p.v, 0) || 1, R = size / 2 - 14, C = 2 * Math.PI * R; let off = 0;
+  return '<svg viewBox="0 0 ' + size + ' ' + size + '" width="' + size + '" height="' + size + '" style="transform:rotate(-90deg)"><circle cx="' + size / 2 + '" cy="' + size / 2 + '" r="' + R + '" fill="none" stroke="#EEECF3" stroke-width="22"/>' +
+    parts.map(p => { const L = p.v / tot * C, g = '<circle cx="' + size / 2 + '" cy="' + size / 2 + '" r="' + R + '" fill="none" stroke="' + p.c + '" stroke-width="22" stroke-dasharray="' + Math.max(0, L - 2).toFixed(1) + ' ' + C.toFixed(1) + '" stroke-dashoffset="' + (-off).toFixed(1) + '"/>'; off += L; return g; }).join('') + '</svg>';
+}
 function vCons() {
   ui.cons = ui.cons || { p: 'week', mode: 'store', open: {} };
   const C = ui.cons, D = consData();
+  const COL = ['#8C7BE0', '#FFB648', '#5B9BFF', '#F27BD8', '#2BB673', '#FF7A59', '#9AA0A6'];
   let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Consumption</h1><div class="sub">What each store took, from your issue slips.</div></div></header><main>';
   h += '<div class="seg">' + [['week', '7 days'], ['month', 'This month'], ['last', 'Last month'], ['custom', 'Custom']].map(([k, l]) => '<button data-a="consP" data-v="' + k + '" class="' + (C.p === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>';
   if (C.p === 'custom') h += '<div class="grid2"><label class="f">From<input type="date" data-cons="from" value="' + esc(C.from || today()) + '"></label><label class="f">To<input type="date" data-cons="to" value="' + esc(C.to || today()) + '"></label></div>';
-  const totalArt = D.stores.reduce((n, so) => n + so.n, 0);
-  h += '<div class="grid3"><div class="tile t-in"><b>' + D.stores.length + '</b><span>Stores</span></div><div class="tile t-ok"><b>' + D.E.length + '</b><span>Slips</span></div><div class="tile t-pt"><b>' + totalArt + '</b><span>Articles</span></div></div>';
-  h += '<div class="row"><div class="seg" style="flex:1"><button data-a="consM" data-v="store" class="' + (C.mode === 'store' ? 'on' : '') + '">By store</button><button data-a="consM" data-v="item" class="' + (C.mode === 'item' ? 'on' : '') + '">By item</button></div></div>';
-  h += '<div class="note">' + fmtLong(D.a) + ' to ' + fmtLong(D.b) + '</div>';
+  h += '<div class="note" style="text-align:center">' + fmtLong(D.a) + ' to ' + fmtLong(D.b) + '</div>';
   if (!D.E.length) return h + '<div class="card pad note">No issue slips in this period.</div></main>';
-  const COL = ['#B9A7FF', '#FFC266', '#AECBFF', '#F6A8EE', '#7CDDB0'];
+  const totalArt = D.stores.reduce((n, so) => n + so.n, 0);
+  // share by store: donut + legend
+  const top = D.stores.slice(0, 6).map((so, k) => ({ name: so.store, v: so.n, c: COL[k] }));
+  const rest = D.stores.slice(6).reduce((n, so) => n + so.n, 0); if (rest) top.push({ name: 'Others (' + (D.stores.length - 6) + ')', v: rest, c: COL[6] });
+  h += '<div class="card pad col" style="gap:14px"><div class="row"><b class="ttl">Share by store</b><span class="note">' + totalArt + ' articles · ' + D.E.length + ' slips</span></div>' +
+    '<div class="donutwrap"><div class="donut">' + donut(top, 180) + '<div class="dc"><b>' + D.stores.length + '</b><span>stores</span></div></div>' +
+    '<div class="legend">' + top.map(p => '<div><i style="background:' + p.c + '"></i><span>' + esc(p.name) + '</span><b>' + Math.round(p.v / totalArt * 100) + '%</b></div>').join('') + '</div></div></div>';
+  // top items
+  const ti = D.items.slice().sort((a, b) => Object.keys(b.stores).length - Object.keys(a.stores).length || b.qty - a.qty).slice(0, 8), mx = Math.max(...ti.map(x => Object.keys(x.stores).length));
+  h += '<div class="card pad col" style="gap:4px"><div class="row" style="margin-bottom:6px"><b class="ttl">Most issued items</b><span class="note">by number of stores</span></div>' +
+    ti.map((x, k) => '<div class="consrow"><span><b>' + esc(itemName(x.code)) + '</b><span>' + Object.keys(x.stores).length + ' stores</span></span>' + bar(Object.keys(x.stores).length, mx, COL[k % 6]) + '<b class="qty">' + num(Math.round(x.qty * 1000) / 1000) + ' <small>' + esc(itemUom(x.code)) + '</small></b></div>').join('') + '</div>';
+  // details
+  h += '<div class="shead"><div><h2>Details</h2><span>Tap a ' + (C.mode === 'store' ? 'store' : 'item') + ' to open it</span></div></div>';
+  h += '<div class="seg"><button data-a="consM" data-v="store" class="' + (C.mode === 'store' ? 'on' : '') + '">Stores</button><button data-a="consM" data-v="item" class="' + (C.mode === 'item' ? 'on' : '') + '">Items</button></div>';
+  h += '<div class="card" style="overflow:hidden">';
   if (C.mode === 'store') {
     const maxN = Math.max(...D.stores.map(x => x.n));
-    D.stores.forEach((so, k) => { const its = Object.values(so.items).sort((a, b) => b.n - a.n || b.qty - a.qty), open = !!C.open[so.store];
-      h += '<div class="card" style="overflow:hidden"><button class="pad col consh" data-a="consO" data-v="' + esc(so.store) + '" style="gap:8px"><div class="row"><b class="ttl">' + esc(so.store) + '</b>' + pill(so.n + ' articles', 'c-gy') + '</div>' + bar(so.n, maxN, COL[k % COL.length]) + meta([so.slips.size + ' slips', its.length + ' different items']) + '</button>' +
-        '<div class="leftbox" style="background:var(--soft)">' + (open ? its : its.slice(0, 5)).map(x => { const mq = Math.max(...its.filter(y => itemUom(y.code) === itemUom(x.code)).map(y => y.qty)); return '<div class="consrow"><span><b>' + esc(itemName(x.code)) + '</b><span class="mono">' + esc(x.code) + ' · ' + x.n + 'x</span></span>' + bar(x.qty, mq, '#141414') + '<b class="qty">' + num(Math.round(x.qty * 1000) / 1000) + ' <small>' + esc(itemUom(x.code)) + '</small></b></div>'; }).join('') +
-        (its.length > 5 ? '<button class="btn sm ghost" data-a="consO" data-v="' + esc(so.store) + '" style="margin-top:6px">' + (open ? 'Show top 5' : 'Show all ' + its.length) + '</button>' : '') + '</div></div>'; });
+    D.stores.forEach((so, k) => { const its = Object.values(so.items).sort((a, b) => b.qty - a.qty), open = !!C.open['s' + so.store];
+      h += '<button class="consh" data-a="consO" data-v="s' + esc(so.store) + '"><i class="cdot" style="background:' + COL[Math.min(k, 6)] + '"></i><span class="cn"><b>' + esc(so.store) + '</b><span>' + so.slips.size + ' slips · ' + its.length + ' items</span></span>' + bar(so.n, maxN, COL[Math.min(k, 6)]) + '<b class="cv">' + so.n + '</b>' + ico(open ? 'up' : 'down', 16) + '</button>';
+      if (open) h += '<div class="leftbox" style="background:var(--soft)">' + its.map(x => '<div class="leftrow"><span><b>' + esc(itemName(x.code)) + '</b><span class="mono">' + esc(x.code) + ' · issued ' + x.n + 'x</span></span><b class="qty">' + num(Math.round(x.qty * 1000) / 1000) + ' ' + esc(itemUom(x.code)) + '</b></div>').join('') + '</div>'; });
   } else {
-    D.items.slice(0, 80).forEach(x => { const sts = Object.entries(x.stores).sort((a, b) => b[1] - a[1]), mq = sts[0][1];
-      h += '<div class="card pad col" style="gap:8px"><div class="row"><span><b class="ttl" style="font-size:16.5px">' + esc(itemName(x.code)) + '</b><div class="meta"><span class="mono">' + esc(x.code) + '</span><i></i><span>' + sts.length + ' stores</span></div></span><b class="qty">' + num(Math.round(x.qty * 1000) / 1000) + ' <small>' + esc(itemUom(x.code)) + '</small></b></div>' +
-        sts.map(([st, q], k) => '<div class="consrow"><span><b>' + esc(st) + '</b></span>' + bar(q, mq, COL[k % COL.length]) + '<b class="qty">' + num(Math.round(q * 1000) / 1000) + '</b></div>').join('') + '</div>'; });
-    if (D.items.length > 80) h += '<div class="note">Showing 80 of ' + D.items.length + ' items. Download for all.</div>';
+    D.items.slice(0, 120).forEach(x => { const sts = Object.entries(x.stores).sort((a, b) => b[1] - a[1]), open = !!C.open['i' + x.code];
+      h += '<button class="consh" data-a="consO" data-v="i' + esc(x.code) + '"><span class="cn"><b>' + esc(itemName(x.code)) + '</b><span>' + esc(x.code) + ' · ' + sts.length + ' stores</span></span><b class="cv">' + num(Math.round(x.qty * 1000) / 1000) + ' <small>' + esc(itemUom(x.code)) + '</small></b>' + ico(open ? 'up' : 'down', 16) + '</button>';
+      if (open) h += '<div class="leftbox" style="background:var(--soft)">' + sts.map(([st, q], k) => '<div class="consrow"><span><b>' + esc(st) + '</b></span>' + bar(q, sts[0][1], COL[k % 6]) + '<b class="qty">' + num(Math.round(q * 1000) / 1000) + '</b></div>').join('') + '</div>'; });
   }
-  h += '<button class="btn" data-a="consExport">Download consumption</button>';
+  h += '</div><button class="btn" data-a="consExport">Download full report</button>';
   return h + '</main>';
 }
 function vCheck() {
@@ -1906,7 +1944,7 @@ function shEditReq() {
 }
 
 /* ---------------- lock ---------------- */
-const GUARDED = new Set(['artQty', 'artHold', 'artDel', 'artsBHold', 'artsBRel', 'artsBDel', 'testToggle', 'testClear', 'dcRenum', 'dcMerge', 'dcKeepFirst', 'dcDate', 'dcBad', 'renumReq', 'impRenum', 'impDrop', 'credSave', 'credDel', 'corrOpen', 'corrSave', 'bulkEdit', 'bulkSave', 'dropReq', 'dropStore', 'editReq', 'saveReq', 'markDone', 'markSave', 'newManual', 'saveEntry', 'delEntry', 'newReturn', 'saveReturn', 'delReturn',
+const GUARDED = new Set(['msSave', 'artQty', 'artHold', 'artDel', 'artsBHold', 'artsBRel', 'artsBDel', 'testToggle', 'testClear', 'dcRenum', 'dcMerge', 'dcKeepFirst', 'dcDate', 'dcBad', 'renumReq', 'impRenum', 'impDrop', 'credSave', 'credDel', 'corrOpen', 'corrSave', 'bulkEdit', 'bulkSave', 'dropReq', 'dropStore', 'editReq', 'saveReq', 'markDone', 'markSave', 'newManual', 'saveEntry', 'delEntry', 'newReturn', 'saveReturn', 'delReturn',
   'rmStore', 'addStore', 'wipe', 'restore', 'bkRestore', 'bkDel', 'bkKeep', 'bkSave', 'bkNoteSave', 'photo', 'photoDel', 'mode', 'lockToggle', 'syncAuto', 'mgrToggle', 'moveStore', 'saveUrls', 'resetZoom', 'hold', 'cropSave']);
 let pendingAuth = null;
 function askUnlock(after) {
@@ -1991,7 +2029,7 @@ document.addEventListener('click', async ev => {
       if (sp) { toast(sp); break; } if (!/^\d{6}$/.test(f.rcv)) { toast('Receiver must be 6 digits.'); break; }
       const ls = f.lines.filter(l => f.pick[l.id]); if (!ls.length) { toast('Tick at least one article.'); break; }
       const at = new Date(f.date + 'T' + timeNow()).toISOString();
-      S.entries.push({ id: nid(), slip, serial: (f.serial || '').trim(), store: f.store, rcv: f.rcv, rname: rname(f.rcv), at, date: f.date, time: timeNow(), by: meTag(), kind: 'auto', remarks: 'marked by hand',
+      S.entries.push({ id: nid(), slip, serial: (f.serial || '').trim(), store: f.store, rcv: f.rcv, rname: rname(f.rcv), at, date: f.date, time: timeNow(), by: meTag(), kind: 'manual', remarks: 'marked by hand',
         items: ls.map(l => ({ lineId: l.id, req: l.req, code: l.code, name: itemName(l.code), uom: itemUom(l.code), qty: l.qty, remark: remarkFor(l.date) })) });
       ls.forEach(l => { const x = S.lines.find(y => y.id === l.id); x.status = 'issued'; x.issued.push({ slip, serial: (f.serial || '').trim(), at }); if (S.stock[l.code]) S.stock[l.code].qty = Math.round((S.stock[l.code].qty - l.qty) * 1000) / 1000; });
       save(); ui.sheet = null; renderSheet(); render(); toast('Recorded ' + slip + ' as issued.'); break; }
@@ -2059,8 +2097,24 @@ document.addEventListener('click', async ev => {
     case 'stkF': ui.stk.f = v; ui.stk.open = null; render(); break;
     case 'stkOpen': ui.stk.open = ui.stk.open === v ? null : v; { const b = document.getElementById('stkres'); if (b) b.innerHTML = stockResults(); } break;
     case 'regSt': ui.reg.st = v; render(); break;
+    case 'rqTog': ui.rqOpen = ui.rqOpen || {}; ui.rqOpen[v] = !ui.rqOpen[v]; render(); break;
     case 'regTog': ui.regOpen = ui.regOpen || {}; ui.regOpen[v] = !ui.regOpen[v]; render(); break;
     case 'reqStatus': ui.form = { req: v }; ui.sheet = { kind: 'reqStatus' }; renderSheet(); break;
+    case 'mslips': { const r = requests().find(x => x.req === v); if (!r) break; const W = r.lines.filter(l => l.status === 'waiting'); const pick = {}; W.forEach(l => pick[l.id] = 1);
+      ui.form = { req: v, store: r.store, slip: plannedSlip(W.map(l => l.id)) || nextSlip(), serial: '', rcv: (r.lines.find(l => l.rcv) || {}).rcv || (S.stores[r.store] || {}).rcv || '', date: today(), time: timeNow(), pick };
+      ui.sheet = { kind: 'mslips' }; renderSheet(); break; }
+    case 'msAll': { const r = requests().find(x => x.req === ui.form.req); const W = r.lines.filter(l => l.status === 'waiting'); const all = W.every(l => ui.form.pick[l.id]); ui.form.pick = {}; if (!all) W.forEach(l => ui.form.pick[l.id] = 1); renderSheet(); break; }
+    case 'msSave': { const f = ui.form; const slip = String(f.slip || '').trim().toUpperCase(); const sp = slipProblem(slip); if (sp) { toast(sp); break; }
+      if (!/^\d{6}$/.test(f.rcv)) { toast('Receiver must be 6 digits.'); break; }
+      const ls = S.lines.filter(l => l.req === f.req && l.status === 'waiting' && f.pick[l.id]); if (!ls.length) { toast('Tick at least one article.'); break; }
+      if (!(await uiConfirm('Save ' + slip + (f.serial ? ' (Serial ' + f.serial + ')' : '') + ' for ' + ls.length + ' article' + (ls.length > 1 ? 's' : '') + ' of ' + f.req + '?', 'Save slip'))) break;
+      undoArm('markSave');
+      const at = new Date((f.date || today()) + 'T' + (f.time || timeNow())).toISOString();
+      S.entries.push({ id: nid(), slip, serial: String(f.serial || '').trim(), store: f.store, rcv: f.rcv, rname: rname(f.rcv), at, date: f.date || today(), time: f.time || timeNow(), by: meTag(), kind: 'manual', remarks: '',
+        items: ls.map(l => ({ lineId: l.id, req: l.req, code: l.code, name: itemName(l.code), uom: itemUom(l.code), qty: l.qty, remark: l.remark || remarkFor(l.date) })) });
+      ls.forEach(l => { l.status = 'issued'; l.issued.push({ slip, serial: String(f.serial || '').trim(), at }); if (S.stock[l.code]) S.stock[l.code].qty = Math.round((S.stock[l.code].qty - l.qty) * 1000) / 1000; });
+      save(); toast(slip + ' saved. Add the next slip if there is one.');
+      const W2 = S.lines.filter(l => l.req === f.req && l.status === 'waiting'); f.pick = {}; W2.forEach(l => f.pick[l.id] = 1); f.slip = nextSlip(); f.serial = ''; renderSheet(); render(); break; }
     case 'rsClose': { const l = S.lines.find(x => String(x.id) === v); if (!l) break; if (!(await uiConfirm('Close ' + itemName(l.code) + ' ' + num(l.qty) + ' ' + itemUom(l.code) + '? It stops being pending.', 'Close', true))) break; audit('close', l); l.status = 'dropped'; save(); renderSheet(); render(); break; }
     case 'rsOpen': { const l = S.lines.find(x => String(x.id) === v); if (!l) break; if (!(await uiConfirm('Make ' + itemName(l.code) + ' ' + num(l.qty) + ' ' + itemUom(l.code) + ' pending again?', 'Make pending'))) break; audit('reopen', l); l.status = 'waiting'; save(); renderSheet(); render(); break; }
     case 'rsAll': { const req = ui.form.req; const W = S.lines.filter(l => l.req === req && l.status === 'waiting'); if (!W.length) break; if (!(await uiConfirm('Mark request ' + req + ' as completed? ' + W.length + ' pending article' + (W.length > 1 ? 's are' : ' is') + ' closed (not issued).', 'Mark completed', true))) break; W.forEach(l => { audit('close', l); l.status = 'dropped'; }); save(); renderSheet(); render(); toast(req + ' marked completed.'); break; }
@@ -2176,7 +2230,12 @@ document.addEventListener('click', async ev => {
     case 'regItems': ui.reg.items = t.checked; break;
     case 'pdfIssue': openExport('issue'); break;
     case 'pdfReturn': openExport('ret'); break;
-    case 'newManual': ui.form = { _new: true, kind: 'manual', slip: '', serial: '', store: '', rcv: '', rname: '', date: ui.reg.date, time: timeNow(), reqs: '', remarks: '', byName: S.me.name, byEmp: S.me.emp, items: [blankItem()] }; ui.sheet = { kind: 'entry' }; renderSheet(); break;
+    case 'newManual': {
+      const R = requests().filter(r => r.lines.some(l => l.status === 'waiting'));
+      PICKS.manReq = { title: 'Manual slip for which request?', search: true, opts: [['__free', 'Request not in the app (free entry)', 'type everything by hand']].concat(sortBy(R, 'reqdate', r => ({ req: r.req, store: r.store, date: r.date })).map(r => [r.req, r.req + ' · ' + r.store, fmtShort(r.date) + ' · ' + r.lines.filter(l => l.status === 'waiting').length + ' pending'])), val: '',
+        set: x => { if (x === '__free') { const b = document.createElement('button'); b.dataset.a = 'newManualFree'; document.body.appendChild(b); b.click(); b.remove(); } else { const b = document.createElement('button'); b.dataset.a = 'mslips'; b.dataset.v = x; document.body.appendChild(b); b.click(); b.remove(); } } };
+      ui.picker = { id: 'manReq', q: '' }; renderPicker(); break; }
+    case 'newManualFree': ui.form = { _new: true, kind: 'manual', slip: '', serial: '', store: '', rcv: '', rname: '', date: ui.reg.date, time: timeNow(), reqs: '', remarks: '', byName: S.me.name, byEmp: S.me.emp, items: [blankItem()] }; ui.sheet = { kind: 'entry' }; renderSheet(); break;
     case 'editEntry': { const e = S.entries.find(x => String(x.id) === v); ui.form = Object.assign(JSON.parse(JSON.stringify(e)), { date: entryDate(e), time: entryTime(e), reqs: e.reqs || [...new Set(e.items.map(i => i.req).filter(Boolean))].join(', '), byName: (e.by || {}).name || '', byEmp: (e.by || {}).emp || '' }); ui.sheet = { kind: 'entry' }; renderSheet(); break; }
     case 'saveEntry': { const f = ui.form; const items = cleanItems(f.items);
       if (!f.slip.trim() || !f.store.trim() || !/^\d{6}$/.test(f.rcv)) { toast('Slip No, store and a 6-digit receiver are needed.'); break; }
