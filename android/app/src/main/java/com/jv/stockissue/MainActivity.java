@@ -77,9 +77,11 @@ public class MainActivity extends AppCompatActivity {
     FrameLayout root;
     WebView appView, siteView, mgrView;
     android.widget.ImageView cover;
+    android.widget.LinearLayout shield;
     boolean coverMode = false;
+    final java.util.HashMap<String, Boolean> painted = new java.util.HashMap<>();
     final android.os.Handler h = new android.os.Handler(android.os.Looper.getMainLooper());
-    final Runnable uncoverR = () -> { if (cover != null) { cover.setVisibility(View.GONE); cover.setImageBitmap(null); } };
+    final Runnable uncoverR = () -> { if (cover != null) { cover.setVisibility(View.GONE); cover.setImageBitmap(null); } if (shield != null) shield.setVisibility(View.GONE); };
     SharedPreferences prefs;
     File dataFile, jobFile, fillCache;
     ValueCallback<Uri[]> fileCb;
@@ -107,6 +109,27 @@ public class MainActivity extends AppCompatActivity {
         cover.setVisibility(View.GONE);
         cover.setClickable(true);
         root.addView(cover, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        shield = new android.widget.LinearLayout(this);
+        shield.setOrientation(android.widget.LinearLayout.VERTICAL);
+        shield.setGravity(android.view.Gravity.CENTER);
+        shield.setBackgroundColor(0xFFF2F1F6);
+        shield.setClickable(true);
+        android.widget.ImageView lg = new android.widget.ImageView(this);
+        lg.setImageResource(R.mipmap.ic_launcher);
+        int px = (int) (76 * getResources().getDisplayMetrics().density);
+        shield.addView(lg, new android.widget.LinearLayout.LayoutParams(px, px));
+        android.widget.TextView t1 = new android.widget.TextView(this);
+        t1.setText("JV Stock Issue"); t1.setTextSize(19); t1.setTypeface(android.graphics.Typeface.DEFAULT_BOLD); t1.setTextColor(0xFF141414); t1.setPadding(0, px / 4, 0, 0);
+        shield.addView(t1);
+        android.widget.TextView t2 = new android.widget.TextView(this);
+        t2.setText("Working on CUIMS…"); t2.setTextSize(14); t2.setTextColor(0xFF6E6B7B);
+        shield.addView(t2);
+        android.widget.ProgressBar pb = new android.widget.ProgressBar(this);
+        pb.setIndeterminate(true);
+        android.widget.LinearLayout.LayoutParams pl = new android.widget.LinearLayout.LayoutParams(px / 2, px / 2); pl.topMargin = px / 4;
+        shield.addView(pb, pl);
+        shield.setVisibility(View.GONE);
+        root.addView(shield, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         root.addView(mgrView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         root.addView(appView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         siteView.setVisibility(View.GONE);
@@ -253,15 +276,19 @@ public class MainActivity extends AppCompatActivity {
             }
             @Override
             public void onPageStarted(WebView wv, String url, android.graphics.Bitmap fav) {
-                if (coverMode && wv.getVisibility() == View.VISIBLE && wv.getWidth() > 0 && wv.getHeight() > 0) {
-                    try {
-                        android.graphics.Bitmap bm = android.graphics.Bitmap.createBitmap(wv.getWidth(), wv.getHeight(), android.graphics.Bitmap.Config.RGB_565);
-                        wv.draw(new android.graphics.Canvas(bm));
-                        cover.setImageBitmap(bm);
-                        cover.setVisibility(View.VISIBLE);
-                        h.removeCallbacks(uncoverR);
-                        h.postDelayed(uncoverR, 9000);
-                    } catch (Throwable ignored) { }
+                if (prefs.getBoolean("cover_" + who, false) && wv.getVisibility() == View.VISIBLE) {
+                    boolean snap = Boolean.TRUE.equals(painted.get(who)) && wv.getWidth() > 0 && wv.getHeight() > 0;
+                    painted.put(who, false);
+                    if (snap) {
+                        try {
+                            android.graphics.Bitmap bm = android.graphics.Bitmap.createBitmap(wv.getWidth(), wv.getHeight(), android.graphics.Bitmap.Config.RGB_565);
+                            wv.draw(new android.graphics.Canvas(bm));
+                            cover.setImageBitmap(bm);
+                            cover.setVisibility(View.VISIBLE);
+                        } catch (Throwable t) { shield.setVisibility(View.VISIBLE); }
+                    } else shield.setVisibility(View.VISIBLE);
+                    h.removeCallbacks(uncoverR);
+                    h.postDelayed(uncoverR, 12000);
                 }
                 float sc2 = prefs.getFloat("scale_" + who, 0f);
                 if (sc2 > 0) wv.setInitialScale(Math.round(sc2 * 100));
@@ -397,7 +424,7 @@ public class MainActivity extends AppCompatActivity {
                 String b64 = Base64.encodeToString(bo.toByteArray(), Base64.NO_WRAP);
                 String nm = name == null ? "stock.xlsx" : name;
                 runOnUiThread(() -> {
-                    prefs.edit().putBoolean("autoStockOn", false).apply();
+                    prefs.edit().putBoolean("autoStockOn", false).putBoolean("cover_mgr", false).apply();
                     setFull(false); coverMode = false; h.post(uncoverR);
                     appView.evaluateJavascript("window.jvStockFile&&window.jvStockFile(" + JSONObject.quote(b64) + "," + JSONObject.quote(nm) + ")", null);
                     backToApp();
@@ -415,6 +442,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     void backToApp() {
+        h.post(uncoverR);
         show("app");
         appView.evaluateJavascript("window.jvOnReturnFromSite&&window.jvOnReturnFromSite()", null);
     }
@@ -528,17 +556,18 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface public String who() { return who; }
         @JavascriptInterface public void openMgrAuto(String cfg) {
             prefs.edit().putString("autoStockCfg", cfg).putBoolean("autoStockOn", true).putLong("autoStockAt", System.currentTimeMillis()).apply();
-            runOnUiThread(() -> { show("mgr"); setFull(true); loadFresh(mgrView, "mgr", url("mgr")); });
+            prefs.edit().putBoolean("cover_mgr", true).apply();
+            runOnUiThread(() -> { show("mgr"); setFull(true); shield.setVisibility(View.VISIBLE); painted.put("mgr", false); h.removeCallbacks(uncoverR); h.postDelayed(uncoverR, 15000); loadFresh(mgrView, "mgr", url("mgr")); });
         }
         @JavascriptInterface public String autoCfg() {
             if (!"mgr".equals(who) || !prefs.getBoolean("autoStockOn", false)) return "";
             if (System.currentTimeMillis() - prefs.getLong("autoStockAt", 0) > 15 * 60000L) { prefs.edit().putBoolean("autoStockOn", false).apply(); return ""; }
             return prefs.getString("autoStockCfg", "");
         }
-        @JavascriptInterface public void autoStop() { prefs.edit().putBoolean("autoStockOn", false).apply(); runOnUiThread(() -> { setFull(false); coverMode = false; h.post(uncoverR); }); }
+        @JavascriptInterface public void autoStop() { prefs.edit().putBoolean("autoStockOn", false).putBoolean("cover_mgr", false).apply(); runOnUiThread(() -> { setFull(false); coverMode = false; h.post(uncoverR); }); }
         @JavascriptInterface public void fetchStockUrl(String u) { if ("mgr".equals(who) && prefs.getBoolean("autoStockOn", false)) runOnUiThread(() -> fetchStock(u, "stock.xlsx")); }
-        @JavascriptInterface public void setCover(boolean on) { coverMode = on; if (!on) runOnUiThread(uncoverR); }
-        @JavascriptInterface public void uncover() { h.removeCallbacks(uncoverR); h.postDelayed(uncoverR, 60); }
+        @JavascriptInterface public void setCover(boolean on) { prefs.edit().putBoolean("cover_" + who, on).apply(); coverMode = on; if (!on) runOnUiThread(uncoverR); }
+        @JavascriptInterface public void uncover() { painted.put(who, true); h.removeCallbacks(uncoverR); h.postDelayed(uncoverR, 60); }
         @JavascriptInterface public void markLogin() { if (!"app".equals(who)) prefs.edit().putLong("login_" + who, System.currentTimeMillis()).apply(); }
         @JavascriptInterface public void progress(String title, String text, int done, int total, boolean ongoing) { runOnUiThread(() -> postProgress(title, text, done, total, ongoing)); }
         @JavascriptInterface public void progress2(String json, boolean ongoing) { runOnUiThread(() -> postData(json, ongoing)); }
@@ -569,7 +598,7 @@ public class MainActivity extends AppCompatActivity {
 
         @JavascriptInterface public void startJob(String j) {
             writeFile(jobFile, j);
-            runOnUiThread(() -> { show("emp"); loadFresh(siteView, "emp", url("emp")); });
+            runOnUiThread(() -> { show("emp"); if (prefs.getBoolean("cover_emp", false)) { shield.setVisibility(View.VISIBLE); painted.put("emp", false); h.removeCallbacks(uncoverR); h.postDelayed(uncoverR, 15000); } loadFresh(siteView, "emp", url("emp")); });
         }
         @JavascriptInterface public void openSite() {
             runOnUiThread(() -> {
