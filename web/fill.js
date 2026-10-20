@@ -52,13 +52,14 @@
   bar.id = 'jvbar';
   bar.style.cssText = 'position:absolute;left:-9999px;top:0;transition:none;will-change:transform;z-index:2147483647;background:#F7F6FB;color:#141414;border-radius:24px;padding:0;font:16px/1.45 Outfit,system-ui,sans-serif;box-shadow:0 12px 40px rgba(15,23,42,.35),0 0 0 1px rgba(201,162,75,.45);max-height:62vh;overflow:auto;transform-origin:0 0;box-sizing:border-box';
   document.body.appendChild(bar);
+  var AUTO = null; try { AUTO = (B.autoCfg && B.autoCfg()) ? JSON.parse(B.autoCfg()) : null; } catch (e) { AUTO = null; }
   var mini = false, portal = false, immersive = false; try { mini = localStorage.getItem('jvBarMini') === '1'; portal = localStorage.getItem('jvPortal') === '1'; } catch (e) {}
   function place() {
     var vv = window.visualViewport;
     var sc = vv ? vv.scale : 1, vw = vv ? vv.width : window.innerWidth, vh = vv ? vv.height : window.innerHeight;
     var pl = vv ? vv.pageLeft : window.scrollX, pt = vv ? vv.pageTop : window.scrollY;
     var inv = 1 / sc, gap = 8;
-    var full = !mini && portal; if (full) gap = 0;
+    var full = !mini && (portal || !!AUTO); if (full) gap = 0;
     var w = mini ? 0 : Math.round(vw * sc - gap * 2);
     var W = mini ? 'auto' : w + 'px', T = 'scale(' + inv + ')';
     if (bar.style.width !== W) bar.style.width = W;
@@ -170,6 +171,88 @@
     } catch (e) {}
   }
   function paintInner() { notifyProgress(job()); paintInner2(); }
+  // ---------- automatic live stock (manager login) ----------
+  var AS = (function () { try { var x = JSON.parse(localStorage.getItem('jvAS') || 'null'); return x && AUTO && x.run === AUTO.run ? x : { run: AUTO ? AUTO.run : 0, step: 'start' }; } catch (e) { return { run: 0, step: 'start' }; } })();
+  function asSave() { try { localStorage.setItem('jvAS', JSON.stringify(AS)); } catch (e) {} }
+  var ASTEPS = [['login', 'Log in (manager ID)'], ['store', 'Store'], ['fy', 'Financial year'], ['show', 'Show report'], ['loaded', 'Report fully loaded'], ['export', 'Export to Excel'], ['download', 'Bring the file to the app']];
+  function stepIdx(k) { for (var i = 0; i < ASTEPS.length; i++) if (ASTEPS[i][0] === k) return i; return -1; }
+  function autoPanel() {
+    var cur = AS.err ? stepIdx(AS.step) : stepIdx(AS.step);
+    var rows = ASTEPS.map(function (st, i) {
+      var state = AS.err && i === cur ? 'err' : i < cur ? 'ok' : i === cur ? 'now' : 'next';
+      var dot = state === 'ok' ? '<span style="width:28px;height:28px;border-radius:50%;background:' + C.ok + ';display:flex;align-items:center;justify-content:center">' + ic('ok', 14, '#fff') + '</span>' : state === 'now' ? '<span style="width:28px;height:28px;border-radius:50%;background:' + C.ink + ';display:flex;align-items:center;justify-content:center"><i style="width:10px;height:10px;border-radius:50%;background:' + C.lav + ';animation:jvp 1s ease-in-out infinite"></i></span>' : state === 'err' ? '<span style="width:28px;height:28px;border-radius:50%;background:' + C.noInk + ';display:flex;align-items:center;justify-content:center">' + ic('no', 14, '#fff') + '</span>' : '<span style="width:28px;height:28px;border-radius:50%;background:#EEECF3"></span>';
+      var val = st[0] === 'store' ? AUTO.store : st[0] === 'fy' ? AUTO.fy : st[0] === 'loaded' && AS.rows ? AS.rows + ' rows' : '';
+      return '<div style="display:flex;align-items:center;gap:12px;padding:9px 0;' + (i < ASTEPS.length - 1 ? 'border-bottom:1px solid ' + C.line : '') + '">' + dot + '<b style="flex:1;font:' + (state === 'now' ? 800 : 600) + ' 15px ' + F + ';color:' + (state === 'next' ? C.faint : C.ink) + '">' + st[1] + '</b><span style="font:600 13px ' + F + ';color:' + C.mute + '">' + esc(val) + '</span></div>';
+    }).join('');
+    var msg = AS.err ? statusCard('no', 'Stopped', AS.err) : statusCard('run', AS.note || 'Working…', 'Live stock update · ' + AUTO.store + ' · ' + AUTO.fy);
+    return hero('Live stock · auto update', 'Manager CUIMS', null) + wrap(msg + '<div style="background:' + C.soft + ';border-radius:20px;padding:4px 14px">' + rows + '</div>' +
+      row2(AS.err ? btn('asRetry', 'Try again', 'main') : '', btn('asStop', AS.err ? 'Close' : 'Stop', AS.err ? '' : 'link')) + '<style>@keyframes jvp{50%{transform:scale(.5);opacity:.5}}</style>' + credit());
+  }
+  function vis(x) { return x && x.offsetParent !== null; }
+  function setSel(sel, re) { for (var i = 0; i < sel.options.length; i++) if (re.test(sel.options[i].text.trim())) { if (sel.selectedIndex !== i) { sel.selectedIndex = i; fire(sel, 'change'); return 'changed'; } return 'ok'; } return 'missing'; }
+  function reportReady() {
+    var aw = [].slice.call(document.querySelectorAll('[id$="AsyncWait"],[id*="AsyncWait_Wait"]')).some(function (x) { return x.offsetParent !== null && getComputedStyle(x).display !== 'none' && getComputedStyle(x).visibility !== 'hidden'; });
+    if (aw) return 0;
+    var tds = [].slice.call(document.querySelectorAll('td,div')).filter(function (x) { return x.children.length === 0 && /^UOM$/i.test((x.textContent || '').trim()); });
+    if (!tds.length) return 0;
+    var rows = [].slice.call(document.querySelectorAll('td')).filter(function (x) { return x.children.length <= 1 && /^[A-Z]{1,5}-\d+$/.test((x.textContent || '').trim()); }).length;
+    return rows;
+  }
+  function doExport() {
+    try { if (window.Sys && Sys.Application && Sys.Application.getComponents) { var cs = Sys.Application.getComponents(); for (var i = 0; i < cs.length; i++) if (typeof cs[i].exportReport === 'function') { try { cs[i].exportReport('EXCELOPENXML'); } catch (e) { cs[i].exportReport('EXCEL'); } return true; } } } catch (e) {}
+    var fl = [].slice.call(document.querySelectorAll('a,input,img,div,span,button')).filter(function (x) { return vis(x) && /export/i.test((x.title || '') + ' ' + (x.alt || '') + ' ' + (x.id || '')); })[0];
+    if (fl) fl.click();
+    var ex = [].slice.call(document.querySelectorAll('a,div,span,li')).filter(function (x) { return x.children.length === 0 && /^excel$/i.test((x.textContent || '').trim()); })[0];
+    if (ex) { ex.click(); return true; }
+    return false;
+  }
+  function asStep() {
+    if (!AUTO) return;
+    if (AS.err || AS.step === 'download') { paint(); return; }
+    var now = Date.now();
+    if (isLogin) { AS.step = 'login'; AS.note = 'Logging in with your saved manager ID'; asSave(); paint(); return; }
+    if (AS.step === 'start' || AS.step === 'login') { AS.step = 'store'; AS.t0 = now; }
+    if (AS.t0 && now - AS.t0 > 240000) { AS.err = 'This took longer than 4 minutes. Check the page, then Try again.'; asSave(); paint(); return; }
+    var sels = [].slice.call(document.querySelectorAll('select')).filter(vis);
+    var storeSel = sels.filter(function (x) { return [].some.call(x.options, function (o) { return /store/i.test(o.text) || new RegExp(AUTO.store, 'i').test(o.text); }); })[0];
+    if (AS.step === 'store') {
+      if (!storeSel) { AS.note = 'Waiting for the Store box'; asSave(); paint(); return; }
+      var r = setSel(storeSel, new RegExp('^' + AUTO.store.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i'));
+      if (r === 'missing') { AS.err = '"' + AUTO.store + '" is not in the Store list.'; asSave(); paint(); return; }
+      AS.note = 'Store: ' + AUTO.store; if (r === 'ok') { AS.step = 'fy'; AS.fyAt = now; } asSave(); paint(); return;
+    }
+    if (AS.step === 'fy') {
+      var fyEl = [].slice.call(document.querySelectorAll('select,input[type="text"],input:not([type])')).filter(function (x) { return vis(x) && x !== storeSel && /fin|year|fy|session/i.test((x.id || '') + (x.name || '')); })[0];
+      if (!fyEl) { if (now - (AS.fyAt || now) > 6000) { AS.step = 'show'; } AS.note = 'Looking for the Financial Year box'; asSave(); paint(); return; }
+      if (fyEl.tagName === 'SELECT') { var r2 = setSel(fyEl, new RegExp(AUTO.fy.replace('-', '\\s*-\\s*'))); if (r2 === 'missing') { AS.err = 'Financial year ' + AUTO.fy + ' is not in the list.'; asSave(); paint(); return; } if (r2 === 'changed') { asSave(); return; } }
+      else if (fyEl.value.trim() !== AUTO.fy) { try { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(fyEl, AUTO.fy); } catch (e) { fyEl.value = AUTO.fy; } fire(fyEl, 'input'); fire(fyEl, 'change'); }
+      AS.step = 'show'; AS.note = 'Financial year ' + AUTO.fy; asSave(); paint(); return;
+    }
+    if (AS.step === 'show') {
+      var sb = [].slice.call(document.querySelectorAll('input[type="submit"],input[type="button"],button,a')).filter(function (x) { return vis(x) && /^\s*show\s*$/i.test(x.value || x.textContent || ''); })[0];
+      if (!sb) { AS.note = 'Waiting for the SHOW button'; asSave(); paint(); return; }
+      AS.step = 'loaded'; AS.showAt = now; AS.note = 'Loading the stock report'; asSave(); paint(); sb.click(); return;
+    }
+    if (AS.step === 'loaded') {
+      var rows = reportReady();
+      if (!rows) { AS.readyAt = 0; AS.note = 'Loading the stock report'; if (now - AS.showAt > 120000) AS.err = 'The report did not load in 2 minutes.'; asSave(); paint(); return; }
+      if (!AS.readyAt) { AS.readyAt = now; AS.rows = rows; AS.note = 'Report shown. Letting it finish loading'; asSave(); paint(); return; }
+      if (now - AS.readyAt < 5000) { AS.rows = rows; asSave(); paint(); return; }
+      AS.step = 'export'; AS.expAt = 0; asSave();
+    }
+    if (AS.step === 'export') {
+      if (AS.expAt && now - AS.expAt < 25000) { AS.note = 'Exporting to Excel'; paint(); return; }
+      if ((AS.expTries || 0) >= 2) { AS.err = 'Excel export did not start. Tap the floppy → Excel yourself, or Try again.'; asSave(); paint(); return; }
+      AS.expTries = (AS.expTries || 0) + 1; AS.expAt = now; AS.note = 'Exporting to Excel'; asSave(); paint();
+      if (!doExport()) { AS.expAt = now - 20000; asSave(); }
+      return;
+    }
+  }
+  if (WHO === 'mgr') {
+    var nativeOpen = window.open;
+    window.open = function (u) { try { if (AUTO && u && /Format=|OpType=Export|Export/i.test(String(u))) { var a = document.createElement('a'); a.href = u; B.fetchStockUrl && B.fetchStockUrl(a.href); return null; } } catch (e) {} return nativeOpen.apply(window, arguments); };
+  }
+  J.autoMsg = function (k, m) { if (!AUTO) return; if (k === 'download') { AS.step = 'download'; AS.note = 'Bringing the Excel file to the app'; } else if (k === 'fail') { AS.err = 'Download failed: ' + (m || ''); } asSave(); paint(); };
   function paintInner2() {
     var j = job();
     if (mini) {
@@ -181,6 +264,7 @@
     }
     bar.style.borderRadius = '30px'; bar.style.boxShadow = '0 24px 60px rgba(30,20,70,.28),0 0 0 1px rgba(20,20,20,.04)'; bar.style.background = '#fff';
     var h = '';
+    if (WHO === 'mgr' && AUTO) { bar.innerHTML = autoPanel(); return; }
     if (WHO === 'mgr') { bar.innerHTML = hero('Manager CUIMS', 'Live stock report', null) + wrap(statusCard('run', 'Separate manager login', 'Download the Item Stock Statement, then upload it in the app.') + row2(btn('app', 'Back to app', 'main')) + credit()); return; }
     if (!active(j)) {
       var body0 = j && j.phase === 'done' ? statusCard('ok', 'Saved ' + j.slip, 'Serial ' + (j.serial || '') + ' · ' + j.store) : statusCard('run', isLogin ? 'Please log in' : 'No entry running', isLogin ? 'The app fills your saved login and opens your page.' : 'Start one from the app.');
@@ -248,6 +332,8 @@
     var a = t.getAttribute('data-jv'); var j = job();
     if (a === 'app') { B.showApp(); return; }
     if (a === 'tQueue' || a === 'tAuto') { var k = a === 'tQueue' ? 'queue' : 'autoSubmit'; var jt = job(); if (jt) { jt[k] = !jt[k]; save(jt); ev('setPref', { key: k, val: jt[k] }); if (k === 'autoSubmit') { ui.autoStop = false; ui.autoAt = 0; } } paint(); return; }
+    if (a === 'asStop') { try { B.autoStop && B.autoStop(); } catch (er) {} AUTO = null; try { localStorage.removeItem('jvAS'); } catch (er) {} B.showApp(); return; }
+    if (a === 'asRetry') { AS = { run: AUTO.run, step: 'start' }; asSave(); location.href = (B.targetUrl && B.targetUrl()) || location.href; return; }
     if (a === 'tPortal') { portal = !portal; try { localStorage.setItem('jvPortal', portal ? '1' : '0'); } catch (er) {} try { B.setCover && B.setCover(portal && !mini); } catch (er) {} paint(); return; }
     if (a === 'tFull') { immersive = !immersive; try { B.setFullscreen && B.setFullscreen(immersive); } catch (er) {} paint(); return; }
     if (a === 'autoStop') { ui.autoStop = true; ui.autoAt = 0; clearInterval(autoTimer); paint(); return; }
@@ -614,7 +700,7 @@
       if (!onTarget && /cuchd\.in/.test(location.host)) { setTimeout(function () { location.href = target; }, 300); }
     }
   } catch (e) {}
-  if (WHO === 'mgr') { paint(); return; }
+  if (WHO === 'mgr') { if (AUTO) { mini = false; try { B.setCover && B.setCover(true); } catch (e) {} setInterval(asStep, 900); asStep(); } paint(); return; }
   if (isIssue) {
     var pa = $('ContentPlaceHolder1_ddlProject');
     if (pa) { var areas = Array.prototype.map.call(pa.options, function (o) { return o.text.trim(); }).filter(function (t) { return t && t !== 'Select'; }); ev('areas', { areas: areas }); }

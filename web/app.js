@@ -344,7 +344,7 @@ function vHome() {
     '<button class="pt orange" data-a="tab" data-v="pend"><span class="ptag">' + (oldest > 2 ? 'Urgent' : 'All days') + '</span><b>Pending</b><span class="pbig">' + pend.length + '</span><span>articles waiting</span><span>' + pendCan + ' can be issued now</span>' + (oldest ? '<span>oldest ' + oldest + (oldest === 1 ? ' day' : ' days') + '</span>' : '') + '<span class="pfoot">Open Pending</span></button>' +
     '<button class="pt blue" data-a="doneOpenDay" data-v="' + t + '"><span class="ptag">' + (isToday ? 'Today' : dl) + '</span><b>Done</b><span class="pbig">' + issuedToday + '</span><span>slips entered</span></button>' +
     '<div class="pt pink">' + qi('upload', 'Upload', '<path d="M12 21V9M7 14l5-5 5 5M4 3h16"/>') + qi('newReq', 'Add request', '<path d="M12 5v14M5 12h14"/>') + qi('batchReq', 'Batch add', '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/>') + '</div></div>';
-  h += '<div class="grid2"><button class="btn main" data-a="openSite">Issue CUIMS</button><button class="btn lav" data-a="openMgr">Live stock</button></div>';
+  h += '<div class="grid2"><button class="btn main" data-a="openSite">Issue CUIMS</button><button class="btn lav" data-a="openMgr">' + (autoStockCfg().on ? 'Update live stock' : 'Live stock') + '</button></div>';
   const ex = expiryRows().filter(r => r.left <= expDays());
   if (ex.length) { const e0 = ex.filter(r => r.left < 0).length; h += '<button class="alertcard" data-a="expOpen"><span class="ai">' + ico('alert', 22) + '</span><span style="flex:1;min-width:0"><b>Expiry Tracker</b><span>' + ex.length + ' batches within ' + expDays() + ' days' + (e0 ? ' · ' + e0 + ' expired' : '') + '</span></span>' + ico('right', 18) + '</button>'; }
   h += tasksCard();
@@ -543,6 +543,7 @@ function shUpload() {
     if (r.warn.length) h += '<div class="card pad col" style="gap:4px">' + r.warn.map(w => '<div class="err" style="font-weight:500">' + esc(w) + '</div>').join('') + '</div>';
   }
   if (r.rows && r.rows.length) { const fut = r.rows.filter(x => x.date > today()); if (fut.length) { const fd = [...new Set(fut.map(x => x.date))].sort(); h += '<div class="banner" style="border:0;background:var(--infoBg);color:var(--infoInk)"><b>' + fut.length + ' articles are for ' + fd.map(fmtLong).join(', ') + '.</b> They are saved now as <b>Scheduled</b>: not pending, no stock kept, no Fill button. On that day they become that day\'s requests with top priority.</div>'; } }
+  if (u.auto) h = '<div class="okbox" style="background:#ECE6FF;color:#4B3BA8"><span><b>Live stock downloaded from CUIMS</b> · ' + esc((S.autoStock || {}).store || '') + ' · ' + esc(((S.autoStock || {}).fy) || curFY()) + '</span></div>' + h;
   h += importReport(r, u.kind);
   const nImp = u.kind === 'stock' ? r.count : r.rows.length, nSk = (r.skipped || []).length;
   h += '<div class="grid2"><button class="btn" data-a="uploadCancel">Back</button><button class="btn main" data-a="uploadOk"' + (!nImp ? ' disabled' : '') + '>Import ' + nImp + (nSk ? ', skip ' + nSk : '') + '</button></div>';
@@ -747,6 +748,10 @@ function vSet() {
         '<label class="chk"><input type="checkbox" data-a="credAuto" data-v="' + w + '"' + ((f.auto != null ? f.auto : c.auto !== false) ? ' checked' : '') + '> Log in by itself (fills and taps Login)</label><div class="grid2"><button class="btn main" data-a="credSave" data-v="' + w + '">Save</button><button class="btn" data-a="credDel" data-v="' + w + '"' + (c.has || c.u ? '' : ' disabled') + '>Remove</button></div></div>'; };
     h += cred('emp', 'Issue CUIMS (your emp ID)') + cred('mgr', 'Manager CUIMS');
     h += '<div class="note">Saved only on this phone (private app storage). Never included in cloud backups or exports. If CUIMS shows a captcha, the app fills ID and password and leaves the Login tap to you.</div>';
+    { const c = autoStockCfg();
+      h += '<div class="card pad col"><h3>Live stock auto update</h3><label class="chk"><input type="checkbox" data-a="autoStockTog"' + (c.on ? ' checked' : '') + '> When I tap Live stock, fetch the stock report by itself</label>' +
+        '<div class="note">Opens Manager CUIMS full screen, picks the store and financial year, taps SHOW, waits for the full report, exports Excel and brings it to the upload screen for you to confirm.</div>' +
+        '<div class="grid2"><label class="f">Store<input type="text" data-asc="store" value="' + esc(c.store) + '"></label><label class="f">Financial year<input type="text" data-asc="fy" value="' + esc(c.fy) + '" placeholder="' + curFY() + ' (auto)"></label></div></div>'; }
     h += '<div class="card pad col"><h3>Open</h3><div class="grid2"><button class="btn" data-a="openSite" type="button">Issue CUIMS</button><button class="btn" data-a="openMgr" type="button">Manager CUIMS</button></div></div>';
     h += '<div class="card pad col"><h3>Desktop view and zoom</h3><div class="note">CUIMS always opens in desktop view. Your zoom level is remembered after reloads. Pinch to set it once.</div><button class="btn" data-a="resetZoom">Reset zoom to default</button></div>';
   }
@@ -1658,6 +1663,25 @@ function uiConfirm(msg, okLabel, danger) {
     el.querySelectorAll('[data-dlg]').forEach(b => b.onclick = e => { e.stopPropagation(); el.innerHTML = ''; res(b.dataset.dlg === '1'); });
   });
 }
+function curFY() { const d = new Date(), y = d.getFullYear(); return d.getMonth() >= 3 ? y + '-' + (y + 1) : (y - 1) + '-' + y; }
+function autoStockCfg() { S.autoStock = Object.assign({ on: true, store: 'Ration Store', fy: '' }, S.autoStock || {}); return S.autoStock; }
+function openLiveStock() {
+  const c = autoStockCfg();
+  if (c.on && N && N.openMgrAuto) { N.openMgrAuto(JSON.stringify({ run: Date.now(), store: c.store || 'Ration Store', fy: c.fy || curFY() })); return; }
+  if (N && N.openMgr) N.openMgr(); else toast('Update the app (Settings > App and updates) to use Manager CUIMS.');
+}
+window.jvStockFile = (b64, name) => {
+  try {
+    if (!window.XLSX) { toast('Excel tools not loaded yet. Check internet and try again.'); return; }
+    const wb = XLSX.read(b64, { type: 'base64', cellDates: false });
+    ui.view = null; ui.tab = 'home';
+    ui.upload = { kind: 'stock', wb, auto: true, name: name || 'Live stock' };
+    ui.upload.result = parseStock(wb);
+    if (ui.upload.result.error) ui.upload.error = ui.upload.result.error;
+    ui.sheet = { kind: 'upload' }; render(); renderSheet();
+    toast('Live stock downloaded. Check and tap Import.');
+  } catch (e) { toast('Could not read the downloaded stock file: ' + e.message); }
+};
 function enhanceDates(root) {
   (root || document).querySelectorAll('input[type="date"]').forEach(inp => {
     const b = document.createElement('button'); b.type = 'button'; b.className = 'datebtn'; b.dataset.dp = '1';
@@ -1778,7 +1802,7 @@ document.addEventListener('click', async ev => {
   if (a === 'lockTap') { if (ui.locked) askUnlock(); else { ui.locked = true; render(); renderSheet(); toast('Locked.'); } return; }
   if (ui.locked && GUARDED.has(a)) { ev.preventDefault(); if (t.type === 'checkbox') t.checked = !t.checked; const sel = '[data-a="' + a + '"]' + (v != null ? '[data-v="' + CSS.escape(v) + '"]' : ''); askUnlock(() => { const el = document.querySelector(sel); if (el) el.click(); }); return; }
   if (a === 'bgClose') { if (ev.target === t) { ui.sheet = null; renderSheet(); } return; }
-  if (t.type === 'checkbox' && !['hold', 'queueToggle', 'regItems', 'mgrToggle', 'syncAuto', 'lockToggle', 'markPick', 'stOn', 'rpTog', 'rpCol', 'autoSubToggle', 'queuePend', 'credAuto', 'artsSel', 'artsAll'].includes(a)) return;
+  if (t.type === 'checkbox' && !['hold', 'queueToggle', 'regItems', 'mgrToggle', 'syncAuto', 'lockToggle', 'markPick', 'stOn', 'rpTog', 'rpCol', 'autoSubToggle', 'queuePend', 'credAuto', 'artsSel', 'artsAll', 'autoStockTog'].includes(a)) return;
   switch (a) {
     case 'tab': ui.tab = v; ui.view = null; if (v === 'set') ui.setPage = null; render(); window.scrollTo(0, 0); break;
     case 'openSite': if (N) N.openSite(); else toast('Open this inside the app.'); break;
@@ -1838,7 +1862,9 @@ document.addEventListener('click', async ev => {
     case 'dropStore': { const n = S.lines.filter(l => isPending(l) && l.store === v).length;
       if (await uiConfirm('Remove all ' + n + ' pending articles of ' + v + '? Issued records stay. (You can restore from a cloud backup if needed.)')) { S.lines.forEach(l => { if (isPending(l) && l.store === v) l.status = 'dropped'; }); save(); render(); toast(v + ' removed from Pending.'); } break; }
     case 'photo': document.getElementById('photoIn').click(); break;
-    case 'openMgr': if (N && N.openMgr) N.openMgr(); else toast('Update the app (Settings > App and updates) to use Manager CUIMS.'); break;
+    case 'openMgr': openLiveStock(); break;
+    case 'openMgrManual': if (N && N.openMgr) N.openMgr(); break;
+    case 'autoStockTog': S.autoStock = autoStockCfg(); S.autoStock.on = !S.autoStock.on; save(true); render(); toast('Auto update ' + (S.autoStock.on ? 'on' : 'off') + '.'); break;
     case 'saveUrls': { const e = ui.urlEmp != null ? ui.urlEmp : INFO.urlEmp, m = ui.urlMgr != null ? ui.urlMgr : INFO.urlMgr;
       if (N && N.setUrls) { N.setUrls(e || '', m || ''); INFO.urlEmp = e; INFO.urlMgr = m; toast('Pages saved.'); } else toast('Update the app to use this.'); break; }
     case 'resetZoom': if (N && N.resetZoom) { N.resetZoom(); toast('Zoom reset. Reopen CUIMS.'); } break;
@@ -1944,7 +1970,7 @@ document.addEventListener('click', async ev => {
     case 'dUpload': ui.drawer = false; renderDrawer(); ui.upload = null; ui.sheet = { kind: 'upload' }; renderSheet(); break;
     case 'dBulk': ui.drawer = false; renderDrawer(); document.querySelector('[data-a=bulkEdit]') ? document.querySelector('[data-a=bulkEdit]').click() : (ui.tab = 'home', render()); break;
     case 'dSite': ui.drawer = false; renderDrawer(); if (N) N.openSite(); break;
-    case 'dMgr': ui.drawer = false; renderDrawer(); if (N && N.openMgr) N.openMgr(); break;
+    case 'dMgr': ui.drawer = false; renderDrawer(); openLiveStock(); break;
     case 'dBackup': ui.drawer = false; renderDrawer(); if (S.sync.url) { ui.sheet = { kind: 'backups' }; loadBackups(); } else { ui.tab = 'set'; ui.setPage = 'cloud'; ui.view = null; render(); } break;
     case 'dData': ui.drawer = false; ui.tab = 'set'; ui.setPage = 'data'; ui.view = null; render(); window.scrollTo(0, 0); break;
     case 'taskOpen': if (v === 'count') { if (todayCount(true)) { ui.countId = todayCount(false).id; ui.view = 'count'; render(); window.scrollTo(0, 0); } } else if (v === 'stock' || v === 'requests') { ui.upload = null; ui.sheet = { kind: 'upload' }; renderSheet(); } else if (v === 'backup') { if (S.sync.url) syncNow(false); else { ui.tab = 'set'; ui.setPage = 'cloud'; render(); } } break;
@@ -2061,6 +2087,7 @@ document.addEventListener('input', ev => {
   if (el.dataset.corr != null) { ui.form.rows[+el.dataset.corr].final = el.value; return; }
   if (el.dataset.cadd) { ui.form[el.dataset.cadd === 'code' ? 'addCode' : 'addQty'] = el.value; return; }
   if (el.dataset.arts) { ui.arts.q = el.value; clearTimeout(ui.aT); ui.aT = setTimeout(() => { const b = document.getElementById('artsres'); if (b) b.innerHTML = artsResults(); }, 120); return; }
+  if (el.dataset.asc) { autoStockCfg()[el.dataset.asc] = el.value.trim(); save(true); return; }
   if (el.dataset.tk) { ui.newTask = el.value; return; }
   if (el.dataset.nr) { const k = el.dataset.nr; ui.form[k] = k === 'rcv' ? el.value.replace(/\D/g, '') : el.value;
     if (k === 'store') { const d = (S.stores[el.value] || {}).rcv; if (d && !ui.form.rcv) ui.form.rcv = d; }

@@ -253,7 +253,7 @@ public class MainActivity extends AppCompatActivity {
             }
             @Override
             public void onPageStarted(WebView wv, String url, android.graphics.Bitmap fav) {
-                if ("emp".equals(who) && coverMode && wv.getVisibility() == View.VISIBLE && wv.getWidth() > 0 && wv.getHeight() > 0) {
+                if (coverMode && wv.getVisibility() == View.VISIBLE && wv.getWidth() > 0 && wv.getHeight() > 0) {
                     try {
                         android.graphics.Bitmap bm = android.graphics.Bitmap.createBitmap(wv.getWidth(), wv.getHeight(), android.graphics.Bitmap.Config.RGB_565);
                         wv.draw(new android.graphics.Canvas(bm));
@@ -299,6 +299,7 @@ public class MainActivity extends AppCompatActivity {
             }
         });
         v.setDownloadListener((url, ua, cd, mime, len) -> {
+            if ("mgr".equals(who) && prefs.getBoolean("autoStockOn", false)) { fetchStock(url, URLUtil.guessFileName(url, cd, mime)); return; }
             try {
                 String name = URLUtil.guessFileName(url, cd, mime);
                 DownloadManager.Request r = new DownloadManager.Request(Uri.parse(url));
@@ -376,6 +377,35 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         v.loadUrl(u);
+    }
+
+    void fetchStock(String url, String name) {
+        CookieManager c0 = CookieManager.getInstance();
+        try { if (mgrSeparate) c0 = ProfileStore.getInstance().getProfile("manager").getCookieManager(); } catch (Throwable ignored) { }
+        final String ck = c0.getCookie(url);
+        mgrView.evaluateJavascript("window.JVFill&&window.JVFill.autoMsg&&window.JVFill.autoMsg('download')", null);
+        new Thread(() -> {
+            try {
+                HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+                if (ck != null) c.setRequestProperty("Cookie", ck);
+                c.setRequestProperty("User-Agent", DESKTOP_UA);
+                c.setConnectTimeout(20000); c.setReadTimeout(120000);
+                InputStream in = c.getInputStream();
+                ByteArrayOutputStream bo = new ByteArrayOutputStream(); byte[] buf = new byte[16384]; int n;
+                while ((n = in.read(buf)) > 0) bo.write(buf, 0, n);
+                in.close(); c.disconnect();
+                String b64 = Base64.encodeToString(bo.toByteArray(), Base64.NO_WRAP);
+                String nm = name == null ? "stock.xlsx" : name;
+                runOnUiThread(() -> {
+                    prefs.edit().putBoolean("autoStockOn", false).apply();
+                    setFull(false); coverMode = false; h.post(uncoverR);
+                    appView.evaluateJavascript("window.jvStockFile&&window.jvStockFile(" + JSONObject.quote(b64) + "," + JSONObject.quote(nm) + ")", null);
+                    backToApp();
+                });
+            } catch (Exception e) {
+                runOnUiThread(() -> mgrView.evaluateJavascript("window.JVFill&&window.JVFill.autoMsg&&window.JVFill.autoMsg('fail'," + JSONObject.quote(String.valueOf(e.getMessage())) + ")", null));
+            }
+        }).start();
     }
 
     void show(String which) {
@@ -496,6 +526,17 @@ public class MainActivity extends AppCompatActivity {
         Bridge(String w) { who = w; }
 
         @JavascriptInterface public String who() { return who; }
+        @JavascriptInterface public void openMgrAuto(String cfg) {
+            prefs.edit().putString("autoStockCfg", cfg).putBoolean("autoStockOn", true).putLong("autoStockAt", System.currentTimeMillis()).apply();
+            runOnUiThread(() -> { show("mgr"); setFull(true); loadFresh(mgrView, "mgr", url("mgr")); });
+        }
+        @JavascriptInterface public String autoCfg() {
+            if (!"mgr".equals(who) || !prefs.getBoolean("autoStockOn", false)) return "";
+            if (System.currentTimeMillis() - prefs.getLong("autoStockAt", 0) > 15 * 60000L) { prefs.edit().putBoolean("autoStockOn", false).apply(); return ""; }
+            return prefs.getString("autoStockCfg", "");
+        }
+        @JavascriptInterface public void autoStop() { prefs.edit().putBoolean("autoStockOn", false).apply(); runOnUiThread(() -> { setFull(false); coverMode = false; h.post(uncoverR); }); }
+        @JavascriptInterface public void fetchStockUrl(String u) { if ("mgr".equals(who) && prefs.getBoolean("autoStockOn", false)) runOnUiThread(() -> fetchStock(u, "stock.xlsx")); }
         @JavascriptInterface public void setCover(boolean on) { coverMode = on; if (!on) runOnUiThread(uncoverR); }
         @JavascriptInterface public void uncover() { h.removeCallbacks(uncoverR); h.postDelayed(uncoverR, 60); }
         @JavascriptInterface public void markLogin() { if (!"app".equals(who)) prefs.edit().putLong("login_" + who, System.currentTimeMillis()).apply(); }
