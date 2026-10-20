@@ -183,6 +183,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     boolean svcOn = false;
+    Uri lastUri; String lastMime = "*/*";
     void postData(String json, boolean ongoing) {
         try {
             JSONObject d = new JSONObject(json);
@@ -600,6 +601,8 @@ public class MainActivity extends AppCompatActivity {
         Bridge(String w) { who = w; }
 
         @JavascriptInterface public String who() { return who; }
+        @JavascriptInterface public void openLastFile() { if (lastUri == null) return; runOnUiThread(() -> { Intent i = new Intent(Intent.ACTION_VIEW); i.setDataAndType(lastUri, lastMime); i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION); try { startActivity(i); } catch (Exception e) { MainActivity.this.toast("No app found to open this file."); } }); }
+        @JavascriptInterface public void shareLastFile() { if (lastUri == null) return; runOnUiThread(() -> { Intent i = new Intent(Intent.ACTION_SEND); i.setType(lastMime); i.putExtra(Intent.EXTRA_STREAM, lastUri); i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION); startActivity(Intent.createChooser(i, "Share file")); }); }
         @JavascriptInterface public void openMgrAuto(String cfg) {
             prefs.edit().putString("autoStockCfg", cfg).putBoolean("autoStockOn", true).putLong("autoStockAt", System.currentTimeMillis()).apply();
             prefs.edit().putBoolean("cover_mgr", true).apply();
@@ -708,25 +711,8 @@ public class MainActivity extends AppCompatActivity {
                     os.close();
                     out = FileProvider.getUriForFile(MainActivity.this, "com.jv.stockissue.files", f);
                 }
-                final Uri fu = out;
-                runOnUiThread(() -> new AlertDialog.Builder(MainActivity.this)
-                        .setTitle("Saved")
-                        .setMessage(name + " saved in Downloads/JV Stock Issue.")
-                        .setPositiveButton("Open", (d, w) -> {
-                            Intent i = new Intent(Intent.ACTION_VIEW);
-                            i.setDataAndType(fu, mime);
-                            i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                            try { startActivity(i); } catch (Exception e) { MainActivity.this.toast("No app found to open this file."); }
-                        })
-                        .setNeutralButton("Share", (d, w) -> {
-                            Intent i = new Intent(Intent.ACTION_SEND);
-                            i.setType(mime);
-                            i.putExtra(Intent.EXTRA_STREAM, fu);
-                            i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                            startActivity(Intent.createChooser(i, "Share " + name));
-                        })
-                        .setNegativeButton("Close", null)
-                        .show());
+                lastUri = out; lastMime = mime;
+                runOnUiThread(() -> appView.evaluateJavascript("window.jvSaved?window.jvSaved(" + JSONObject.quote(name) + "," + JSONObject.quote(mime) + "):0", null));
                 return "ok";
             } catch (Exception e) {
                 return "error: " + e.getMessage();

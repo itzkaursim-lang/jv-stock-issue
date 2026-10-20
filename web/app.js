@@ -936,19 +936,21 @@ function pdfHead(doc, title, sub, chips) {
   let cx = 12; const cy = 32;
   doc.setFontSize(8.5);
   (chips || []).forEach(([k, v]) => {
-    const t = k + '  ' + v; const w = doc.getTextWidth(t) + 8;
-    doc.setFillColor(247, 239, 217); doc.roundedRect(cx, cy, w, 7, 3.5, 3.5, 'F');
-    doc.setTextColor(138, 106, 31); doc.setFont('helvetica', 'bold'); doc.text(k, cx + 4, cy + 4.8);
-    doc.setTextColor(...INK); doc.setFont('helvetica', 'normal'); doc.text(String(v), cx + 4 + doc.getTextWidth(k + '  '), cy + 4.8);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7); const kw = doc.getTextWidth(String(k).toUpperCase());
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9); const vw = doc.getTextWidth(String(v));
+    const w = kw + vw + 11;
+    doc.setFillColor(247, 239, 217); doc.roundedRect(cx, cy, w, 8, 4, 4, 'F');
+    doc.setTextColor(138, 106, 31); doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.text(String(k).toUpperCase(), cx + 4, cy + 5.2);
+    doc.setTextColor(...INK); doc.setFont('helvetica', 'bold'); doc.setFontSize(9); doc.text(String(v), cx + 4 + kw + 3, cy + 5.4);
     cx += w + 3;
   });
-  return cy + 12;
+  return cy + 13;
 }
 function pdfSign(doc, showMe, showMgr) {
   if (showMe === undefined) showMe = true; if (showMgr === undefined) showMgr = S.mgr.on;
   const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight();
-  let y = (doc.lastAutoTable ? doc.lastAutoTable.finalY : 40) + 14;
-  if (y > H - 40) { doc.addPage(); y = 24; }
+  let y = (doc.lastAutoTable ? doc.lastAutoTable.finalY : 40) + 10;
+  if (y + 30 > H - 13) { doc.addPage(); y = 20; }
   const box = (x, label, name, sub) => {
     doc.setDrawColor(232, 229, 223); doc.setFillColor(250, 249, 246); doc.roundedRect(x, y, 80, 28, 3, 3, 'FD');
     doc.setFontSize(8); doc.setTextColor(138, 106, 31); doc.setFont('helvetica', 'bold'); doc.text(label.toUpperCase(), x + 5, y + 6);
@@ -969,7 +971,7 @@ function pdfFoot(doc, label) {
   }
 }
 function pdfSave(doc, name) { saveBlobB64(doc.output('datauristring').split(',')[1], name, 'application/pdf'); }
-const TSTYLE = { headStyles: { fillColor: NAVY, textColor: 255, fontStyle: 'bold', fontSize: 8.5, cellPadding: 2.4 }, styles: { fontSize: 8.5, cellPadding: 2.2, lineColor: [232, 229, 223], lineWidth: 0.2, textColor: INK, valign: 'middle' }, alternateRowStyles: { fillColor: [250, 249, 246] }, margin: { left: 12, right: 12 } };
+const TSTYLE = { headStyles: { fillColor: NAVY, textColor: 255, fontStyle: 'bold', fontSize: 8.5, cellPadding: { top: 2.2, bottom: 2.2, left: 1.8, right: 1.8 }, valign: 'middle' }, styles: { fontSize: 8.5, cellPadding: { top: 1.6, bottom: 1.6, left: 1.8, right: 1.8 }, lineColor: [232, 229, 223], lineWidth: 0.2, textColor: INK, valign: 'middle' }, alternateRowStyles: { fillColor: [250, 249, 246] }, margin: { left: 12, right: 12 } };
 function issueGroups(list) {
   const G = new Map();
   list.forEach(e => {
@@ -1331,7 +1333,13 @@ function rpPdf2(type) {
   const cols = orderedCols(p, D).filter(c => colOn(p, c[0]));
   const y0 = pdfHead(doc, p.title, [p.sub, D.sub2].filter(Boolean).join(' · '), D.chips);
   const st = Object.assign({}, TSTYLE, { styles: Object.assign({}, TSTYLE.styles, { fontSize: fs }), headStyles: Object.assign({}, TSTYLE.headStyles, { fontSize: fs }) });
-  doc.autoTable(Object.assign({}, st, { startY: y0, tableWidth: 'auto', pageBreak: 'auto', rowPageBreak: 'avoid', head: [cols.map(c => c[1])], body: D.rows.map(r => cols.map(c => cellText(r[c[0]], '\n'))),
+  const WGT = { no: 3.5, req: 8.5, rdate: 11, store: 15, to: 22, slips: 9, serials: 8, times: 6.5, items: 6, remarks: 12, by: 14, rno: 10, dt: 13, against: 8, serial: 8, ent: 14 };
+  const avail = doc.internal.pageSize.getWidth() - 24, known = cols.every(c => WGT[c[0]]), sumW = cols.reduce((n, c) => n + (WGT[c[0]] || 0), 0);
+  const colStyles = {}; if (known) cols.forEach((c, i) => { colStyles[i] = { cellWidth: avail * WGT[c[0]] / sumW }; if (/^(no|items|times)$/.test(c[0])) colStyles[i].halign = 'center'; });
+  const meEmp = String(S.me.emp || '').toUpperCase();
+  const body = D.rows.map(r => cols.map(c => c[0] === 'by' || c[0] === 'ent' ? cellText(r[c[0]], '\n').replace(/\s*\((GA\d+)\)/gi, (m, g) => g.toUpperCase() === meEmp ? '' : '\n' + g) : cellText(r[c[0]], '\n')));
+  const itemsIdx = cols.findIndex(c => c[0] === 'items'), foot = itemsIdx >= 0 ? [cols.map((c, i) => i === 0 ? { content: 'Total', colSpan: itemsIdx, styles: { halign: 'right' } } : i === itemsIdx ? String(D.rows.reduce((n, r) => n + (Number(r.items) || 0), 0)) : i < itemsIdx ? null : '').filter(x => x !== null)] : undefined;
+  doc.autoTable(Object.assign({}, st, { startY: y0, tableWidth: avail, columnStyles: colStyles, pageBreak: 'auto', rowPageBreak: 'avoid', showFoot: 'lastPage', foot, footStyles: { fillColor: [247, 239, 217], textColor: INK, fontStyle: 'bold', fontSize: fs }, head: [cols.map(c => c[1])], body,
     didParseCell: d => { if (d.section === 'body') { const k = cols[d.column.index][0]; if (/req|store|Store|Request/.test(k)) d.cell.styles.fontStyle = 'bold'; if (/slips|Slip/.test(k)) d.cell.styles.textColor = [30, 58, 138]; if (/serial|Serial/.test(k)) d.cell.styles.textColor = [11, 94, 61]; } } }));
   if (p.details && D.detail) D.detail.forEach(b => {
     doc.autoTable(Object.assign({}, st, { startY: doc.lastAutoTable.finalY + 6, headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: 'bold', fontSize: fs }, head: [[{ content: b.head, colSpan: b.cols.length }], b.cols], body: b.rows }));
@@ -1890,6 +1898,13 @@ function showUndo() {
   let n = 5; const paint = () => { el.innerHTML = '<div class="undob"><span>' + esc(u.label) + '</span><button data-a="undoDo">Undo · ' + n + '</button></div>'; };
   ui.undoAt = Date.now(); paint(); clearInterval(undoTimer); undoTimer = setInterval(() => { n--; if (n <= 0 || ui.undo !== u) { clearInterval(undoTimer); if (ui.undo === u) { ui.undo = null; el.innerHTML = ''; } return; } paint(); }, 1000);
 }
+window.jvSaved = (name, mime) => {
+  let el = document.getElementById('dlg'); if (!el) { el = document.createElement('div'); el.id = 'dlg'; document.body.appendChild(el); }
+  const pdf = /pdf/i.test(mime || name), xl = /sheet|excel|xls/i.test(mime || name);
+  el.innerHTML = '<div class="pkbg" data-sv="close"></div><div class="dlgbox savedbox" role="dialog" aria-modal="true"><div class="svhead"><span class="svic ' + (pdf ? 'pdf' : xl ? 'xls' : '') + '">' + (pdf ? 'PDF' : xl ? 'XLS' : 'FILE') + '</span><span><b>Saved</b><span>Downloads / JV Stock Issue</span></span></div>' +
+    '<div class="svname">' + esc(name) + '</div><div class="grid3"><button class="btn" data-sv="share">Share</button><button class="btn" data-sv="close">Close</button><button class="btn main" data-sv="open">Open</button></div></div>';
+  el.querySelectorAll('[data-sv]').forEach(b => b.onclick = e => { e.stopPropagation(); const k = b.dataset.sv; el.innerHTML = ''; if (k === 'open' && N && N.openLastFile) N.openLastFile(); if (k === 'share' && N && N.shareLastFile) N.shareLastFile(); });
+};
 function uiConfirm(msg, okLabel, danger) {
   return new Promise(res => {
     let el = document.getElementById('dlg'); if (!el) { el = document.createElement('div'); el.id = 'dlg'; document.body.appendChild(el); }

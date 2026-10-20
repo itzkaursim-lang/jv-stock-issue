@@ -508,6 +508,12 @@ main>*:nth-child(2){animation-delay:.03s}main>*:nth-child(3){animation-delay:.06
 .stockcard .sct b{font-size:16px;line-height:1.25;white-space:normal}
 .stockcard .sct .l1,.stockcard .sct .l2{white-space:normal!important;overflow:visible!important;text-overflow:clip!important;line-height:1.35}
 .stockcard .sct .l1{font-weight:600}
+.savedbox{gap:16px}
+.svhead{display:flex;align-items:center;gap:14px}.svhead b{display:block;font-size:20px}.svhead span span{font-size:13px;color:var(--mute)}
+.svic{width:52px;height:60px;border-radius:12px;background:#ECE6FF;color:#4B3BA8;display:flex;align-items:flex-end;justify-content:center;padding-bottom:8px;font:800 12px 'Outfit',sans-serif;position:relative;flex-shrink:0}
+.svic:after{content:"";position:absolute;top:0;right:0;width:16px;height:16px;background:linear-gradient(225deg,#fff 50%,rgba(0,0,0,.08) 50%);border-radius:0 12px 0 4px}
+.svic.pdf{background:#FFD9E3;color:#B4123B}.svic.xls{background:#D6F5E5;color:#0B5E3D}
+.svname{font-weight:600;font-size:15px;padding:12px 14px;border-radius:14px;background:var(--soft);word-break:break-all}
 </style>
 </head>
 <body>
@@ -518,6 +524,6 @@ main>*:nth-child(2){animation-delay:.03s}main>*:nth-child(3){animation-delay:.06
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <input type="file" id="fileIn" accept=".xlsx,.xls,.csv" class="hidden">
 <input type="file" id="photoIn" accept="image/*" class="hidden">
-<script src="app.js?v=5.7.0"></script>
+<script src="app.js?v=5.8.0"></script>
 </body>
 </html>
