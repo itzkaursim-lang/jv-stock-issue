@@ -67,7 +67,8 @@ function findItemAnywhere(c) {
   return null;
 }
 function groupBy(a, f) { const m = {}; a.forEach(x => (m[f(x)] = m[f(x)] || []).push(x)); return m; }
-function toast(m) { const t = document.getElementById('toast'); t.textContent = m; t.style.display = 'block'; clearTimeout(toast.h); toast.h = setTimeout(() => t.style.display = 'none', 3200); }
+function toast(m, force) { if (!force && (ui.undoAt && Date.now() - ui.undoAt < 1500)) return; return toast0(m); }
+function toast0(m) { const t = document.getElementById('toast'); t.textContent = m; t.style.display = 'block'; clearTimeout(toast.h); toast.h = setTimeout(() => t.style.display = 'none', 3200); }
 function meTag() { return { name: S.me.name || '', emp: S.me.emp || '' }; }
 
 /* ================= allocation =================
@@ -279,7 +280,7 @@ const TABS = [['home', 'Home'], ['pend', 'Pending'], ['find', 'Search'], ['reg',
 function slipRow(e, req) {
   const man = e.kind === 'manual';
   return '<button class="slipline tap ' + (man ? 'man' : 'app') + '" data-a="editEntry" data-v="' + e.id + '"><span class="stag">' + (man ? '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg>Manual' : '<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg>App') + '</span><span class="sl">' + esc(e.slip) + '</span>' + serFmt(e.serial) +
-    '<span class="st">' + esc(fmtShort(entryDate(e))) + ' · ' + esc(entryTime(e)) + ' · ' + entryCount(e, req) + ' art.</span></button>';
+    '<span class="st">' + esc(fmtShort(entryDate(e))) + ' · ' + esc(entryTime(e)) + ' · ' + entryCount(e, req) + ' art.' + ((e.by || {}).name ? ' · ' + esc(e.by.name.split(' ')[0]) : '') + '</span></button>';
 }
 function rqCard(o) {
   const key = 'rq:' + o.where + ':' + o.req, open = !!(ui.rqOpen || {})[key];
@@ -296,7 +297,7 @@ function rqCard(o) {
   return h + '</div>';
 }
 function entryHasReq(e, req) { return e.items.some(i => i.req === req) || (!!e.reqs && String(e.reqs).split(/\s*,\s*/).includes(req)); }
-function entryCount(e, req) { return e.items.length ? (req ? e.items.filter(i => i.req === req).length : e.items.length) : (Number(e.count) || 0); }
+function entryCount(e, req) { if (!e.items.length) return Number(e.count) || 0; if (!req) return e.items.length; const n = e.items.filter(i => i.req === req).length; return n || (e.items.some(i => i.req) ? 0 : e.items.length); }
 function reqSlips(req, onlyDate) { return S.entries.filter(e => entryHasReq(e, req) && (!onlyDate || entryDate(e) === onlyDate)).sort((a, b) => (a.at || '').localeCompare(b.at || '')); }
 function reqCard(r, cont) {
   const PL = plan(), later = r.date > today();
@@ -323,7 +324,10 @@ function stockCard() {
   const mins = Math.round((Date.now() - new Date(S.stockAt)) / 60000), old = mins > 360;
   const check = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
   const clock = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
-  return '<div class="stockcard ' + (old ? 'warn' : 'fresh') + '"><button class="scmain" data-a="stockOpen"><span class="sci">' + (old ? clock : check) + '</span><span class="sct"><b>' + (old ? 'Stock is ' + esc(ago(S.stockAt)).replace(' ago', ' old') : 'Stock is fresh · ' + esc(ago(S.stockAt))) + '</b><span>' + Object.keys(S.stock).length.toLocaleString('en-IN') + ' items · ' + esc(fmtDT(S.stockAt)) + ' · ' + (S.stockSrc === 'auto' ? 'from CUIMS' : 'from file') + '</span></span></button><button class="scgo" data-a="openMgr">' + (old ? 'Update' : 'Refresh') + '</button></div>';
+  const when = new Date(S.stockAt), tm = when.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }), sameDay = isoOf(when) === today();
+  return '<div class="stockcard ' + (old ? 'warn' : 'fresh') + '"><button class="scmain" data-a="stockOpen"><span class="sci">' + (old ? clock : check) + '</span><span class="sct"><b>' + (old ? 'Stock needs an update' : 'Stock is up to date') + '</b>' +
+    '<span class="l1">Updated ' + esc(ago(S.stockAt)) + (mins >= 1 ? ' · ' + (sameDay ? tm : fmtShort(isoOf(when)) + ', ' + tm) : '') + '</span>' +
+    '<span class="l2">' + Object.keys(S.stock).length.toLocaleString('en-IN') + ' items · ' + (S.stockSrc === 'auto' ? 'from CUIMS' : 'from a file') + '</span></span></button><button class="scgo" data-a="openMgr">' + (old ? 'Update' : 'Refresh') + '</button></div>';
 }
 
 /* ---------------- Home ---------------- */
@@ -1471,6 +1475,7 @@ function shMslips() {
     '<div class="grid2"><label class="f">Slip No<input type="text" data-f="slip" value="' + esc(f.slip) + '" class="mono" autocapitalize="characters"></label><label class="f">Serial No<input type="text" data-f="serial" value="' + esc(f.serial) + '" class="mono" inputmode="numeric"></label></div>' +
     '<div class="grid2"><label class="f">Date<input type="date" data-f="date" value="' + esc(f.date) + '"></label><label class="f">Time<input type="time" data-f="time" value="' + esc(f.time) + '"></label></div>' +
     '<label class="f">Receiver (6 digits)<input type="text" data-f="rcv" value="' + esc(f.rcv) + '" class="mono" inputmode="numeric" maxlength="6"></label>' +
+    '<div class="grid2"><label class="f">Entered by<input type="text" data-f="byName" value="' + esc(f.byName) + '"></label><label class="f">Emp code<input type="text" data-f="byEmp" value="' + esc(f.byEmp) + '" autocapitalize="characters"></label></div>' +
     '<div class="row"><b>Articles in this slip</b><button class="btn sm ghost" data-a="msAll">' + (W.every(l => f.pick[l.id]) ? 'Untick all' : 'Tick all') + '</button></div>' +
     W.map(l => '<label class="chk" style="min-height:44px;gap:12px"><input type="checkbox" data-a="markPick" data-v="' + l.id + '"' + (f.pick[l.id] ? ' checked' : '') + '><span style="flex:1"><b>' + esc(itemName(l.code)) + '</b><span class="note mono" style="display:block">' + esc(l.code) + '</span></span><b class="qty">' + num(l.qty) + ' ' + esc(itemUom(l.code)) + '</b></label>').join('') +
     '<button class="btn main full" data-a="msSave">Save slip ' + (sl.length + 1) + ' · ' + W.filter(l => f.pick[l.id]).length + ' articles</button></div>';
@@ -1483,13 +1488,15 @@ function shManReq() {
   h += '<div class="card pad col"><div class="grid2"><label class="f">Request No<input type="text" data-mr="req" value="' + esc(f.req) + '" class="mono"' + (f._new ? '' : ' disabled') + '></label><label class="f">Request date<input type="date" data-mr="date" value="' + esc(f.date) + '"></label></div>' +
     '<label class="f">Store</label>' + pickBtn('mrStore', { title: 'Store', search: true, full: true, placeholder: 'Choose store', opts: allStores().map(x => [x, x]), val: f.store, set: v => { ui.form.store = v; const d = S.stores[v] || {}; if (!ui.form.rcv && d.rcv) { ui.form.rcv = d.rcv; ui.form.rname = d.rname || ''; } renderSheet(); } }) +
     '<div class="grid2"><label class="f">Issued to (6 digits)<input type="text" data-mr="rcv" value="' + esc(f.rcv) + '" class="mono" inputmode="numeric" maxlength="6"></label><label class="f">Receiver name<input type="text" data-mr="rname" value="' + esc(f.rname) + '"></label></div>' +
-    '<div class="grid2"><label class="f">Entered by<input type="text" data-mr="byName" value="' + esc(f.byName) + '"></label><label class="f">Emp code<input type="text" data-mr="byEmp" value="' + esc(f.byEmp) + '" autocapitalize="characters"></label></div>' +
+
     '<label class="f">Total articles in the request<input type="number" inputmode="numeric" data-mr="total" value="' + esc(f.total) + '" placeholder="e.g. 14"></label></div>';
   h += '<div class="sect">Slips (' + f.slips.length + ')</div>';
   f.slips.forEach((x, i) => {
     h += '<div class="card pad col" style="gap:10px;box-shadow:inset 4px 0 0 #FFB648"><div class="row"><b>Slip ' + (i + 1) + '</b><button class="xbtn" data-a="mrDel" data-v="' + i + '" aria-label="Remove slip">' + ico('x', 16) + '</button></div>' +
       '<div class="grid2"><label class="f">Slip No<input type="text" data-ms="' + i + '|slip" value="' + esc(x.slip) + '" class="mono" autocapitalize="characters"></label><label class="f">Serial No<input type="text" data-ms="' + i + '|serial" value="' + esc(x.serial) + '" class="mono" inputmode="numeric"></label></div>' +
-      '<div class="grid3"><label class="f">Date<input type="date" data-ms="' + i + '|date" value="' + esc(x.date) + '"></label><label class="f">Time<input type="time" data-ms="' + i + '|time" value="' + esc(x.time) + '"></label><label class="f">Articles<input type="number" inputmode="numeric" data-ms="' + i + '|count" value="' + esc(x.count) + '"></label></div></div>';
+      '<div class="grid2"><label class="f">Date<input type="date" data-ms="' + i + '|date" value="' + esc(x.date) + '"></label><label class="f">Time<input type="time" data-ms="' + i + '|time" value="' + esc(x.time) + '"></label></div>' +
+      '<label class="f">Articles in this slip<input type="number" inputmode="numeric" data-ms="' + i + '|count" value="' + esc(x.count) + '" placeholder="e.g. 9"></label>' +
+      '<div class="grid2"><label class="f">Entered by<input type="text" data-ms="' + i + '|byName" value="' + esc(x.byName != null ? x.byName : f.byName) + '"></label><label class="f">Emp code<input type="text" data-ms="' + i + '|byEmp" value="' + esc(x.byEmp != null ? x.byEmp : f.byEmp) + '" autocapitalize="characters"></label></div></div>';
   });
   h += '<button class="btn full" data-a="mrAdd">+ Add another slip</button>';
   const doneN = f.slips.reduce((n, x) => n + (parseInt(x.count, 10) || 0), 0), tot = parseInt(f.total, 10) || 0;
@@ -1880,8 +1887,8 @@ function undoFire() { const u = ui.pendUndo; ui.pendUndo = null; if (!u || Date.
 function showUndo() {
   let el = document.getElementById('undobar'); if (!el) { el = document.createElement('div'); el.id = 'undobar'; document.body.appendChild(el); }
   const u = ui.undo; if (!u) { el.innerHTML = ''; return; }
-  let n = 10; const paint = () => { el.innerHTML = '<div class="undob"><span>' + esc(u.label) + '</span><button data-a="undoDo">Undo · ' + n + '</button></div>'; };
-  paint(); clearInterval(undoTimer); undoTimer = setInterval(() => { n--; if (n <= 0 || ui.undo !== u) { clearInterval(undoTimer); if (ui.undo === u) { ui.undo = null; el.innerHTML = ''; } return; } paint(); }, 1000);
+  let n = 5; const paint = () => { el.innerHTML = '<div class="undob"><span>' + esc(u.label) + '</span><button data-a="undoDo">Undo · ' + n + '</button></div>'; };
+  ui.undoAt = Date.now(); paint(); clearInterval(undoTimer); undoTimer = setInterval(() => { n--; if (n <= 0 || ui.undo !== u) { clearInterval(undoTimer); if (ui.undo === u) { ui.undo = null; el.innerHTML = ''; } return; } paint(); }, 1000);
 }
 function uiConfirm(msg, okLabel, danger) {
   return new Promise(res => {
@@ -1907,7 +1914,7 @@ function jvStockFile2(b64, name) {
     ui.upload.result = parseStock(wb);
     if (ui.upload.result.error) ui.upload.error = ui.upload.result.error;
     ui.sheet = { kind: 'upload' }; render(); renderSheet();
-    toast('Live stock downloaded. Check and tap Import.');
+    
   } catch (e) { toast('Could not read the downloaded stock file: ' + e.message); }
 }
 function enhanceDates(root) {
@@ -2002,7 +2009,7 @@ function askUnlock(after) {
   pendingAuth = after || null;
   if (N && N.authenticate) N.authenticate(); else uiConfirm('Unlock editing?').then(ok => window.jvAuth(ok));
 }
-window.jvAuth = ok => { if (ok) { ui.locked = false; render(); renderSheet(); toast('Unlocked. Editing is on.'); const f = pendingAuth; pendingAuth = null; if (f) f(); } else toast('Still locked.'); };
+window.jvAuth = ok => { if (ok) { ui.locked = false; render(); renderSheet(); const f = pendingAuth; pendingAuth = null; if (f) f(); } else toast('Still locked.'); };
 window.jvRelock = () => { if (!ui.locked) { ui.locked = true; render(); renderSheet(); } };
 
 /* ---------------- actions ---------------- */
@@ -2029,7 +2036,7 @@ document.addEventListener('click', async ev => {
   const a = t.dataset.a, v = t.dataset.v;
   if (a === 'undoDo') { const u = ui.undo; if (!u) return; Object.entries(u.snap).forEach(([k, j]) => { S[k] = JSON.parse(j); }); ui.undo = null; clearInterval(undoTimer); showUndo(); ui.pendUndo = null; save(true); render(); renderSheet(); toast('Undone: ' + u.label + '.'); return; }
   if (UNDOABLE[a] && !(ui.locked && GUARDED.has(a))) undoArm(a); else if (!/^(pick|pickSet|pickClose|tab|back)$/.test(a)) ui.pendUndo = null;
-  if (a === 'lockTap') { if (ui.locked) askUnlock(); else { ui.locked = true; render(); renderSheet(); toast('Locked.'); } return; }
+  if (a === 'lockTap') { if (ui.locked) askUnlock(); else { ui.locked = true; render(); renderSheet(); } return; }
   if (ui.locked && GUARDED.has(a)) { ev.preventDefault(); if (t.type === 'checkbox') t.checked = !t.checked; const sel = '[data-a="' + a + '"]' + (v != null ? '[data-v="' + CSS.escape(v) + '"]' : ''); askUnlock(() => { const el = document.querySelector(sel); if (el) el.click(); }); return; }
   if (a === 'bgClose') { if (ev.target === t) { ui.sheet = null; renderSheet(); } return; }
   if (t.type === 'checkbox' && !['hold', 'queueToggle', 'regItems', 'mgrToggle', 'syncAuto', 'lockToggle', 'markPick', 'stOn', 'rpTog', 'rpCol', 'autoSubToggle', 'queuePend', 'credAuto', 'artsSel', 'artsAll', 'autoStockTog'].includes(a)) return;
@@ -2155,7 +2162,7 @@ document.addEventListener('click', async ev => {
     case 'regTog': ui.regOpen = ui.regOpen || {}; ui.regOpen[v] = !ui.regOpen[v]; render(); break;
     case 'reqStatus': ui.form = { req: v }; ui.sheet = { kind: 'reqStatus' }; renderSheet(); break;
     case 'mslips': { const r = requests().find(x => x.req === v); if (!r) break; const W = r.lines.filter(l => l.status === 'waiting'); const pick = {}; W.forEach(l => pick[l.id] = 1);
-      ui.form = { req: v, store: r.store, slip: plannedSlip(W.map(l => l.id)) || nextSlip(), serial: '', rcv: (r.lines.find(l => l.rcv) || {}).rcv || (S.stores[r.store] || {}).rcv || '', date: today(), time: timeNow(), pick };
+      ui.form = { req: v, store: r.store, slip: plannedSlip(W.map(l => l.id)) || nextSlip(), serial: '', rcv: (r.lines.find(l => l.rcv) || {}).rcv || (S.stores[r.store] || {}).rcv || '', date: today(), time: timeNow(), pick, byName: S.me.name || '', byEmp: S.me.emp || '' };
       ui.sheet = { kind: 'mslips' }; renderSheet(); break; }
     case 'msAll': { const r = requests().find(x => x.req === ui.form.req); const W = r.lines.filter(l => l.status === 'waiting'); const all = W.every(l => ui.form.pick[l.id]); ui.form.pick = {}; if (!all) W.forEach(l => ui.form.pick[l.id] = 1); renderSheet(); break; }
     case 'msSave': { const f = ui.form; const slip = String(f.slip || '').trim().toUpperCase(); const sp = slipProblem(slip); if (sp) { toast(sp); break; }
@@ -2164,7 +2171,7 @@ document.addEventListener('click', async ev => {
       if (!(await uiConfirm('Save ' + slip + (f.serial ? ' (Serial ' + f.serial + ')' : '') + ' for ' + ls.length + ' article' + (ls.length > 1 ? 's' : '') + ' of ' + f.req + '?', 'Save slip'))) break;
       undoArm('markSave');
       const at = new Date((f.date || today()) + 'T' + (f.time || timeNow())).toISOString();
-      S.entries.push({ id: nid(), slip, serial: String(f.serial || '').trim(), store: f.store, rcv: f.rcv, rname: rname(f.rcv), at, date: f.date || today(), time: f.time || timeNow(), by: meTag(), kind: 'manual', remarks: '',
+      S.entries.push({ id: nid(), slip, serial: String(f.serial || '').trim(), store: f.store, rcv: f.rcv, rname: rname(f.rcv), at, date: f.date || today(), time: f.time || timeNow(), by: { name: f.byName || '', emp: f.byEmp || '' }, kind: 'manual', remarks: '',
         items: ls.map(l => ({ lineId: l.id, req: l.req, code: l.code, name: itemName(l.code), uom: itemUom(l.code), qty: l.qty, remark: l.remark || remarkFor(l.date) })) });
       ls.forEach(l => { l.status = 'issued'; l.issued.push({ slip, serial: String(f.serial || '').trim(), at }); if (S.stock[l.code]) S.stock[l.code].qty = Math.round((S.stock[l.code].qty - l.qty) * 1000) / 1000; });
       save(); toast(slip + ' saved. Add the next slip if there is one.');
@@ -2175,7 +2182,7 @@ document.addEventListener('click', async ev => {
     case 'rsAdd': { const f = ui.form; const c = String(f.addCode || '').trim().toUpperCase(), q = parseFloat(f.addQty); if (!c || !(q > 0)) { toast('Enter item code and qty.'); break; } const base = S.lines.find(l => l.req === f.req); if (!base) break;
       if (!(await uiConfirm('Add ' + itemName(c) + ' ' + num(q) + ' as pending to ' + f.req + '?', 'Add'))) break;
       const nl = { id: nid(), req: f.req, store: base.store, date: base.date, code: c, qty: q, rcv: base.rcv || '', slip: '', remark: base.remark || '', src: base.src, earlier: '', status: 'waiting', issued: [] }; S.lines.push(nl); audit('add', nl); f.addCode = ''; f.addQty = ''; save(); renderSheet(); render(); break; }
-    case 'testToggle': { ui.drawer = false; renderDrawer(); const on = !S.testMode; if (!(await uiConfirm(on ? 'Turn on Test mode? Your real requests, slips and stock are put aside and a separate test copy starts. Nothing you do in test mode touches real data.' : 'Leave Test mode? Your real data comes back exactly as it was. Test data is kept for next time.', on ? 'Start testing' : 'Leave test mode'))) break; setTestMode(on); toast(on ? 'Test mode on.' : 'Back to your real data.'); break; }
+    case 'testToggle': { ui.drawer = false; renderDrawer(); const on = !S.testMode; if (!(await uiConfirm(on ? 'Turn on Test mode? Your real requests, slips and stock are put aside and a separate test copy starts. Nothing you do in test mode touches real data.' : 'Leave Test mode? Your real data comes back exactly as it was. Test data is kept for next time.', on ? 'Start testing' : 'Leave test mode'))) break; setTestMode(on); break; }
     case 'testClear': if (await uiConfirm('Delete all test data?', 'Delete', true)) { S.lines = []; S.entries = []; S.returns = []; S.counts = []; S.taskLog = {}; S.corrections = []; S.hold = {}; S.stock = deep((S._real || {}).stock) || S.stock; save(); render(); } break;
     case 'dcOpen': ui.drawer = false; ui.view = 'check'; render(); window.scrollTo(0, 0); break;
     case 'dcRenum': { const st = t.dataset.s; const to = await uiPrompt('New Request No for ' + st + ' (now ' + v + ')', v + '-' + st.replace(/[^A-Z0-9]/gi, '').slice(0, 4), 'Renumber'); if (to && renumberReqStore(v, st, to)) { save(); render(); toast(st + ' is now ' + to + '.'); } break; }
@@ -2290,10 +2297,10 @@ document.addEventListener('click', async ev => {
         set: x => { if (x === '__free') { const b = document.createElement('button'); b.dataset.a = 'newManualFree'; document.body.appendChild(b); b.click(); b.remove(); } else { const b = document.createElement('button'); b.dataset.a = 'mslips'; b.dataset.v = x; document.body.appendChild(b); b.click(); b.remove(); } } };
       ui.picker = { id: 'manReq', q: '' }; renderPicker(); break; }
     case 'newManualFree': ui.form = { _new: true, req: nextReqNo(), date: today(), store: '', rcv: '', rname: '', byName: S.me.name || '', byEmp: S.me.emp || '', total: '', status: 'pending', slips: [{ slip: nextSlip(), serial: '', date: today(), time: timeNow(), count: '' }] }; ui.sheet = { kind: 'manReq' }; renderSheet(); break;
-    case 'manReqEdit': { const m = (S.manReqs || {})[v]; if (!m) break; const sl = reqSlips(v).map(e => ({ id: e.id, slip: e.slip, serial: e.serial || '', date: entryDate(e), time: entryTime(e), count: String(entryCount(e, v)) }));
+    case 'manReqEdit': { const m = (S.manReqs || {})[v]; if (!m) break; const sl = reqSlips(v).map(e => ({ id: e.id, slip: e.slip, serial: e.serial || '', date: entryDate(e), time: entryTime(e), count: String(entryCount(e, v)), byName: (e.by || {}).name || '', byEmp: (e.by || {}).emp || '' }));
       ui.form = Object.assign({ _new: false }, JSON.parse(JSON.stringify(m)), { slips: sl.length ? sl : [{ slip: nextSlip(), serial: '', date: today(), time: timeNow(), count: '' }], total: m.total ? String(m.total) : '' }); ui.sheet = { kind: 'manReq' }; renderSheet(); break; }
     case 'manReqToggle': { const m = (S.manReqs || {})[v]; if (!m) break; const to = m.status === 'done' ? 'pending' : 'done'; if (!(await uiConfirm('Mark request ' + v + ' as ' + (to === 'done' ? 'completed' : 'pending') + '?', to === 'done' ? 'Mark completed' : 'Mark pending'))) break; m.status = to; save(); render(); break; }
-    case 'mrAdd': { const f = ui.form; const last = f.slips[f.slips.length - 1]; let nx = ''; const mm = last && String(last.slip).match(/^(.*?)(\d+)$/); if (mm) nx = mm[1] + String(parseInt(mm[2], 10) + 1).padStart(mm[2].length, '0'); f.slips.push({ slip: nx || nextSlip(), serial: '', date: last ? last.date : today(), time: timeNow(), count: '' }); renderSheet(); break; }
+    case 'mrAdd': { const f = ui.form; const last = f.slips[f.slips.length - 1]; let nx = ''; const mm = last && String(last.slip).match(/^(.*?)(\d+)$/); if (mm) nx = mm[1] + String(parseInt(mm[2], 10) + 1).padStart(mm[2].length, '0'); f.slips.push({ slip: nx || nextSlip(), serial: '', date: last ? last.date : today(), time: timeNow(), count: '', byName: last && last.byName != null ? last.byName : f.byName, byEmp: last && last.byEmp != null ? last.byEmp : f.byEmp }); renderSheet(); break; }
     case 'mrDel': ui.form.slips.splice(+v, 1); renderSheet(); break;
     case 'mrSt': ui.form.status = v; renderSheet(); break;
     case 'mrRemove': { const f = ui.form; if (!(await uiConfirm('Delete manual request ' + f.req + ' and its ' + f.slips.length + ' slip(s)?', 'Delete', true))) break; undoArm('delEntry'); S.entries = S.entries.filter(e => !(e.kind === 'manual' && !e.items.length && entryHasReq(e, f.req))); delete S.manReqs[f.req]; save(); ui.sheet = null; renderSheet(); render(); break; }
@@ -2311,7 +2318,7 @@ document.addEventListener('click', async ev => {
       S.manReqs[req] = { req, store: f.store, date: f.date || today(), rcv: f.rcv || '', rname: f.rname || '', total: parseInt(f.total, 10) || 0, status: f.status === 'done' ? 'done' : 'pending', by: { name: f.byName || '', emp: f.byEmp || '' } };
       S.entries = S.entries.filter(e => !(e.kind === 'manual' && !e.items.length && entryHasReq(e, req)));
       f.slips.forEach(x => { const d = x.date || today(), tm = x.time || timeNow();
-        S.entries.push({ id: x.id || nid(), slip: String(x.slip).trim().toUpperCase(), serial: String(x.serial || '').trim(), store: f.store, rcv: f.rcv || '', rname: f.rname || '', at: new Date(d + 'T' + tm).toISOString(), date: d, time: tm, by: { name: f.byName || '', emp: f.byEmp || '' }, kind: 'manual', reqs: req, count: parseInt(x.count, 10) || 0, remarks: '', items: [] }); });
+        S.entries.push({ id: x.id || nid(), slip: String(x.slip).trim().toUpperCase(), serial: String(x.serial || '').trim(), store: f.store, rcv: f.rcv || '', rname: f.rname || '', at: new Date(d + 'T' + tm).toISOString(), date: d, time: tm, by: { name: (x.byName != null ? x.byName : f.byName) || '', emp: (x.byEmp != null ? x.byEmp : f.byEmp) || '' }, kind: 'manual', reqs: req, count: parseInt(x.count, 10) || 0, remarks: '', items: [] }); });
       save(); ui.sheet = null; renderSheet(); render(); toast('Request ' + req + ' saved.'); break; }
     case 'newManualFreeOld': ui.form = { _new: true, kind: 'manual', slip: '', serial: '', store: '', rcv: '', rname: '', date: ui.reg.date, time: timeNow(), reqs: '', remarks: '', byName: S.me.name, byEmp: S.me.emp, items: [blankItem()] }; ui.sheet = { kind: 'entry' }; renderSheet(); break;
     case 'editEntry': { const e = S.entries.find(x => String(x.id) === v); ui.form = Object.assign(JSON.parse(JSON.stringify(e)), { date: entryDate(e), time: entryTime(e), reqs: e.reqs || [...new Set(e.items.map(i => i.req).filter(Boolean))].join(', '), byName: (e.by || {}).name || '', byEmp: (e.by || {}).emp || '' }); ui.sheet = { kind: 'entry' }; renderSheet(); break; }

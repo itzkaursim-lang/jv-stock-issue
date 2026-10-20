@@ -503,6 +503,11 @@ button.slipline{width:100%;text-align:left;font:inherit;cursor:pointer}
 main>*{animation:rise .28s cubic-bezier(.2,.8,.2,1) both}
 main>*:nth-child(2){animation-delay:.03s}main>*:nth-child(3){animation-delay:.06s}main>*:nth-child(4){animation-delay:.09s}main>*:nth-child(5){animation-delay:.12s}
 @keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+#sres,#artsres,#stkres{display:flex;flex-direction:column;gap:14px}
+.rcard .slips{padding-top:0}
+.stockcard .sct b{font-size:16px;line-height:1.25;white-space:normal}
+.stockcard .sct .l1,.stockcard .sct .l2{white-space:normal!important;overflow:visible!important;text-overflow:clip!important;line-height:1.35}
+.stockcard .sct .l1{font-weight:600}
 </style>
 </head>
 <body>
@@ -513,6 +518,6 @@ main>*:nth-child(2){animation-delay:.03s}main>*:nth-child(3){animation-delay:.06
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <input type="file" id="fileIn" accept=".xlsx,.xls,.csv" class="hidden">
 <input type="file" id="photoIn" accept="image/*" class="hidden">
-<script src="app.js?v=5.6.0"></script>
+<script src="app.js?v=5.7.0"></script>
 </body>
 </html>
