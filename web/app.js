@@ -279,7 +279,7 @@ const TABS = [['home', 'Home'], ['pend', 'Pending'], ['find', 'Search'], ['reg',
 function slipRow(e, req) {
   const man = e.kind === 'manual';
   return '<button class="slipline tap ' + (man ? 'man' : 'app') + '" data-a="editEntry" data-v="' + e.id + '"><span class="stag">' + (man ? '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg>Manual' : '<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg>App') + '</span><span class="sl">' + esc(e.slip) + '</span>' + serFmt(e.serial) +
-    '<span class="st">' + esc(fmtShort(entryDate(e))) + ' · ' + esc(entryTime(e)) + ' · ' + (req ? e.items.filter(i => i.req === req).length : e.items.length) + ' art.</span></button>';
+    '<span class="st">' + esc(fmtShort(entryDate(e))) + ' · ' + esc(entryTime(e)) + ' · ' + entryCount(e, req) + ' art.</span></button>';
 }
 function rqCard(o) {
   const key = 'rq:' + o.where + ':' + o.req, open = !!(ui.rqOpen || {})[key];
@@ -295,7 +295,9 @@ function rqCard(o) {
   if (o.cta) h += '<div class="cta">' + o.cta + '</div>';
   return h + '</div>';
 }
-function reqSlips(req, onlyDate) { return S.entries.filter(e => e.items.some(i => i.req === req) && (!onlyDate || entryDate(e) === onlyDate)).sort((a, b) => (a.at || '').localeCompare(b.at || '')); }
+function entryHasReq(e, req) { return e.items.some(i => i.req === req) || (!!e.reqs && String(e.reqs).split(/\s*,\s*/).includes(req)); }
+function entryCount(e, req) { return e.items.length ? (req ? e.items.filter(i => i.req === req).length : e.items.length) : (Number(e.count) || 0); }
+function reqSlips(req, onlyDate) { return S.entries.filter(e => entryHasReq(e, req) && (!onlyDate || entryDate(e) === onlyDate)).sort((a, b) => (a.at || '').localeCompare(b.at || '')); }
 function reqCard(r, cont) {
   const PL = plan(), later = r.date > today();
   const tag = later ? ['Scheduled · ' + fmtShort(r.date), 'c-in'] : r.st === 'full' ? ['Ready', 'c-ok'] : r.st === 'part' ? [r.can.length + ' of ' + r.w.length + ' ready', 'c-gd'] : r.st === 'done' ? ['Done', 'c-in'] : ['Waiting', 'c-no'];
@@ -316,10 +318,12 @@ function appBar() {
 }
 function stockAge() { return S.stockAt ? 'Stock from ' + fmtDT(S.stockAt) : 'No stock uploaded yet'; }
 function stockCard() {
-  if (!S.stockAt) return '<button class="stockcard warn" data-a="openMgr"><span class="sci">' + ico('alert', 20) + '</span><span class="sct"><b>No stock uploaded yet</b><span>Tap to fetch live stock from CUIMS</span></span>' + ico('right', 18) + '</button>';
+  const box = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/></svg>';
+  if (!S.stockAt) return '<div class="stockcard warn"><button class="scmain" data-a="stockOpen"><span class="sci">' + box + '</span><span class="sct"><b>No stock yet</b><span>Fetch live stock from CUIMS to plan issues</span></span></button><button class="scgo" data-a="openMgr">Get stock</button></div>';
   const mins = Math.round((Date.now() - new Date(S.stockAt)) / 60000), old = mins > 360;
-  return '<div class="stockcard' + (old ? ' warn' : '') + '"><button class="scmain" data-a="stockOpen"><span class="sci">' + '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg></span>' +
-    '<span class="sct"><b>Stock updated ' + esc(ago(S.stockAt)) + '</b><span>' + esc(fmtDT(S.stockAt)) + ' · ' + Object.keys(S.stock).length + ' items · ' + (S.stockSrc === 'auto' ? 'auto from CUIMS' : 'uploaded file') + '</span></span></button><button class="scgo" data-a="openMgr">Update</button></div>';
+  const check = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+  const clock = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+  return '<div class="stockcard ' + (old ? 'warn' : 'fresh') + '"><button class="scmain" data-a="stockOpen"><span class="sci">' + (old ? clock : check) + '</span><span class="sct"><b>' + (old ? 'Stock is ' + esc(ago(S.stockAt)).replace(' ago', ' old') : 'Stock is fresh · ' + esc(ago(S.stockAt))) + '</b><span>' + Object.keys(S.stock).length.toLocaleString('en-IN') + ' items · ' + esc(fmtDT(S.stockAt)) + ' · ' + (S.stockSrc === 'auto' ? 'from CUIMS' : 'from file') + '</span></span></button><button class="scgo" data-a="openMgr">' + (old ? 'Update' : 'Refresh') + '</button></div>';
 }
 
 /* ---------------- Home ---------------- */
@@ -436,9 +440,13 @@ function regGroups() {
   const f = fltGet('reg'), ents = regEntries();
   const ids = new Set(ents.flatMap(e => e.items.map(i => i.req)).filter(Boolean));
   if (f.rd && !f.id) requests().filter(r => r.date === f.rd).forEach(r => ids.add(r.req));
-  const R = requests().filter(r => ids.has(r.req));
+  const MR = S.manReqs || {};
+  Object.values(MR).forEach(m => { if ((!f.rd || m.date === f.rd) && (!f.id || S.entries.some(e => entryHasReq(e, m.req) && entryDate(e) === f.id))) ids.add(m.req); });
+  const R = requests().filter(r => ids.has(r.req) && !MR[r.req]);
+  const GM = Object.values(MR).filter(m => ids.has(m.req)).map(m => { const sl = reqSlips(m.req); const done = sl.reduce((n, e) => n + entryCount(e, m.req), 0);
+    return { req: m.req, store: m.store, date: m.date, man: m, left: [], issued: done, closed: 0, total: m.total || done, slips: sl.filter(e => !f.id || entryDate(e) === f.id), manStatus: m.status }; });
   const G = R.map(r => { const L = r.lines; return { req: r.req, store: r.store, date: r.date, left: L.filter(l => l.status === 'waiting'), issued: L.filter(l => l.status === 'issued').length, closed: L.filter(l => l.status === 'dropped').length, total: L.filter(l => l.status !== 'dropped').length, slips: S.entries.filter(e => e.items.some(i => i.req === r.req) && (!f.id || entryDate(e) === f.id)).sort((a, b) => (a.at || '').localeCompare(b.at || '')) }; });
-  return sortBy(G, getSort('reg'), g => ({ req: g.req, store: g.store, date: g.date, ready: g.left.length, size: g.total }));
+  return sortBy(G.concat(GM), getSort('reg'), g => ({ req: g.req, store: g.store, date: g.date, ready: g.left.length, size: g.total }));
 }
 function regEntries() { const f = fltGet('reg'); return S.entries.filter(e => (!f.id || entryDate(e) === f.id) && (!f.rd || e.items.some(i => reqDateOfRaw(i.req) === f.rd))); }
 function issuedOn(req, d) { return S.entries.some(e => entryDate(e) === d && e.items.some(i => i.req === req)); }
@@ -595,13 +603,17 @@ function vReg() {
   if (r.type === 'issue') h += fltBar('reg', true); else h += '<label class="f">Return date<input type="date" data-in="regDate" value="' + esc(r.date) + '"></label>';
   if (r.type === 'issue') {
     const G = regGroups();
-    const pendN = G.filter(g => g.left.length).length;
+    const isPend = g => g.man ? g.manStatus !== 'done' : g.left.length > 0;
+    const pendN = G.filter(isPend).length;
     h += '<div class="seg">' + [['all', 'All ' + G.length], ['pending', 'Pending ' + pendN], ['done', 'Completed ' + (G.length - pendN)]].map(([k, l]) => '<button data-a="regSt" data-v="' + k + '" class="' + ((r.st || 'all') === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>';
-    const list = G.filter(g => (r.st || 'all') === 'all' || (r.st === 'pending' ? g.left.length : !g.left.length));
+    const list = G.filter(g => (r.st || 'all') === 'all' || (r.st === 'pending' ? isPend(g) : !isPend(g)));
     h += '<div class="shead"><div><h2>' + list.length + ' requests</h2><span>' + list.reduce((n, g) => n + g.slips.length, 0) + ' slips</span></div>' + sortPick('reg') + '</div>';
     h += '<div class="grid2"><button class="btn main" data-a="pdfIssue"' + (list.length ? '' : ' disabled') + '>Make PDF</button><button class="btn" data-a="newManual">+ Manual entry</button></div>';
     if (!list.length) h += '<div class="card pad note">Nothing for these dates.</div>';
     list.forEach(g => {
+      if (g.man) { h += rqCard({ where: 'reg', req: g.req, store: g.store, tap: false, status: g.manStatus === 'done' ? ['Completed', 'c-ok'] : ['Pending · ' + g.issued + ' of ' + (g.total || '?') + ' issued', 'c-gd'],
+        meta: ['requested ' + (g.date ? fmtShort(g.date) : '–'), 'GA' + esc(g.man.rcv || '–') + (g.man.rname ? ' ' + esc(g.man.rname) : ''), '<span class="stag man" style="position:static">Manual record</span>'], slips: g.slips,
+        btns: '<button class="btn sm" data-a="manReqEdit" data-v="' + esc(g.req) + '">Edit slips & status</button><button class="btn sm ghost" data-a="manReqToggle" data-v="' + esc(g.req) + '">' + (g.manStatus === 'done' ? 'Mark pending' : 'Mark completed') + '</button>' }); return; }
       h += rqCard({ where: 'reg', req: g.req, store: g.store, status: g.left.length ? ['Pending · ' + g.left.length + ' of ' + g.total + ' left', 'c-gd'] : g.total ? ['Completed', 'c-ok'] : ['No articles', 'c-gy'],
         meta: ['requested ' + (g.date ? fmtShort(g.date) : '–'), g.issued + ' of ' + g.total + ' issued', g.closed ? g.closed + ' closed' : ''], slips: g.slips, left: g.left,
         btns: '<button class="btn sm" data-a="mslips" data-v="' + esc(g.req) + '">+ Add slips & serials</button><button class="btn sm ghost" data-a="reqStatus" data-v="' + esc(g.req) + '">Pending / completed</button>' });
@@ -671,6 +683,7 @@ function searchIndex() {
   S.entries.forEach(e => out.push({ type: 'Issue', id: 'e' + e.id, date: entryDate(e), time: entryTime(e), store: e.store, who: 'GA' + e.rcv + (e.rname ? ' ' + e.rname : ''), no: e.slip, serial: e.serial || '', reqs: e.reqs || [...new Set(e.items.map(i => i.req).filter(Boolean))].join(', '), by: e.by || {}, remarks: e.remarks || '', items: e.items, kind: e.kind }));
   S.returns.forEach(r => out.push({ type: 'Return', id: 'r' + r.id, date: r.date, time: r.time, store: r.store, who: 'GA' + r.by + (r.byName ? ' ' + r.byName : ''), no: r.no, serial: r.serial || '', reqs: 'Against ' + r.against, by: r.enteredBy || {}, remarks: r.remarks || '', items: r.items }));
   const R0 = {}; S.lines.forEach(l => { if (l.status === 'dropped') return; (R0[l.req] = R0[l.req] || []).push(l); });
+  Object.values(S.manReqs || {}).forEach(m => out.push({ type: 'Request', id: 'm' + m.req, date: m.date, time: '', store: m.store, who: (m.status === 'done' ? 'completed' : 'pending') + ' · manual record', no: m.req, serial: '', reqs: m.req, by: m.by || {}, remarks: 'manual', items: [] }));
   Object.entries(R0).forEach(([req, L]) => { const w = L.filter(l => l.status === 'waiting').length;
     out.push({ type: 'Request', id: 'q' + req, date: L[0].date, time: '', store: L[0].store, who: w ? w + ' waiting · ' + (L.length - w) + ' issued' : 'all ' + L.length + ' issued', no: req, serial: '', reqs: req, by: {}, remarks: L.some(l => l.fromFile) ? '' : 'added in app', items: L.map(l => ({ code: l.code, name: itemName(l.code), qty: l.qty, uom: itemUom(l.code), req, remark: l.status })) }); });
   out.forEach(x => { x.rdates = new Set(x.items.map(i => rd[i.req]).filter(Boolean)); x.hay = [x.type, x.date, x.date ? fmtLong(x.date) : '', x.store, x.who, x.no, x.serial, x.reqs, x.by.name, x.by.emp, x.remarks, ...x.items.map(i => i.code + ' ' + (i.name || itemName(i.code)) + ' ' + (i.remark || ''))].join(' ').toLowerCase(); x.sk = (x.date || '') + (x.time || ''); });
@@ -701,29 +714,39 @@ function searchRecordsOld() {
 }
 function sResults(res) {
   const s = ui.search; let h = '';
-  h += '<div class="row"><span class="note">' + res.length + ' records</span><button class="btn sm" data-a="expSearch"' + (res.length ? '' : ' disabled') + '>Export results</button></div>';
-  res.slice(0, 150).forEach(x => {
-    const open = s.open === x.id;
-    h += '<button class="card pad tap col" style="gap:4px" data-a="sOpen" data-v="' + x.id + '"><div class="row"><b>' + esc(x.store) + '</b><span class="chip ' + (x.type === 'Issue' ? 'c-in' : x.type === 'Request' ? 'c-gd' : 'c-pt') + '">' + x.type + '</span></div>' +
-      '<div class="note mono">' + (x.type === 'Request' ? '<span class="reqno" data-req="' + esc(x.no) + '">' + esc(x.no) + '</span> · requested ' + (x.date ? fmtShort(x.date) : '') : esc(x.no) + ' · Serial ' + esc(x.serial || '–') + ' · ' + (x.date ? fmtShort(x.date) : '') + ' ' + esc(x.time || '') + (x.reqs ? ' · Req ' + esc(x.reqs) : '')) + '</div>' +
-      '<div class="note">' + esc(x.who) + ' · ' + x.items.length + ' items · by ' + esc(x.by.name || '–') + '</div>' +
-      (open ? '<div class="tblwrap" style="margin-top:6px"><table><tr><th>Code</th><th>Item</th><th>Qty</th><th>Remark</th></tr>' + x.items.map(i => '<tr><td>' + esc(i.code) + '</td><td>' + esc(i.name || itemName(i.code)) + '</td><td>' + num(i.qty) + ' ' + esc(i.uom || '') + '</td><td>' + esc(i.remark || '–') + '</td></tr>').join('') + '</table></div>' + (x.reqs ? '<div class="note">' + esc(x.reqs) + '</div>' : '') + (x.type === 'Request' ? '<div class="grid2" style="margin-top:8px"><span class="btn sm" data-a="openReq" data-v="' + esc(x.no) + '">Open request</span><span class="btn sm ghost" data-a="renumReq" data-v="' + esc(x.no) + '">Renumber</span></div>' : '') : '') + '</button>';
+  h += '<div class="shead"><div><h2>' + res.length.toLocaleString('en-IN') + ' results</h2><span>' + (s.q ? 'for "' + esc(s.q) + '"' : 'latest first') + '</span></div><button class="btn sm ghost" data-a="expSearch"' + (res.length ? '' : ' disabled') + '>Export</button></div>';
+  if (!res.length) return h + '<div class="card pad note">Nothing found. Try a Request No, slip, serial, store or item.</div>';
+  res.slice(0, 120).forEach(x => {
+    if (x.type === 'Request') {
+      const L = S.lines.filter(l => l.req === x.no && l.status !== 'dropped'), w = L.filter(l => l.status === 'waiting'), sl = reqSlips(x.no), m = (S.manReqs || {})[x.no];
+      h += rqCard({ where: 'find', req: x.no, store: x.store, tap: !m, status: m ? (m.status === 'done' ? ['Completed', 'c-ok'] : ['Pending', 'c-gd']) : w.length ? [w.length + ' of ' + L.length + ' pending', 'c-gd'] : ['Completed', 'c-ok'],
+        meta: ['requested ' + (x.date ? fmtShort(x.date) : '–'), m ? 'manual record' : L.length + ' articles'], slips: sl.length ? sl : null, left: w,
+        btns: m ? '<button class="btn sm" data-a="manReqEdit" data-v="' + esc(x.no) + '">Edit</button><button class="btn sm ghost" data-a="renumReq" data-v="' + esc(x.no) + '">Renumber</button>' : '<button class="btn sm" data-a="openReq" data-v="' + esc(x.no) + '">Open request</button><button class="btn sm ghost" data-a="renumReq" data-v="' + esc(x.no) + '">Renumber</button>' });
+      return;
+    }
+    const isRet = x.type === 'Return', e = isRet ? null : S.entries.find(z => 'e' + z.id === x.id), open = s.open === x.id;
+    const man = e && e.kind === 'manual';
+    h += '<div class="card rcard"><button class="main srch" data-a="sOpen" data-v="' + x.id + '"><div class="row"><span class="stag ' + (isRet ? 'ret' : man ? 'man' : 'appt') + '" style="position:static">' + (isRet ? 'Return' : man ? 'Manual slip' : 'App slip') + '</span>' + serFmt(x.serial) + '</div>' +
+      '<b class="ttl">' + esc(x.store) + '</b>' + meta([esc(x.no), (x.date ? fmtShort(x.date) : '') + ' ' + esc(x.time || ''), esc(x.who), (e ? entryCount(e) : x.items.length) + ' articles']) +
+      (x.reqs && !isRet ? '<div class="scrow">' + String(x.reqs).split(/\s*,\s*/).filter(Boolean).map(r => '<span class="reqno sm" data-req="' + esc(r) + '">' + esc(r) + '</span>').join('') + '</div>' : '') + '</button>' +
+      (open && x.items.length ? '<div class="leftbox" style="background:var(--soft)">' + x.items.map(i => '<div class="leftrow"><span><b>' + esc(i.name || itemName(i.code)) + '</b><span class="mono">' + esc(i.code) + (i.remark ? ' · ' + esc(i.remark) : '') + '</span></span><b class="qty">' + num(i.qty) + ' ' + esc(i.uom || '') + '</b></div>').join('') + '</div>' : '') +
+      (open && e ? '<div class="rqbtns"><button class="btn sm" data-a="editEntry" data-v="' + e.id + '">Edit slip</button>' + (x.reqs ? '<button class="btn sm ghost" data-a="openReq" data-v="' + esc(String(x.reqs).split(/\s*,\s*/)[0]) + '">Open request</button>' : '') + '</div>' : '') + '</div>';
   });
-  if (res.length > 150) h += '<div class="note">Showing 150. Narrow the search or export all.</div>';
+  if (res.length > 120) h += '<div class="note" style="text-align:center">Showing 120 of ' + res.length + '. Narrow the search or export all.</div>';
   return h;
 }
 function vFind() {
   const s = ui.search;
   const res = searchRecords();
   const stores = [...new Set([...S.entries.map(e => e.store), ...S.returns.map(r => r.store), ...S.lines.map(l => l.store)])].sort();
-  let h = '<header class="top"><div><h1>Search</h1><div class="sub">Requests, issues and returns: any Request No, store, item, slip, serial or person.</div></div></header><main>';
-  h += '<button class="btn full" data-a="stockOpen">Search live stock instead</button>';
-  h += '<div class="sbox">' + '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input type="search" data-in="q" value="' + esc(s.q) + '" placeholder="Item, slip, serial, store, request…" autocomplete="off" enterkeyhint="search"></div>';
+  let h = '<header class="top"><div><h1>Search</h1><div class="sub">Requests, slips and returns. Type a Request No, slip, serial, store, item or person.</div></div></header><main>';
+  h += '<div class="sbox big">' + '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input type="search" data-in="q" value="' + esc(s.q) + '" placeholder="Item, slip, serial, store, request…" autocomplete="off" enterkeyhint="search"></div>';
   h += '<div class="seg">' + [['all', 'All'], ['request', 'Requests'], ['issue', 'Issues'], ['return', 'Returns']].map(([k, l]) => '<button data-a="sType" data-v="' + k + '" class="' + (s.type === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>';
   h += '<label class="f fdate"><span>Request date</span><span class="fin"><input type="date" data-in="sRd" value="' + esc(s.rd || '') + '">' + (s.rd ? '<button class="fx" data-a="sRdClear" aria-label="Clear request date">' + ico('x', 14) + '</button>' : '') + '</span></label>';
   h += '<div class="note" style="margin-top:-6px">Issue date range:</div>';
   h += '<div class="grid2"><label class="f">From<input type="date" data-in="sFrom" value="' + esc(s.from) + '"></label><label class="f">To<input type="date" data-in="sTo" value="' + esc(s.to) + '"></label></div>';
   h += pickBtn('sStore', { title: 'Store', search: true, full: true, opts: [['', 'All stores']].concat(stores.map(x => [x, x])), val: s.store || '', set: v => { ui.search.store = v; render(); } }, 'Store');
+  h += '<button class="stockcard lite" data-a="stockOpen"><span class="sci">' + ico('right', 18).replace('M9 6l6 6-6 6', 'M4 7h16M4 12h16M4 17h10') + '</span><span class="sct"><b>Search live stock</b><span>Any item: closing qty, needed and free</span></span>' + ico('right', 18) + '</button>';
   h += '<div id="sres">' + sResults(res) + '</div>';
   return h + '</main>';
 }
@@ -954,6 +977,7 @@ function issueGroups(list) {
       g.to.add('GA' + e.rcv + (e.rname ? ' ' + e.rname : ''));
       g.slips.push({ slip: e.slip, serial: e.serial || '', time: entryTime(e) });
       e.items.filter(i => !reqs.length || i.req === k).forEach(i => g.items.push(Object.assign({ slip: e.slip }, i)));
+      g.count = (g.count || 0) + (e.items.length ? e.items.filter(i => !reqs.length || i.req === k).length : (Number(e.count) || 0));
       if (e.remarks) g.remarks.add(e.remarks); if (e.kind === 'manual') g.remarks.add('Manual');
       if ((e.by || {}).name) g.by.add(e.by.name + (e.by.emp ? ' (' + e.by.emp + ')' : ''));
     });
@@ -1234,7 +1258,7 @@ function reportDef(type) {
     const list = regEntries(), F = fltGet('reg');
     let G = sortBy(issueGroups(list), ['custom', 'az', 'time'].includes(p.sort) ? 'reqdate' : p.sort, g => ({ req: g.req, store: g.store, date: reqDateOfRaw(g.req), size: g.items.length }));
     return { cols: [['no', '#'], ['req', 'Request No'], ['rdate', 'Requisition Requested Date'], ['store', 'Store'], ['to', 'Issued to'], ['slips', 'Slip No'], ['serials', 'Serial No'], ['times', 'Time'], ['items', 'Items'], ['remarks', 'Remarks'], ['by', 'Entered by']],
-      rows: G.map((g, i) => ({ no: i + 1, req: g.req || '–', rdate: reqDateOf(g.req), store: g.store, to: [...g.to], slips: g.slips.map(x => x.slip), serials: g.slips.map(x => x.serial || '______'), times: g.slips.map(x => x.time), items: g.items.length, remarks: [...g.remarks].join(', ') || '–', by: [...g.by] })),
+      rows: G.map((g, i) => ({ no: i + 1, req: g.req || '–', rdate: reqDateOf(g.req), store: g.store, to: [...g.to], slips: g.slips.map(x => x.slip), serials: g.slips.map(x => x.serial || '______'), times: g.slips.map(x => x.time), items: g.count || g.items.length, remarks: [...g.remarks].join(', ') || '–', by: [...g.by] })),
       chips: [].concat(F.id ? [['Issue date', fmtLong(F.id)]] : []).concat(F.rd ? [['Request date', fmtLong(F.rd)]] : []).concat([['Requests', G.length], ['Items', list.reduce((n, e) => n + e.items.length, 0)]]),
       detail: G.map(g => ({ head: 'Request ' + (g.req || '–') + '   ·   ' + g.store + '   ·   ' + [...g.to].join(', ') + '   ·   Slips ' + g.slips.map(x => x.slip + (x.serial ? ' #' + x.serial : '')).join(', '),
         cols: ['S.No', 'Slip No', 'Item code', 'Item', 'UOM', 'Qty', 'Item remarks'], rows: g.items.map((x, i) => [i + 1, x.slip, x.code, x.name || itemName(x.code), x.uom || itemUom(x.code), num(x.qty), x.remark || '–']) })),
@@ -1452,6 +1476,29 @@ function shMslips() {
     '<button class="btn main full" data-a="msSave">Save slip ' + (sl.length + 1) + ' · ' + W.filter(l => f.pick[l.id]).length + ' articles</button></div>';
   return h;
 }
+function shManReq() {
+  const f = ui.form;
+  let h = '<div class="row"><h2>' + (f._new ? 'Manual request' : 'Request ' + esc(f.req)) + '</h2><button class="btn sm ghost" data-a="closeSheet">Close</button></div>';
+  h += '<div class="note">For requests done outside the app. No item details needed: just the slips, serials and article counts.</div>';
+  h += '<div class="card pad col"><div class="grid2"><label class="f">Request No<input type="text" data-mr="req" value="' + esc(f.req) + '" class="mono"' + (f._new ? '' : ' disabled') + '></label><label class="f">Request date<input type="date" data-mr="date" value="' + esc(f.date) + '"></label></div>' +
+    '<label class="f">Store</label>' + pickBtn('mrStore', { title: 'Store', search: true, full: true, placeholder: 'Choose store', opts: allStores().map(x => [x, x]), val: f.store, set: v => { ui.form.store = v; const d = S.stores[v] || {}; if (!ui.form.rcv && d.rcv) { ui.form.rcv = d.rcv; ui.form.rname = d.rname || ''; } renderSheet(); } }) +
+    '<div class="grid2"><label class="f">Issued to (6 digits)<input type="text" data-mr="rcv" value="' + esc(f.rcv) + '" class="mono" inputmode="numeric" maxlength="6"></label><label class="f">Receiver name<input type="text" data-mr="rname" value="' + esc(f.rname) + '"></label></div>' +
+    '<div class="grid2"><label class="f">Entered by<input type="text" data-mr="byName" value="' + esc(f.byName) + '"></label><label class="f">Emp code<input type="text" data-mr="byEmp" value="' + esc(f.byEmp) + '" autocapitalize="characters"></label></div>' +
+    '<label class="f">Total articles in the request<input type="number" inputmode="numeric" data-mr="total" value="' + esc(f.total) + '" placeholder="e.g. 14"></label></div>';
+  h += '<div class="sect">Slips (' + f.slips.length + ')</div>';
+  f.slips.forEach((x, i) => {
+    h += '<div class="card pad col" style="gap:10px;box-shadow:inset 4px 0 0 #FFB648"><div class="row"><b>Slip ' + (i + 1) + '</b><button class="xbtn" data-a="mrDel" data-v="' + i + '" aria-label="Remove slip">' + ico('x', 16) + '</button></div>' +
+      '<div class="grid2"><label class="f">Slip No<input type="text" data-ms="' + i + '|slip" value="' + esc(x.slip) + '" class="mono" autocapitalize="characters"></label><label class="f">Serial No<input type="text" data-ms="' + i + '|serial" value="' + esc(x.serial) + '" class="mono" inputmode="numeric"></label></div>' +
+      '<div class="grid3"><label class="f">Date<input type="date" data-ms="' + i + '|date" value="' + esc(x.date) + '"></label><label class="f">Time<input type="time" data-ms="' + i + '|time" value="' + esc(x.time) + '"></label><label class="f">Articles<input type="number" inputmode="numeric" data-ms="' + i + '|count" value="' + esc(x.count) + '"></label></div></div>';
+  });
+  h += '<button class="btn full" data-a="mrAdd">+ Add another slip</button>';
+  const doneN = f.slips.reduce((n, x) => n + (parseInt(x.count, 10) || 0), 0), tot = parseInt(f.total, 10) || 0;
+  h += '<div class="card pad col"><div class="row"><b>Status</b><span class="note">' + doneN + (tot ? ' of ' + tot : '') + ' articles in slips</span></div><div class="seg"><button data-a="mrSt" data-v="pending" class="' + (f.status !== 'done' ? 'on' : '') + '">Pending</button><button data-a="mrSt" data-v="done" class="' + (f.status === 'done' ? 'on' : '') + '">Completed</button></div></div>';
+  h += '<button class="btn main full" data-a="mrSave">Save request</button>';
+  if (!f._new) h += '<button class="btn ghost danger-t full" data-a="mrRemove">Delete this manual request</button>';
+  h += '<button class="btn ghost full" data-a="newManualFreeOld">Enter full item details instead</button>';
+  return h;
+}
 function shCrop() {
   const c = ui.sheet, V = 280, base = Math.max(V / c.img.width, V / c.img.height) * c.zoom;
   const dw = c.img.width * base, dh = c.img.height * base;
@@ -1578,7 +1625,7 @@ function renderSheet() {
   const el = document.getElementById('sheet');
   if (!ui.sheet) { el.innerHTML = ''; return; }
   const k = ui.sheet.kind;
-  const body = k === 'mslips' ? shMslips() : k === 'reqStatus' ? shReqStatus() : k === 'corr' ? shCorr() : k === 'batch' ? shBatch() : k === 'newReq' ? shNewReq() : k === 'export' ? shExport() : k === 'crop' ? shCrop() : k === 'backups' ? shBackups() : k === 'start' ? shStart() : k === 'upload' ? shUpload() : k === 'entry' ? shEntry() : k === 'return' ? shReturn() : k === 'editReq' ? shEditReq() : k === 'bulk' ? shBulk() : k === 'mark' ? shMark() : '';
+  const body = k === 'manReq' ? shManReq() : k === 'mslips' ? shMslips() : k === 'reqStatus' ? shReqStatus() : k === 'corr' ? shCorr() : k === 'batch' ? shBatch() : k === 'newReq' ? shNewReq() : k === 'export' ? shExport() : k === 'crop' ? shCrop() : k === 'backups' ? shBackups() : k === 'start' ? shStart() : k === 'upload' ? shUpload() : k === 'entry' ? shEntry() : k === 'return' ? shReturn() : k === 'editReq' ? shEditReq() : k === 'bulk' ? shBulk() : k === 'mark' ? shMark() : '';
   const sc = el.querySelector('.sheet') ? el.querySelector('.sheet').scrollTop : 0;
   el.innerHTML = '<div class="sheetbg" data-a="bgClose"><div class="sheet" role="dialog" aria-modal="true">' + body + '</div></div>';
   el.querySelector('.sheet').scrollTop = sc;
@@ -1603,11 +1650,14 @@ function sortBy(list, how, acc) { return list.sort((x, y) => cmpSort(how, acc(x)
 const PICKS = {};
 function pickBtn(id, cfg, label) { PICKS[id] = cfg; const cur = (cfg.opts.find(o => o[0] === cfg.val) || [])[1]; return '<button type="button" class="pickbtn' + (cfg.full ? ' full' : '') + '" data-a="pick" data-v="' + id + '"><span>' + esc(label ? label + (cur ? ': ' + cur : '') : cur || cfg.placeholder || 'Choose') + '</span>' + ico('down', 16) + '</button>'; }
 function sortPick(k) { return pickBtn('sort_' + k, { title: 'Sort by', opts: SORT_OPTS, val: getSort(k), set: v => { setSort(k, v); render(); } }, 'Sort'); }
+const BUSY = { uploadOk: 'Importing and re-planning', syncNow: 'Backing up to the cloud', restore: 'Restoring your data', bkRestore: 'Restoring the backup', bkSave: 'Saving a backup', dcOpen: 'Checking your data', consOpen: 'Adding up consumption',
+  stockOpen: 'Opening live stock', artsOpen: 'Loading pending articles', doneOpen: 'Preparing the done list', openMgr: 'Opening Manager CUIMS', dMgr: 'Opening Manager CUIMS', openSite: 'Opening Issue CUIMS', dSite: 'Opening Issue CUIMS', startFill: 'Opening Issue CUIMS',
+  testToggle: 'Switching data', btSave: 'Saving requests', bulkSave: 'Saving all requests', mrSave: 'Saving request', msSave: 'Saving slip', corrSave: 'Saving correction', dCount: 'Picking today\'s articles', template: 'Making the template', expAll: 'Preparing the full backup' };
 function loader(on, msg) {
   let el = document.getElementById('loader'); if (!el) { el = document.createElement('div'); el.id = 'loader'; document.body.appendChild(el); }
   if (!on) { el.className = ''; el.innerHTML = ''; return; }
   el.className = 'show';
-  el.innerHTML = '<div class="ldbox"><div class="ldorb"><span class="o1"></span><span class="o2"></span><span class="o3"></span><img src="icon.png" alt=""></div><b>' + esc(msg || 'Working') + '</b><div class="ldbar"><i></i></div></div>';
+  el.innerHTML = '<div class="ldbox"><div class="ldorb"><span class="o1"></span><span class="o2"></span><span class="o3"></span><i class="sp s1"></i><i class="sp s2"></i><i class="sp s3"></i><img src="icon.png" alt=""></div><b>' + esc(msg || 'Working') + '</b><div class="lddots"><i></i><i></i><i></i></div><div class="ldbar"><i></i></div><small>JV Stock Issue</small></div>';
 }
 const skel = n => Array.from({ length: n || 3 }, () => '<div class="card pad skel"><i style="width:34%"></i><i style="width:72%"></i><i style="width:55%"></i></div>').join('');
 function uiPrompt(msg, value, okLabel) {
@@ -1847,7 +1897,8 @@ function openLiveStock() {
   if (c.on && N && N.openMgrAuto) { N.openMgrAuto(JSON.stringify({ run: Date.now(), store: c.store || 'Ration Store', fy: c.fy || curFY() })); return; }
   if (N && N.openMgr) N.openMgr(); else toast('Update the app (Settings > App and updates) to use Manager CUIMS.');
 }
-window.jvStockFile = (b64, name) => {
+window.jvStockFile = (b64, name) => { loader(true, 'Reading the stock file'); setTimeout(() => { try { jvStockFile2(b64, name); } finally { loader(false); } }, 60); };
+function jvStockFile2(b64, name) {
   try {
     if (!window.XLSX) { toast('Excel tools not loaded yet. Check internet and try again.'); return; }
     const wb = XLSX.read(b64, { type: 'base64', cellDates: false });
@@ -1858,7 +1909,7 @@ window.jvStockFile = (b64, name) => {
     ui.sheet = { kind: 'upload' }; render(); renderSheet();
     toast('Live stock downloaded. Check and tap Import.');
   } catch (e) { toast('Could not read the downloaded stock file: ' + e.message); }
-};
+}
 function enhanceDates(root) {
   (root || document).querySelectorAll('input[type="date"]').forEach(inp => {
     const b = document.createElement('button'); b.type = 'button'; b.className = 'datebtn'; b.dataset.dp = '1';
@@ -1944,7 +1995,7 @@ function shEditReq() {
 }
 
 /* ---------------- lock ---------------- */
-const GUARDED = new Set(['msSave', 'artQty', 'artHold', 'artDel', 'artsBHold', 'artsBRel', 'artsBDel', 'testToggle', 'testClear', 'dcRenum', 'dcMerge', 'dcKeepFirst', 'dcDate', 'dcBad', 'renumReq', 'impRenum', 'impDrop', 'credSave', 'credDel', 'corrOpen', 'corrSave', 'bulkEdit', 'bulkSave', 'dropReq', 'dropStore', 'editReq', 'saveReq', 'markDone', 'markSave', 'newManual', 'saveEntry', 'delEntry', 'newReturn', 'saveReturn', 'delReturn',
+const GUARDED = new Set(['mrSave', 'mrRemove', 'manReqToggle', 'msSave', 'artQty', 'artHold', 'artDel', 'artsBHold', 'artsBRel', 'artsBDel', 'testToggle', 'testClear', 'dcRenum', 'dcMerge', 'dcKeepFirst', 'dcDate', 'dcBad', 'renumReq', 'impRenum', 'impDrop', 'credSave', 'credDel', 'corrOpen', 'corrSave', 'bulkEdit', 'bulkSave', 'dropReq', 'dropStore', 'editReq', 'saveReq', 'markDone', 'markSave', 'newManual', 'saveEntry', 'delEntry', 'newReturn', 'saveReturn', 'delReturn',
   'rmStore', 'addStore', 'wipe', 'restore', 'bkRestore', 'bkDel', 'bkKeep', 'bkSave', 'bkNoteSave', 'photo', 'photoDel', 'mode', 'lockToggle', 'syncAuto', 'mgrToggle', 'moveStore', 'saveUrls', 'resetZoom', 'hold', 'cropSave']);
 let pendingAuth = null;
 function askUnlock(after) {
@@ -1982,6 +2033,9 @@ document.addEventListener('click', async ev => {
   if (ui.locked && GUARDED.has(a)) { ev.preventDefault(); if (t.type === 'checkbox') t.checked = !t.checked; const sel = '[data-a="' + a + '"]' + (v != null ? '[data-v="' + CSS.escape(v) + '"]' : ''); askUnlock(() => { const el = document.querySelector(sel); if (el) el.click(); }); return; }
   if (a === 'bgClose') { if (ev.target === t) { ui.sheet = null; renderSheet(); } return; }
   if (t.type === 'checkbox' && !['hold', 'queueToggle', 'regItems', 'mgrToggle', 'syncAuto', 'lockToggle', 'markPick', 'stOn', 'rpTog', 'rpCol', 'autoSubToggle', 'queuePend', 'credAuto', 'artsSel', 'artsAll', 'autoStockTog'].includes(a)) return;
+  const _busy = BUSY[a];
+  if (_busy && !(ui.locked && GUARDED.has(a))) { loader(true, _busy); await new Promise(r => setTimeout(r, 40)); }
+  try {
   switch (a) {
     case 'tab': ui.tab = v; ui.view = null; if (v === 'set') ui.setPage = null; render(); window.scrollTo(0, 0); break;
     case 'openSite': if (N) N.openSite(); else toast('Open this inside the app.'); break;
@@ -2235,7 +2289,31 @@ document.addEventListener('click', async ev => {
       PICKS.manReq = { title: 'Manual slip for which request?', search: true, opts: [['__free', 'Request not in the app (free entry)', 'type everything by hand']].concat(sortBy(R, 'reqdate', r => ({ req: r.req, store: r.store, date: r.date })).map(r => [r.req, r.req + ' · ' + r.store, fmtShort(r.date) + ' · ' + r.lines.filter(l => l.status === 'waiting').length + ' pending'])), val: '',
         set: x => { if (x === '__free') { const b = document.createElement('button'); b.dataset.a = 'newManualFree'; document.body.appendChild(b); b.click(); b.remove(); } else { const b = document.createElement('button'); b.dataset.a = 'mslips'; b.dataset.v = x; document.body.appendChild(b); b.click(); b.remove(); } } };
       ui.picker = { id: 'manReq', q: '' }; renderPicker(); break; }
-    case 'newManualFree': ui.form = { _new: true, kind: 'manual', slip: '', serial: '', store: '', rcv: '', rname: '', date: ui.reg.date, time: timeNow(), reqs: '', remarks: '', byName: S.me.name, byEmp: S.me.emp, items: [blankItem()] }; ui.sheet = { kind: 'entry' }; renderSheet(); break;
+    case 'newManualFree': ui.form = { _new: true, req: nextReqNo(), date: today(), store: '', rcv: '', rname: '', byName: S.me.name || '', byEmp: S.me.emp || '', total: '', status: 'pending', slips: [{ slip: nextSlip(), serial: '', date: today(), time: timeNow(), count: '' }] }; ui.sheet = { kind: 'manReq' }; renderSheet(); break;
+    case 'manReqEdit': { const m = (S.manReqs || {})[v]; if (!m) break; const sl = reqSlips(v).map(e => ({ id: e.id, slip: e.slip, serial: e.serial || '', date: entryDate(e), time: entryTime(e), count: String(entryCount(e, v)) }));
+      ui.form = Object.assign({ _new: false }, JSON.parse(JSON.stringify(m)), { slips: sl.length ? sl : [{ slip: nextSlip(), serial: '', date: today(), time: timeNow(), count: '' }], total: m.total ? String(m.total) : '' }); ui.sheet = { kind: 'manReq' }; renderSheet(); break; }
+    case 'manReqToggle': { const m = (S.manReqs || {})[v]; if (!m) break; const to = m.status === 'done' ? 'pending' : 'done'; if (!(await uiConfirm('Mark request ' + v + ' as ' + (to === 'done' ? 'completed' : 'pending') + '?', to === 'done' ? 'Mark completed' : 'Mark pending'))) break; m.status = to; save(); render(); break; }
+    case 'mrAdd': { const f = ui.form; const last = f.slips[f.slips.length - 1]; let nx = ''; const mm = last && String(last.slip).match(/^(.*?)(\d+)$/); if (mm) nx = mm[1] + String(parseInt(mm[2], 10) + 1).padStart(mm[2].length, '0'); f.slips.push({ slip: nx || nextSlip(), serial: '', date: last ? last.date : today(), time: timeNow(), count: '' }); renderSheet(); break; }
+    case 'mrDel': ui.form.slips.splice(+v, 1); renderSheet(); break;
+    case 'mrSt': ui.form.status = v; renderSheet(); break;
+    case 'mrRemove': { const f = ui.form; if (!(await uiConfirm('Delete manual request ' + f.req + ' and its ' + f.slips.length + ' slip(s)?', 'Delete', true))) break; undoArm('delEntry'); S.entries = S.entries.filter(e => !(e.kind === 'manual' && !e.items.length && entryHasReq(e, f.req))); delete S.manReqs[f.req]; save(); ui.sheet = null; renderSheet(); render(); break; }
+    case 'mrSave': { const f = ui.form; const req = String(f.req || '').trim();
+      if (!req) { toast('Enter the Request No.'); break; } if (!f.store) { toast('Choose the store.'); break; } if (f.rcv && !/^\d{6}$/.test(f.rcv)) { toast('Issued to must be 6 digits.'); break; }
+      if (f._new && (S.lines.some(l => l.req === req) || (S.manReqs || {})[req])) { toast('Request No ' + req + ' already exists.'); break; }
+      const keep = new Set(f.slips.filter(x => x.id).map(x => String(x.id)));
+      const used = allSlips(); const mine = new Set(S.entries.filter(e => keep.has(String(e.id))).map(e => String(e.slip).toUpperCase()));
+      const seen = {}; let bad = '';
+      f.slips.forEach((x, i) => { const sl = String(x.slip || '').trim().toUpperCase(); if (!sl) bad = bad || 'Slip ' + (i + 1) + ' needs a Slip No.'; else if (!SLIP_RE.test(sl)) bad = bad || 'Slip ' + sl + ' is not valid.'; else if (seen[sl] || (used.has(sl) && !mine.has(sl))) bad = bad || 'Slip ' + sl + ' is already used.'; seen[sl] = 1; });
+      if (bad) { toast(bad); break; }
+      if (!(await uiConfirm('Save request ' + req + ' with ' + f.slips.length + ' slip' + (f.slips.length > 1 ? 's' : '') + ' as ' + (f.status === 'done' ? 'Completed' : 'Pending') + '?', 'Save'))) break;
+      undoArm('saveEntry');
+      S.manReqs = S.manReqs || {};
+      S.manReqs[req] = { req, store: f.store, date: f.date || today(), rcv: f.rcv || '', rname: f.rname || '', total: parseInt(f.total, 10) || 0, status: f.status === 'done' ? 'done' : 'pending', by: { name: f.byName || '', emp: f.byEmp || '' } };
+      S.entries = S.entries.filter(e => !(e.kind === 'manual' && !e.items.length && entryHasReq(e, req)));
+      f.slips.forEach(x => { const d = x.date || today(), tm = x.time || timeNow();
+        S.entries.push({ id: x.id || nid(), slip: String(x.slip).trim().toUpperCase(), serial: String(x.serial || '').trim(), store: f.store, rcv: f.rcv || '', rname: f.rname || '', at: new Date(d + 'T' + tm).toISOString(), date: d, time: tm, by: { name: f.byName || '', emp: f.byEmp || '' }, kind: 'manual', reqs: req, count: parseInt(x.count, 10) || 0, remarks: '', items: [] }); });
+      save(); ui.sheet = null; renderSheet(); render(); toast('Request ' + req + ' saved.'); break; }
+    case 'newManualFreeOld': ui.form = { _new: true, kind: 'manual', slip: '', serial: '', store: '', rcv: '', rname: '', date: ui.reg.date, time: timeNow(), reqs: '', remarks: '', byName: S.me.name, byEmp: S.me.emp, items: [blankItem()] }; ui.sheet = { kind: 'entry' }; renderSheet(); break;
     case 'editEntry': { const e = S.entries.find(x => String(x.id) === v); ui.form = Object.assign(JSON.parse(JSON.stringify(e)), { date: entryDate(e), time: entryTime(e), reqs: e.reqs || [...new Set(e.items.map(i => i.req).filter(Boolean))].join(', '), byName: (e.by || {}).name || '', byEmp: (e.by || {}).emp || '' }); ui.sheet = { kind: 'entry' }; renderSheet(); break; }
     case 'saveEntry': { const f = ui.form; const items = cleanItems(f.items);
       if (!f.slip.trim() || !f.store.trim() || !/^\d{6}$/.test(f.rcv)) { toast('Slip No, store and a 6-digit receiver are needed.'); break; }
@@ -2292,6 +2370,7 @@ document.addEventListener('click', async ev => {
     case 'mode': if (N && INFO.mode !== v) { if (await uiConfirm(v === 'bundled' ? 'Use the built-in screens from the installed APK? (rollback)' : 'Use the latest screens from GitHub?')) N.setMode(v); } break;
     case 'wipe': if (await uiConfirm('Delete ALL requests, entries, returns, stock and settings on this phone?') && await uiConfirm('Really delete everything? Back up first if unsure.')) { const url = S.sync.url; S = blank(); S.sync.url = url; save(true); render(); toast('All data cleared.'); } break;
   }
+  } finally { if (_busy) setTimeout(() => loader(false), /CUIMS/.test(_busy) ? 1400 : 0); }
 });
 
 document.addEventListener('input', ev => {
@@ -2307,6 +2386,8 @@ document.addEventListener('input', ev => {
   if (el.dataset.stk) { ui.stk.q = el.value; clearTimeout(ui.kT); ui.kT = setTimeout(() => { const b = document.getElementById('stkres'); if (b) b.innerHTML = stockResults(); }, 120); return; }
   if (el.dataset.arts) { ui.arts.q = el.value; clearTimeout(ui.aT); ui.aT = setTimeout(() => { const b = document.getElementById('artsres'); if (b) b.innerHTML = artsResults(); }, 120); return; }
   if (el.dataset.asc) { autoStockCfg()[el.dataset.asc] = el.value.trim(); save(true); return; }
+  if (el.dataset.mr) { const k = el.dataset.mr; ui.form[k] = k === 'rcv' ? el.value.replace(/\D/g, '') : el.value; return; }
+  if (el.dataset.ms) { const [i, k] = el.dataset.ms.split('|'); ui.form.slips[+i][k] = k === 'slip' ? el.value.toUpperCase() : el.value; return; }
   if (el.dataset.tk) { ui.newTask = el.value; return; }
   if (el.dataset.nr) { const k = el.dataset.nr; ui.form[k] = k === 'rcv' ? el.value.replace(/\D/g, '') : el.value;
     if (k === 'store') { const d = (S.stores[el.value] || {}).rcv; if (d && !ui.form.rcv) ui.form.rcv = d; }
@@ -2353,6 +2434,7 @@ document.addEventListener('change', async ev => {
   }
   if (el.dataset.sort) { ui.sort[el.dataset.sort] = el.value; render(); return; }
   if (el.dataset.rp) { later(() => renderSheet()); return; }
+  if (el.dataset.ms && el.dataset.ms.endsWith('|count')) { later(() => { const k = focusKey(document.activeElement); renderSheet(); refocus(k); }); return; }
   if (el.dataset.bq || el.dataset.bg || el.dataset.corr != null) { later(() => { const k = focusKey(document.activeElement); renderSheet(); refocus(k); }); return; }
   if (el.dataset.cnt != null || el.dataset.var || el.dataset.expdays) { later(() => render()); return; }
   if (el.dataset.flt) { const [k, key] = el.dataset.flt.split('|'); const f = fltGet(k); f[key] = el.value; if ((k === 'done' || k === 'reg') && !f.rd && !f.id) f.id = today(); if (k === 'reg' && key === 'id' && el.value) ui.reg.date = el.value; render(); return; }

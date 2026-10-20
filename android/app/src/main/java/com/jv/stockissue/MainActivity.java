@@ -78,10 +78,12 @@ public class MainActivity extends AppCompatActivity {
     WebView appView, siteView, mgrView;
     android.widget.ImageView cover;
     android.widget.LinearLayout shield;
+    android.widget.TextView shieldMsg;
+    java.util.ArrayList<android.animation.Animator> shieldAnims = new java.util.ArrayList<>();
     boolean coverMode = false;
     final java.util.HashMap<String, Boolean> painted = new java.util.HashMap<>();
     final android.os.Handler h = new android.os.Handler(android.os.Looper.getMainLooper());
-    final Runnable uncoverR = () -> { if (cover != null) { cover.setVisibility(View.GONE); cover.setImageBitmap(null); } if (shield != null) shield.setVisibility(View.GONE); };
+    final Runnable uncoverR = () -> { if (cover != null) { cover.setVisibility(View.GONE); cover.setImageBitmap(null); } if (shield != null && shield.getVisibility() == View.VISIBLE) { shield.animate().alpha(0f).setDuration(180).withEndAction(() -> { shield.setVisibility(View.GONE); shield.setAlpha(1f); for (android.animation.Animator a : shieldAnims) a.cancel(); }).start(); } };
     SharedPreferences prefs;
     File dataFile, jobFile, fillCache;
     ValueCallback<Uri[]> fileCb;
@@ -109,26 +111,7 @@ public class MainActivity extends AppCompatActivity {
         cover.setVisibility(View.GONE);
         cover.setClickable(true);
         root.addView(cover, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-        shield = new android.widget.LinearLayout(this);
-        shield.setOrientation(android.widget.LinearLayout.VERTICAL);
-        shield.setGravity(android.view.Gravity.CENTER);
-        shield.setBackgroundColor(0xFFF2F1F6);
-        shield.setClickable(true);
-        android.widget.ImageView lg = new android.widget.ImageView(this);
-        lg.setImageResource(R.mipmap.ic_launcher);
-        int px = (int) (76 * getResources().getDisplayMetrics().density);
-        shield.addView(lg, new android.widget.LinearLayout.LayoutParams(px, px));
-        android.widget.TextView t1 = new android.widget.TextView(this);
-        t1.setText("JV Stock Issue"); t1.setTextSize(19); t1.setTypeface(android.graphics.Typeface.DEFAULT_BOLD); t1.setTextColor(0xFF141414); t1.setPadding(0, px / 4, 0, 0);
-        shield.addView(t1);
-        android.widget.TextView t2 = new android.widget.TextView(this);
-        t2.setText("Working on CUIMS…"); t2.setTextSize(14); t2.setTextColor(0xFF6E6B7B);
-        shield.addView(t2);
-        android.widget.ProgressBar pb = new android.widget.ProgressBar(this);
-        pb.setIndeterminate(true);
-        android.widget.LinearLayout.LayoutParams pl = new android.widget.LinearLayout.LayoutParams(px / 2, px / 2); pl.topMargin = px / 4;
-        shield.addView(pb, pl);
-        shield.setVisibility(View.GONE);
+        buildShield();
         root.addView(shield, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         root.addView(mgrView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         root.addView(appView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
@@ -285,8 +268,8 @@ public class MainActivity extends AppCompatActivity {
                             wv.draw(new android.graphics.Canvas(bm));
                             cover.setImageBitmap(bm);
                             cover.setVisibility(View.VISIBLE);
-                        } catch (Throwable t) { shield.setVisibility(View.VISIBLE); }
-                    } else shield.setVisibility(View.VISIBLE);
+                        } catch (Throwable t) { showShield("mgr".equals(who) ? "Loading Manager CUIMS" : "Loading the next step"); }
+                    } else showShield("mgr".equals(who) ? "Loading Manager CUIMS" : "Loading the next step");
                     h.removeCallbacks(uncoverR);
                     h.postDelayed(uncoverR, 12000);
                 }
@@ -435,6 +418,67 @@ public class MainActivity extends AppCompatActivity {
         }).start();
     }
 
+    int dp(float v) { return Math.round(v * getResources().getDisplayMetrics().density); }
+    void buildShield() {
+        shield = new android.widget.LinearLayout(this);
+        shield.setOrientation(android.widget.LinearLayout.VERTICAL);
+        shield.setGravity(android.view.Gravity.CENTER);
+        shield.setBackgroundColor(0xFFF2F1F6);
+        shield.setClickable(true);
+        FrameLayout orb = new FrameLayout(this);
+        int[] rings = {R.drawable.sh_ring_pnk, R.drawable.sh_ring_lav, R.drawable.sh_ring_org};
+        int[] sizes = {150, 128, 104};
+        long[] speeds = {2200, 1100, 1600};
+        for (int i = 0; i < 3; i++) {
+            android.widget.ImageView r = new android.widget.ImageView(this);
+            r.setImageResource(rings[i]);
+            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(dp(sizes[i]), dp(sizes[i]), android.view.Gravity.CENTER);
+            orb.addView(r, lp);
+            android.animation.ObjectAnimator an = android.animation.ObjectAnimator.ofFloat(r, "rotation", i == 1 ? 360f : 0f, i == 1 ? 0f : 360f);
+            an.setDuration(speeds[i]); an.setRepeatCount(android.animation.ValueAnimator.INFINITE); an.setInterpolator(new android.view.animation.LinearInterpolator());
+            shieldAnims.add(an);
+        }
+        android.widget.ImageView lg = new android.widget.ImageView(this);
+        lg.setImageResource(R.mipmap.ic_launcher);
+        lg.setElevation(dp(10));
+        orb.addView(lg, new FrameLayout.LayoutParams(dp(68), dp(68), android.view.Gravity.CENTER));
+        android.animation.ObjectAnimator bob = android.animation.ObjectAnimator.ofFloat(lg, "translationY", 0f, -dp(7), 0f);
+        bob.setDuration(1400); bob.setRepeatCount(android.animation.ValueAnimator.INFINITE); bob.setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator());
+        shieldAnims.add(bob);
+        android.animation.ObjectAnimator tilt = android.animation.ObjectAnimator.ofFloat(lg, "rotation", 0f, -6f, 0f);
+        tilt.setDuration(1400); tilt.setRepeatCount(android.animation.ValueAnimator.INFINITE);
+        shieldAnims.add(tilt);
+        shield.addView(orb, new android.widget.LinearLayout.LayoutParams(dp(160), dp(160)));
+        android.widget.TextView t1 = new android.widget.TextView(this);
+        t1.setText("JV Stock Issue"); t1.setTextSize(20); t1.setTypeface(android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.BOLD)); t1.setTextColor(0xFF141414);
+        t1.setGravity(android.view.Gravity.CENTER); t1.setPadding(0, dp(14), 0, 0);
+        shield.addView(t1);
+        shieldMsg = new android.widget.TextView(this);
+        shieldMsg.setText("Working on CUIMS"); shieldMsg.setTextSize(14.5f); shieldMsg.setTextColor(0xFF6E6B7B); shieldMsg.setGravity(android.view.Gravity.CENTER); shieldMsg.setPadding(0, dp(4), 0, dp(14));
+        shield.addView(shieldMsg);
+        FrameLayout track = new FrameLayout(this);
+        track.setBackgroundResource(R.drawable.sh_track);
+        View thumb = new View(this);
+        thumb.setBackgroundResource(R.drawable.sh_thumb);
+        track.addView(thumb, new FrameLayout.LayoutParams(dp(56), dp(6)));
+        track.setClipChildren(true);
+        shield.addView(track, new android.widget.LinearLayout.LayoutParams(dp(150), dp(6)));
+        android.animation.ObjectAnimator sl = android.animation.ObjectAnimator.ofFloat(thumb, "translationX", -dp(56), dp(150));
+        sl.setDuration(1100); sl.setRepeatCount(android.animation.ValueAnimator.INFINITE); sl.setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator());
+        shieldAnims.add(sl);
+        android.widget.TextView t3 = new android.widget.TextView(this);
+        t3.setText("Your work keeps going in the background"); t3.setTextSize(12); t3.setTextColor(0xFF9A97A8); t3.setGravity(android.view.Gravity.CENTER); t3.setPadding(0, dp(18), 0, 0);
+        shield.addView(t3);
+        shield.setVisibility(View.GONE);
+    }
+    void showShield(String msg) {
+        if (shieldMsg != null && msg != null) shieldMsg.setText(msg);
+        if (shield.getVisibility() != View.VISIBLE) {
+            shield.setAlpha(0f); shield.setVisibility(View.VISIBLE); shield.animate().alpha(1f).setDuration(160).start();
+            for (android.animation.Animator a : shieldAnims) if (!a.isStarted()) a.start();
+        }
+    }
+
     void show(String which) {
         if ("app".equals(which)) appView.bringToFront();
         else { WebView w = "mgr".equals(which) ? mgrView : siteView; w.bringToFront(); cover.bringToFront(); shield.bringToFront(); }
@@ -559,7 +603,7 @@ public class MainActivity extends AppCompatActivity {
         @JavascriptInterface public void openMgrAuto(String cfg) {
             prefs.edit().putString("autoStockCfg", cfg).putBoolean("autoStockOn", true).putLong("autoStockAt", System.currentTimeMillis()).apply();
             prefs.edit().putBoolean("cover_mgr", true).apply();
-            runOnUiThread(() -> { show("mgr"); setFull(true); shield.setVisibility(View.VISIBLE); painted.put("mgr", false); h.removeCallbacks(uncoverR); h.postDelayed(uncoverR, 15000); loadFresh(mgrView, "mgr", url("mgr")); });
+            runOnUiThread(() -> { show("mgr"); setFull(true); showShield("Opening Manager CUIMS for live stock"); painted.put("mgr", false); h.removeCallbacks(uncoverR); h.postDelayed(uncoverR, 15000); loadFresh(mgrView, "mgr", url("mgr")); });
         }
         @JavascriptInterface public String autoCfg() {
             if (!"mgr".equals(who) || !prefs.getBoolean("autoStockOn", false)) return "";
@@ -600,7 +644,7 @@ public class MainActivity extends AppCompatActivity {
 
         @JavascriptInterface public void startJob(String j) {
             writeFile(jobFile, j);
-            runOnUiThread(() -> { show("emp"); if (prefs.getBoolean("cover_emp", false)) { shield.setVisibility(View.VISIBLE); painted.put("emp", false); h.removeCallbacks(uncoverR); h.postDelayed(uncoverR, 15000); } loadFresh(siteView, "emp", url("emp")); });
+            runOnUiThread(() -> { show("emp"); if (prefs.getBoolean("cover_emp", false)) { showShield("Opening Issue CUIMS"); painted.put("emp", false); h.removeCallbacks(uncoverR); h.postDelayed(uncoverR, 15000); } loadFresh(siteView, "emp", url("emp")); });
         }
         @JavascriptInterface public void openSite() {
             runOnUiThread(() -> {
