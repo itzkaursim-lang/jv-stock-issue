@@ -446,15 +446,42 @@ function openPaperViewer(req, i) {
   el.querySelectorAll('[data-pv]').forEach(b => b.onclick = async e => { e.stopPropagation(); const k = b.dataset.pv;
     if (k === 'close') el.innerHTML = ''; else if (k === 'prev') openPaperViewer(req, i - 1); else if (k === 'next') openPaperViewer(req, i + 1);
     else if (k === 'del') { if (!(await uiConfirm('Delete this paper photo?', 'Delete', true))) return; const p = P[i]; S.paper[req] = P.filter((x, j) => j !== i); if (N && N.paperDel) N.paperDel(p.id); if (p.cloud && S.sync.url) apiPost({ action: 'photoDel', fileId: p.cloud }).catch(() => {}); delete PAPER_MEM[p.id]; if (S.paperImg) delete S.paperImg[p.id]; save(); el.innerHTML = ''; render(); } });
-  const img = el.querySelector('.pvimg img'); let z = 1; img.onclick = () => { z = z === 1 ? 2.2 : 1; img.style.transform = 'scale(' + z + ')'; };
+  let z = 1;
+  { let sx = 0; const box = el.querySelector('.pvimg'); box.addEventListener('touchstart', e => { sx = e.touches[0].clientX; }, { passive: true }); box.addEventListener('touchend', e => { const dx = e.changedTouches[0].clientX - sx; if (Math.abs(dx) > 70 && z === 1) { if (dx < 0 && i < P.length - 1) openPaperViewer(req, i + 1); else if (dx > 0 && i > 0) openPaperViewer(req, i - 1); } }, { passive: true }); }
+  const img = el.querySelector('.pvimg img'); img.onclick = () => { z = z === 1 ? 2.2 : 1; img.style.transform = 'scale(' + z + ')'; };
 }
+function reqNeighbours() {
+  const L = (ui.reqList || []).filter(q => requests().some(r => r.req === q)), i = L.indexOf(ui.req);
+  if (i < 0) return null;
+  const info = q => { const r = requests().find(x => x.req === q); return r ? { req: q, store: r.store } : null; };
+  return { i, n: L.length, prev: i > 0 ? info(L[i - 1]) : null, next: i < L.length - 1 ? info(L[i + 1]) : null };
+}
+function goReq(dir) {
+  const nb = reqNeighbours(); if (!nb) return;
+  const t = dir > 0 ? nb.next : nb.prev; if (!t) { const a = document.getElementById('app'); if (a && a.animate) a.animate([{ transform: 'translateX(0)' }, { transform: 'translateX(' + (dir > 0 ? -18 : 18) + 'px)' }, { transform: 'translateX(0)' }], { duration: 260 }); return; }
+  ui.req = t.req; ui.lastReq = t.req; render(); window.scrollTo(0, 0);
+  const m = document.querySelector('#app main'); if (m && m.animate) m.animate([{ opacity: 0.2, transform: 'translateX(' + (dir > 0 ? 60 : -60) + 'px)' }, { opacity: 1, transform: 'none' }], { duration: 260, easing: 'cubic-bezier(.2,.8,.2,1)' });
+}
+function reqNavBar() {
+  const nb = reqNeighbours(); if (!nb) return '';
+  const side = (o, d) => o ? '<button class="rnav ' + (d < 0 ? 'l' : 'r') + '" data-a="reqGo" data-v="' + d + '">' + (d < 0 ? ico('up', 16).replace('M6 15l6-6 6 6', 'M15 6l-6 6 6 6') : '') + '<span><b>' + esc(o.req) + '</b><small>' + esc(o.store) + '</small></span>' + (d > 0 ? ico('right', 16) : '') + '</button>' : '<span class="rnav none"></span>';
+  return '<div class="rnavbar">' + side(nb.prev, -1) + '<span class="rpos">' + (nb.i + 1) + ' / ' + nb.n + '<small>swipe</small></span>' + side(nb.next, 1) + '</div>';
+}
+(function swipe() {
+  let x0 = 0, y0 = 0, t0 = 0, on = false;
+  document.addEventListener('touchstart', e => { if (ui.view !== 'req' || ui.sheet || ui.picker || e.touches.length !== 1 || e.target.closest('input,textarea,.tblwrap,.pgrid')) { on = false; return; } on = true; x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; t0 = Date.now(); }, { passive: true });
+  document.addEventListener('touchmove', e => { if (!on) return; const dx = e.touches[0].clientX - x0, dy = e.touches[0].clientY - y0; const m = document.querySelector('#app main'); if (m && Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 10) m.style.transform = 'translateX(' + Math.max(-90, Math.min(90, dx * 0.5)) + 'px)'; }, { passive: true });
+  document.addEventListener('touchend', e => { if (!on) return; on = false; const m = document.querySelector('#app main'); if (m) m.style.transform = '';
+    const t = e.changedTouches[0], dx = t.clientX - x0, dy = t.clientY - y0;
+    if (Math.abs(dx) > 70 && Math.abs(dy) < 60 && Date.now() - t0 < 800) goReq(dx < 0 ? 1 : -1); }, { passive: true });
+})();
 function vReq() {
   const PL = plan();
   const r = requests().find(x => x.req === ui.req);
   if (!r) { ui.view = null; return vHome(); }
   const st = reqState(r, PL);
   const rcv = (r.lines.find(l => l.rcv) || {}).rcv || (S.stores[r.store] || {}).rcv || '';
-  let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:8px">' + esc(r.store) + '</h1><div class="sub">Request ' + esc(r.req) + ' · ' + fmtLong(r.date) + ' · Receiver ' + (rcv ? 'GA' + esc(rcv) : 'not set') + '</div></div></header><main>';
+  let h = reqNavBar() + '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:8px">' + esc(r.store) + '</h1><div class="sub">Request ' + esc(r.req) + ' · ' + fmtLong(r.date) + ' · Receiver ' + (rcv ? 'GA' + esc(rcv) : 'not set') + '</div></div></header><main>';
   h += meta([st.can.length + ' ready', (st.w.length - st.can.length) + ' waiting', st.iss.length + ' issued', (st.w.find(l => l.slip) || {}).slip ? 'next slip ' + esc(st.w.find(l => l.slip).slip) : '<em>no slip set</em>']);
   h += paperCard(r);
   h += '<div class="card">';
@@ -2123,7 +2150,9 @@ document.addEventListener('click', async ev => {
     case 'goUpdate': ui.tab = 'set'; ui.view = null; render(); setTimeout(() => { const u = document.getElementById('upd'); if (u) u.scrollIntoView(); }, 50); break;
     case 'upload': ui.upload = null; ui.sheet = { kind: 'upload' }; renderSheet(); break;
     case 'template': template(); break;
-    case 'openReq': ui.lastReq = v; ui.view = 'req'; ui.req = v; render(); window.scrollTo(0, 0); break;
+    case 'openReq': { if (ui.view !== 'req') { const ids = []; document.querySelectorAll('[data-a="openReq"][data-v]').forEach(x => { if (!ids.includes(x.dataset.v)) ids.push(x.dataset.v); }); ui.reqList = ids.length > 1 ? ids : null; }
+      ui.lastReq = v; ui.view = 'req'; ui.req = v; render(); window.scrollTo(0, 0); break; }
+    case 'reqGo': goReq(+v); break;
     case 'back': ui.view = null; render(); break;
     case 'hold': if (t.checked) S.hold[v] = 1; else delete S.hold[v]; save(); render(); break;
     case 'fillReq': { ui.lastReq = v; const PL = plan(); const r = requests().find(x => x.req === v); const ids = r.lines.filter(l => l.status === 'waiting' && PL[l.id] === 'issue').map(l => l.id); openStart(r.store, ids, r.store + ', request ' + r.req); break; }
