@@ -155,6 +155,17 @@ public class MainActivity extends AppCompatActivity {
                 boolean img = acc != null && acc.length > 0 && acc[0] != null && acc[0].startsWith("image");
                 if (img) {
                     i.setType("image/*");
+                    try {
+                        File cf = new File(getCacheDir(), "cam_" + System.currentTimeMillis() + ".jpg");
+                        camUri = FileProvider.getUriForFile(MainActivity.this, "com.jv.stockissue.files", cf);
+                        Intent cam = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
+                        cam.putExtra(android.provider.MediaStore.EXTRA_OUTPUT, camUri);
+                        cam.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        Intent ch = Intent.createChooser(i, "Paper photo");
+                        ch.putExtra(Intent.EXTRA_INITIAL_INTENTS, new Intent[]{cam});
+                        startActivityForResult(ch, 42);
+                        return true;
+                    } catch (Exception ex) { camUri = null; }
                 } else {
                     i.setType("*/*");
                     i.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{
@@ -183,7 +194,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     boolean svcOn = false;
-    Uri lastUri; String lastMime = "*/*";
+    Uri lastUri, camUri; String lastMime = "*/*";
     void postData(String json, boolean ongoing) {
         try {
             JSONObject d = new JSONObject(json);
@@ -547,6 +558,8 @@ public class MainActivity extends AppCompatActivity {
         if (req == 42 && fileCb != null) {
             Uri[] r = null;
             if (res == RESULT_OK && data != null && data.getData() != null) r = new Uri[]{data.getData()};
+            else if (res == RESULT_OK && camUri != null) r = new Uri[]{camUri};
+            camUri = null;
             fileCb.onReceiveValue(r);
             fileCb = null;
         }
@@ -601,6 +614,15 @@ public class MainActivity extends AppCompatActivity {
         Bridge(String w) { who = w; }
 
         @JavascriptInterface public String who() { return who; }
+        @JavascriptInterface public boolean paperSave(String id, String b64) {
+            if (!"app".equals(who) || id == null || !id.matches("[A-Za-z0-9_\\-]+")) return false;
+            try { File d = new File(getFilesDir(), "paper"); d.mkdirs(); FileOutputStream o = new FileOutputStream(new File(d, id + ".jpg")); o.write(Base64.decode(b64, Base64.DEFAULT)); o.close(); return true; } catch (Exception e) { return false; }
+        }
+        @JavascriptInterface public String paperGet(String id) {
+            if (!"app".equals(who) || id == null || !id.matches("[A-Za-z0-9_\\-]+")) return "";
+            try { File f = new File(new File(getFilesDir(), "paper"), id + ".jpg"); if (!f.exists()) return ""; FileInputStream in = new FileInputStream(f); ByteArrayOutputStream bo = new ByteArrayOutputStream(); byte[] buf = new byte[16384]; int n; while ((n = in.read(buf)) > 0) bo.write(buf, 0, n); in.close(); return Base64.encodeToString(bo.toByteArray(), Base64.NO_WRAP); } catch (Exception e) { return ""; }
+        }
+        @JavascriptInterface public void paperDel(String id) { if ("app".equals(who) && id != null && id.matches("[A-Za-z0-9_\\-]+")) new File(new File(getFilesDir(), "paper"), id + ".jpg").delete(); }
         @JavascriptInterface public void openLastFile() { if (lastUri == null) return; runOnUiThread(() -> { Intent i = new Intent(Intent.ACTION_VIEW); i.setDataAndType(lastUri, lastMime); i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION); try { startActivity(i); } catch (Exception e) { MainActivity.this.toast("No app found to open this file."); } }); }
         @JavascriptInterface public void shareLastFile() { if (lastUri == null) return; runOnUiThread(() -> { Intent i = new Intent(Intent.ACTION_SEND); i.setType(lastMime); i.putExtra(Intent.EXTRA_STREAM, lastUri); i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION); startActivity(Intent.createChooser(i, "Share file")); }); }
         @JavascriptInterface public void openMgrAuto(String cfg) {

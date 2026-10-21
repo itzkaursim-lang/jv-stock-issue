@@ -1,5 +1,5 @@
 /**
- * JV Stock Issue – Google Sheet + Drive backup (standalone Apps Script) v2
+ * JV Stock Issue – Google Sheet + Drive backup (standalone Apps Script) v3 (with paper photos)
  *
  * Setup / update:
  * 1. script.google.com > your project (or New project) > replace ALL code with this file > Save.
@@ -29,6 +29,13 @@ function folder_() {
   var f = it.hasNext() ? it.next() : DriveApp.createFolder(FOLDER_NAME);
   props_().setProperty('FOLDER_ID', f.getId());
   return f;
+}
+function photoFolder_(date) {
+  var root = folder_(), it = root.getFoldersByName('Paper photos');
+  var pf = it.hasNext() ? it.next() : root.createFolder('Paper photos');
+  var m = String(date || '').slice(0, 7) || Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Kolkata', 'yyyy-MM');
+  var it2 = pf.getFoldersByName(m);
+  return it2.hasNext() ? it2.next() : pf.createFolder(m);
 }
 function meta_(f) {
   var d = {}; try { d = JSON.parse(f.getDescription() || '{}'); } catch (e) {}
@@ -91,6 +98,17 @@ function doPost(e) {
       var f = body.backup ? saveSnapshot_(body.backup, body.kind === 'manual' ? 'manual' : 'auto', body.note, by, body.counts) : null;
       return out_({ ok: true, sheet: ss.getUrl(), id: f ? f.getId() : '' });
     }
+    if (body.action === 'photo') {
+      var safe = function (x) { return String(x || '').replace(/[^A-Za-z0-9 _.-]/g, '-').slice(0, 40); };
+      var name = safe(body.date) + '_' + safe(body.req) + '_' + safe(body.store) + '_' + safe(body.id) + '.jpg';
+      var fo = photoFolder_(body.date), ex = fo.getFilesByName(name);
+      if (ex.hasNext()) return out_({ ok: true, fileId: ex.next().getId() });
+      var blob = Utilities.newBlob(Utilities.base64Decode(body.b64), 'image/jpeg', name);
+      var pfile = fo.createFile(blob);
+      pfile.setDescription(JSON.stringify({ req: body.req, store: body.store, date: body.date, id: body.id, at: body.at, by: body.by }));
+      return out_({ ok: true, fileId: pfile.getId() });
+    }
+    if (body.action === 'photoDel') { try { DriveApp.getFileById(body.fileId).setTrashed(true); } catch (e) {} return out_({ ok: true }); }
     if (body.action === 'delete') { DriveApp.getFileById(body.id).setTrashed(true); return out_({ ok: true }); }
     if (body.action === 'meta') {
       var file = DriveApp.getFileById(body.id), m = meta_(file);
@@ -108,6 +126,7 @@ function doGet(e) {
   try {
     if (p.action === 'list') return out_({ ok: true, items: listFiles_().map(meta_), sheet: getBook_().getUrl(), folder: folder_().getUrl() });
     if (p.action === 'get') return out_({ ok: true, backup: DriveApp.getFileById(p.id).getBlob().getDataAsString() });
+    if (p.action === 'photo') return out_({ ok: true, b64: Utilities.base64Encode(DriveApp.getFileById(p.fileId).getBlob().getBytes()) });
     if (p.action === 'restore') {
       var files = listFiles_();
       if (!files.length) return out_({ ok: false, error: 'No backup yet' });

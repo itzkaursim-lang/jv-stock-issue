@@ -42,7 +42,7 @@ function paintSync() { const el = document.getElementById('syncline'); if (!el) 
 window.addEventListener('online', () => { paintSync(); if (S.sync.dirty) syncNow(true); });
 window.addEventListener('offline', paintSync);
 function syncDue() { return S.sync.url && S.sync.auto && S.sync.dirty && navigator.onLine && !syncBusy && Date.now() - (S.sync.firstDirty || 0) >= (S.sync.delay != null ? S.sync.delay : 5) * 60000; }
-setInterval(() => { paintSync(); if (syncDue()) syncNow(true); }, 20000);
+setInterval(() => { paintSync(); if (syncDue()) syncNow(true); else if (S.sync.url && S.sync.auto && navigator.onLine && allPaper().some(x => !x.p.cloud)) syncPhotos(true); }, 20000);
 document.addEventListener('visibilitychange', () => { if (document.hidden && S.sync.url && S.sync.auto && S.sync.dirty && navigator.onLine) syncNow(true); });
 const nid = () => S.nextId++;
 
@@ -305,7 +305,7 @@ function reqCard(r, cont) {
   const slip = (r.w.find(l => l.slip) || {}).slip, rcv = (r.lines.find(l => l.rcv) || {}).rcv || (S.stores[r.store] || {}).rcv || '';
   const sl = reqSlips(r.req);
   return rqCard({ where: 'home', req: r.req, store: r.store, status: tag, cont, x: 'dropReq',
-    meta: [fmtShort(r.date), slip ? 'next slip ' + esc(slip) : '<em>No slip</em>', rcv ? 'GA' + esc(rcv) : '<em>No receiver</em>', r.lines.length + ' articles'], chips: unavail(r.w, PL),
+    meta: [fmtShort(r.date), slip ? 'next slip ' + esc(slip) : '<em>No slip</em>', rcv ? 'GA' + esc(rcv) : '<em>No receiver</em>', r.lines.length + ' articles', paperList(r.req).length ? '<span class="pbadge">paper ' + paperList(r.req).length + '</span>' : ''], chips: unavail(r.w, PL),
     slips: sl.length ? sl : null, cta: later ? '<div class="note" style="text-align:center">Fills from ' + fmtLong(r.date) + '. No stock is kept for it before then.</div>' : (r.can && r.can.length ? '<button class="btn main full" data-a="fillReq" data-v="' + esc(r.req) + '">Fill on CUIMS · ' + r.can.length + ' available</button>' : '') });
 }
 function appBar() {
@@ -401,6 +401,53 @@ function vHome() {
 }
 
 /* ---------------- Request detail ---------------- */
+const PAPER_MEM = {};
+function paperList(req) { return ((S.paper || {})[req] || []); }
+function paperDeadline(date) { const d = new Date(date + 'T12:00'); d.setDate(d.getDate() + 1); return isoOf(d); }
+function paperOpen(date) { return today() <= paperDeadline(date); }
+function paperSrc(id) { if (PAPER_MEM[id]) return PAPER_MEM[id]; if (N && N.paperGet) { const b = N.paperGet(id); if (b) return (PAPER_MEM[id] = 'data:image/jpeg;base64,' + b); } return (S.paperImg || {})[id] || ''; }
+function allPaper() { const out = []; Object.entries(S.paper || {}).forEach(([req, P]) => P.forEach(p => out.push({ req, p }))); return out; }
+let photoBusy = false;
+async function syncPhotos(quiet) {
+  if (!S.sync.url || S.testMode || photoBusy || !navigator.onLine) return;
+  const todo = allPaper().filter(x => !x.p.cloud); if (!todo.length) return;
+  photoBusy = true; let n = 0;
+  try {
+    for (const { req, p } of todo.slice(0, 8)) {
+      const src = paperSrc(p.id); if (!src) continue;
+      const r = (requests().find(x => x.req === req) || {});
+      const res = await apiPost({ action: 'photo', id: p.id, req, store: r.store || '', date: r.date || '', at: p.at, by: p.by || '', b64: src.split(',')[1] });
+      if (res.fileId) { p.cloud = res.fileId; n++; writeLocal(); }
+    }
+    if (!quiet && n) toast(n + ' paper photo' + (n > 1 ? 's' : '') + ' backed up.');
+  } catch (e) { if (!quiet) toast('Photo backup failed: ' + e.message + '. It will retry by itself.'); }
+  photoBusy = false;
+  if (todo.length > 8 && n) setTimeout(() => syncPhotos(true), 1500);
+}
+async function loadCloudPhoto(p) {
+  if (!p.cloud || !S.sync.url) return '';
+  try { const j = await apiGet('action=photo&fileId=' + encodeURIComponent(p.cloud)); if (j.b64) { if (N && N.paperSave) N.paperSave(p.id, j.b64); PAPER_MEM[p.id] = 'data:image/jpeg;base64,' + j.b64; return PAPER_MEM[p.id]; } } catch (e) {}
+  return '';
+}
+function paperCard(r) {
+  const P = paperList(r.req), can = paperOpen(r.date), dl = paperDeadline(r.date);
+  let h = '<div class="card pad col" style="gap:12px"><div class="row"><span><b class="ttl" style="font-size:17px">Paper request</b><div class="meta"><span>' + (P.length ? P.length + ' photo' + (P.length > 1 ? 's' : '') : 'No photo yet') + '</span><i></i><span>' + (can ? 'can add until ' + fmtShort(dl) : 'closed on ' + fmtShort(dl)) + '</span></div></span>' + (can ? '<button class="btn sm main" data-a="paperAdd" data-v="' + esc(r.req) + '">+ Photo</button>' : pill('Locked', 'c-gy')) + '</div>';
+  if (P.length) h += '<div class="pgrid">' + P.map((p, i) => { const src = paperSrc(p.id); return '<button class="pthumb" data-a="paperView" data-v="' + esc(r.req) + '|' + i + '">' + (src ? '<img src="' + src + '" alt="Paper photo ' + (i + 1) + '" loading="lazy">' : '<i class="pcloud">' + (p.cloud ? 'In cloud · tap to load' : 'Not on this phone') + '</i>') + '<span>' + esc(fmtDT(p.at)) + (p.cloud ? ' · backed up' : '') + '</span></button>'; }).join('') + '</div>';
+  else h += '<div class="note">' + (can ? 'Optional. Take a photo of the paper request so it stays with this Request No.' : 'Photos can only be added on the request date or the next day.') + '</div>';
+  return h + '</div>';
+}
+function openPaperViewer(req, i) {
+  const P = paperList(req); if (!P[i]) return;
+  let el = document.getElementById('pview'); if (!el) { el = document.createElement('div'); el.id = 'pview'; document.body.appendChild(el); }
+  const r = requests().find(x => x.req === req) || {}, can = r.date && paperOpen(r.date);
+  el.innerHTML = '<div class="pvbg"></div><div class="pvbox"><div class="pvbar"><span><b>' + esc(req) + ' · ' + esc(r.store || '') + '</b><span>Photo ' + (i + 1) + ' of ' + P.length + ' · ' + esc(fmtDT(P[i].at)) + (P[i].by ? ' · ' + esc(P[i].by) : '') + '</span></span><button class="xbtn" data-pv="close" aria-label="Close">' + ico('x', 18) + '</button></div>' +
+    '<div class="pvimg"><img src="' + paperSrc(P[i].id) + '" alt="Paper request"></div>' +
+    '<div class="pvnav"><button class="btn sm" data-pv="prev"' + (i ? '' : ' disabled') + '>Previous</button>' + (can ? '<button class="btn sm danger-t" data-pv="del">Delete</button>' : '') + '<button class="btn sm" data-pv="next"' + (i < P.length - 1 ? '' : ' disabled') + '>Next</button></div></div>';
+  el.querySelectorAll('[data-pv]').forEach(b => b.onclick = async e => { e.stopPropagation(); const k = b.dataset.pv;
+    if (k === 'close') el.innerHTML = ''; else if (k === 'prev') openPaperViewer(req, i - 1); else if (k === 'next') openPaperViewer(req, i + 1);
+    else if (k === 'del') { if (!(await uiConfirm('Delete this paper photo?', 'Delete', true))) return; const p = P[i]; S.paper[req] = P.filter((x, j) => j !== i); if (N && N.paperDel) N.paperDel(p.id); if (p.cloud && S.sync.url) apiPost({ action: 'photoDel', fileId: p.cloud }).catch(() => {}); delete PAPER_MEM[p.id]; if (S.paperImg) delete S.paperImg[p.id]; save(); el.innerHTML = ''; render(); } });
+  const img = el.querySelector('.pvimg img'); let z = 1; img.onclick = () => { z = z === 1 ? 2.2 : 1; img.style.transform = 'scale(' + z + ')'; };
+}
 function vReq() {
   const PL = plan();
   const r = requests().find(x => x.req === ui.req);
@@ -409,6 +456,7 @@ function vReq() {
   const rcv = (r.lines.find(l => l.rcv) || {}).rcv || (S.stores[r.store] || {}).rcv || '';
   let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:8px">' + esc(r.store) + '</h1><div class="sub">Request ' + esc(r.req) + ' · ' + fmtLong(r.date) + ' · Receiver ' + (rcv ? 'GA' + esc(rcv) : 'not set') + '</div></div></header><main>';
   h += meta([st.can.length + ' ready', (st.w.length - st.can.length) + ' waiting', st.iss.length + ' issued', (st.w.find(l => l.slip) || {}).slip ? 'next slip ' + esc(st.w.find(l => l.slip).slip) : '<em>no slip set</em>']);
+  h += paperCard(r);
   h += '<div class="card">';
   const ordr = { issue: 0, short: 1, hold: 2, missing: 3 };
   const lines = r.lines.slice().sort((a, b) => (a.status === 'issued') - (b.status === 'issued') || (ordr[PL[a.id]] || 0) - (ordr[PL[b.id]] || 0));
@@ -846,6 +894,7 @@ function vSet() {
   }
   if (pg === 'cloud') {
   h += '<div class="card pad col"><h3>Cloud backup (Google Drive + Sheet)</h3><label class="f">Apps Script web app URL<input type="text" data-set="sync.url" value="' + esc(S.sync.url) + '" placeholder="https://script.google.com/macros/s/…/exec"></label>' +
+    '<div class="card pad col" style="gap:8px;background:var(--soft);box-shadow:none"><div class="row"><b>Paper photos</b><span class="note">' + allPaper().filter(x => x.p.cloud).length + ' of ' + allPaper().length + ' backed up</span></div><div class="note">Saved in your Drive folder "JV Stock Issue backups / Paper photos / month", named by date, Request No and store. Full photo quality is kept.</div><button class="btn sm" data-a="photoSync" type="button"' + (S.sync.url ? '' : ' disabled') + '>Back up photos now</button></div>' +
     '<label class="f">Upload changes after</label>' + pickBtn('syncDelay', { title: 'Upload changes after', full: true, opts: [['0', 'Right away'], ['1', '1 minute'], ['5', '5 minutes'], ['15', '15 minutes'], ['30', '30 minutes'], ['60', '1 hour']], val: String(S.sync.delay != null ? S.sync.delay : 5), set: v => { S.sync.delay = parseFloat(v); writeLocal(); render(); } }) + '<div class="note">Everything is saved on the phone instantly. Cloud upload waits this long after a change (and always happens when you leave the app).</div>' +
     '<label class="chk"><input type="checkbox" data-a="syncAuto"' + (S.sync.auto ? ' checked' : '') + '> Back up automatically after changes</label>' +
     '<div class="note">' + (S.sync.at ? 'Last backup ' + fmtDT(S.sync.at) : 'Not backed up yet') + '</div>' +
@@ -1372,7 +1421,7 @@ async function syncNow(quiet, kind, note) {
     const r = await fetch(S.sync.url, { method: 'POST', body: JSON.stringify(payload) });
     const j = await r.json();
     if (!j.ok) throw new Error(j.error || 'failed');
-    S.sync.at = new Date().toISOString(); if (S.sync.changedAt === startedAt) { S.sync.dirty = false; S.sync.firstDirty = 0; } syncErr = ''; syncBusy = false; writeLocal(); paintSync();
+    S.sync.at = new Date().toISOString(); if (S.sync.changedAt === startedAt) { S.sync.dirty = false; S.sync.firstDirty = 0; } setTimeout(() => syncPhotos(true), 800); syncErr = ''; syncBusy = false; writeLocal(); paintSync();
     if (!quiet) { toast('Backed up to Google Drive and Sheet.'); render(); if (ui.sheet && ui.sheet.kind === 'backups') loadBackups(); }
   } catch (e) { syncBusy = false; syncErr = e.message; paintSync(); if (!quiet) toast(e.message === 'offline' ? 'Offline. Saved on phone; it uploads by itself when internet is back.' : 'Backup failed: ' + e.message + '. It will retry by itself.'); }
 }
@@ -1735,26 +1784,36 @@ function artsList() {
   return sortBy(L, getSort('arts'), x => ({ req: x.l.req, store: x.l.store, date: x.l.date, ready: x.k === 'issue' ? 1 : 0, size: x.l.qty }));
 }
 function artsResults() {
-  const A = ui.arts, L = artsList(), selN = Object.keys(A.sel).length;
+  const A = ui.arts, L = artsList();
+  const G = {}; L.forEach(x => (G[x.l.code] = G[x.l.code] || []).push(x));
+  const groups = Object.entries(G).map(([code, xs]) => ({ code, xs, qty: xs.reduce((n, x) => n + x.l.qty, 0), stores: new Set(xs.map(x => x.l.store)).size, ready: xs.filter(x => x.k === 'issue').length }))
+    .sort((a, b) => b.xs.length - a.xs.length || String(itemName(a.code)).localeCompare(String(itemName(b.code))));
   const allSel = L.length && L.every(x => A.sel[x.l.id]);
-  let h = '<div class="row" style="align-items:center"><label class="chk" style="min-height:40px"><input type="checkbox" data-a="artsAll"' + (allSel ? ' checked' : '') + '> Select all ' + L.length + '</label><span class="note">' + L.reduce((n, x) => n + 1, 0) + ' articles</span></div>';
+  let h = '<div class="row" style="align-items:center"><label class="chk" style="min-height:40px"><input type="checkbox" data-a="artsAll"' + (allSel ? ' checked' : '') + '> Select all</label><span class="note">' + groups.length + ' items · ' + L.length + ' articles</span></div>';
   if (!L.length) return h + '<div class="card pad note">No pending articles match.</div>';
-  h += '<div class="card" style="overflow:hidden">' + L.slice(0, 300).map(({ l, k }) => {
-    const st = k === 'later' ? pill('Scheduled', 'c-in') : k === 'issue' ? pill('Ready', 'c-ok') : k === 'short' ? pill('Short', 'c-no') : k === 'missing' ? pill('Not in stock', 'c-no') : pill('On hold', 'c-gd');
-    const d0 = days(l.date);
-    return '<div class="art' + (A.sel[l.id] ? ' on' : '') + '"><input type="checkbox" data-a="artsSel" data-v="' + l.id + '"' + (A.sel[l.id] ? ' checked' : '') + ' aria-label="Select">' +
-      '<div class="ab"><div class="row"><b class="an">' + esc(itemName(l.code)) + '</b>' + st + '</div>' +
-      '<div class="meta"><span class="mono">' + esc(l.code) + '</span><i></i><span>' + esc(l.store) + '</span><i></i><span class="reqno sm" data-req="' + esc(l.req) + '">' + esc(l.req) + '</span><i></i><span>' + fmtShort(l.date) + (d0 ? ' · ' + d0 + ' d' : '') + '</span></div>' +
-      '<div class="aa"><button class="aq" data-a="artQty" data-v="' + l.id + '" aria-label="Edit quantity">' + num(l.qty) + ' <small>' + esc(itemUom(l.code)) + '</small><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg></button>' +
-      '<button class="btn sm ghost" data-a="artHold" data-v="' + l.id + '">' + (S.hold[l.id] ? 'Release' : 'Keep on hold') + '</button><button class="btn sm ghost danger-t" data-a="artDel" data-v="' + l.id + '">Remove</button></div></div></div>';
-  }).join('') + '</div>' + (L.length > 300 ? '<div class="note">Showing 300. Narrow with search or filters.</div>' : '');
+  h += '<div class="card" style="overflow:hidden">' + groups.slice(0, 200).map(g => {
+    const open = !!(A.open || {})[g.code], gsel = g.xs.every(x => A.sel[x.l.id]), some = g.xs.some(x => A.sel[x.l.id]);
+    const st = S.stock[g.code], short = st && st.qty < g.qty;
+    let r = '<div class="agrp' + (open ? ' on' : '') + '"><div class="agh"><input type="checkbox" data-a="artsGrp" data-v="' + esc(g.code) + '"' + (gsel ? ' checked' : '') + (some && !gsel ? ' class="part"' : '') + ' aria-label="Select all ' + esc(itemName(g.code)) + '">' +
+      '<button class="agm" data-a="artsGrpOpen" data-v="' + esc(g.code) + '"><span class="agn"><b>' + esc(itemName(g.code)) + '</b><span class="mono">' + esc(g.code) + ' · ' + g.xs.length + ' request' + (g.xs.length > 1 ? 's' : '') + ' · ' + g.stores + ' store' + (g.stores > 1 ? 's' : '') + '</span></span>' +
+      '<span class="agq"><b>' + num(Math.round(g.qty * 1000) / 1000) + '</b><small>' + esc(itemUom(g.code)) + '</small></span>' + ico(open ? 'up' : 'down', 18) + '</button></div>' +
+      '<div class="scrow" style="padding:0 16px 12px 52px">' + (g.ready ? '<span class="sc ok">' + g.ready + ' ready</span>' : '') + (g.xs.length - g.ready ? '<span class="sc ' + (short ? 'no' : 'gd') + '">' + (g.xs.length - g.ready) + ' waiting</span>' : '') + (st ? '<span class="sc ' + (short ? 'no' : 'ok') + '">stock ' + num(st.qty) + '</span>' : '<span class="sc no">not in stock</span>') + '</div>';
+    if (open) r += g.xs.map(({ l, k }) => {
+      const pst = k === 'later' ? pill('Scheduled', 'c-in') : k === 'issue' ? pill('Ready', 'c-ok') : k === 'short' ? pill('Short', 'c-no') : k === 'missing' ? pill('Not in stock', 'c-no') : pill('On hold', 'c-gd');
+      return '<div class="art sub' + (A.sel[l.id] ? ' on' : '') + '"><input type="checkbox" data-a="artsSel" data-v="' + l.id + '"' + (A.sel[l.id] ? ' checked' : '') + ' aria-label="Select">' +
+        '<div class="ab"><div class="row"><span><b class="an">' + esc(l.store) + '</b><div class="meta"><span class="reqno sm" data-req="' + esc(l.req) + '">' + esc(l.req) + '</span><i></i><span>' + fmtShort(l.date) + (days(l.date) > 0 ? ' · ' + days(l.date) + ' d' : '') + '</span></div></span>' + pst + '</div>' +
+        '<div class="aa"><button class="aq" data-a="artQty" data-v="' + l.id + '" aria-label="Edit quantity">' + num(l.qty) + ' <small>' + esc(itemUom(l.code)) + '</small><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg></button>' +
+        '<button class="btn sm ghost" data-a="artHold" data-v="' + l.id + '">' + (S.hold[l.id] ? 'Release' : 'Hold') + '</button><button class="btn sm ghost danger-t" data-a="artDel" data-v="' + l.id + '">Remove</button></div></div></div>';
+    }).join('');
+    return r + '</div>';
+  }).join('') + '</div>' + (groups.length > 200 ? '<div class="note">Showing 200 items. Narrow with search or filters.</div>' : '');
   return h;
 }
 function vArts() {
   ui.arts = ui.arts || { q: '', store: '', st: 'all', sel: {} };
   const A = ui.arts, stores = [...new Set(S.lines.filter(l => l.status === 'waiting').map(l => l.store))].sort(byStore);
   const selN = Object.keys(A.sel).length;
-  let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Pending articles</h1><div class="sub">Every article still waiting, with its store and quantity. Edit, hold or remove one by one, or select many.</div></div></header><main>';
+  let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Pending articles</h1><div class="sub">One row per item with its total. Tap an item to see each store and request, then edit, hold or remove.</div></div></header><main>';
   h += '<div class="sbox"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input type="search" data-arts="q" value="' + esc(A.q) + '" placeholder="Item, code, store or Request No" autocomplete="off"></div>';
   h += '<div class="seg">' + [['all', 'All'], ['ready', 'Ready'], ['wait', 'Short'], ['hold', 'On hold']].map(([k, l]) => '<button data-a="artsSt" data-v="' + k + '" class="' + (A.st === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>';
   h += '<div class="grid2">' + pickBtn('artsStore', { title: 'Store', search: true, full: true, opts: [['', 'All stores']].concat(stores.map(x => [x, x])), val: A.store, set: v => { A.store = v; render(); } }) + sortPick('arts') + '</div>';
@@ -2017,7 +2076,7 @@ function shEditReq() {
 }
 
 /* ---------------- lock ---------------- */
-const GUARDED = new Set(['mrSave', 'mrRemove', 'manReqToggle', 'msSave', 'artQty', 'artHold', 'artDel', 'artsBHold', 'artsBRel', 'artsBDel', 'testToggle', 'testClear', 'dcRenum', 'dcMerge', 'dcKeepFirst', 'dcDate', 'dcBad', 'renumReq', 'impRenum', 'impDrop', 'credSave', 'credDel', 'corrOpen', 'corrSave', 'bulkEdit', 'bulkSave', 'dropReq', 'dropStore', 'editReq', 'saveReq', 'markDone', 'markSave', 'newManual', 'saveEntry', 'delEntry', 'newReturn', 'saveReturn', 'delReturn',
+const GUARDED = new Set(['paperAdd', 'mrSave', 'mrRemove', 'manReqToggle', 'msSave', 'artQty', 'artHold', 'artDel', 'artsBHold', 'artsBRel', 'artsBDel', 'testToggle', 'testClear', 'dcRenum', 'dcMerge', 'dcKeepFirst', 'dcDate', 'dcBad', 'renumReq', 'impRenum', 'impDrop', 'credSave', 'credDel', 'corrOpen', 'corrSave', 'bulkEdit', 'bulkSave', 'dropReq', 'dropStore', 'editReq', 'saveReq', 'markDone', 'markSave', 'newManual', 'saveEntry', 'delEntry', 'newReturn', 'saveReturn', 'delReturn',
   'rmStore', 'addStore', 'wipe', 'restore', 'bkRestore', 'bkDel', 'bkKeep', 'bkSave', 'bkNoteSave', 'photo', 'photoDel', 'mode', 'lockToggle', 'syncAuto', 'mgrToggle', 'moveStore', 'saveUrls', 'resetZoom', 'hold', 'cropSave']);
 let pendingAuth = null;
 function askUnlock(after) {
@@ -2054,7 +2113,7 @@ document.addEventListener('click', async ev => {
   if (a === 'lockTap') { if (ui.locked) askUnlock(); else { ui.locked = true; render(); renderSheet(); } return; }
   if (ui.locked && GUARDED.has(a)) { ev.preventDefault(); if (t.type === 'checkbox') t.checked = !t.checked; const sel = '[data-a="' + a + '"]' + (v != null ? '[data-v="' + CSS.escape(v) + '"]' : ''); askUnlock(() => { const el = document.querySelector(sel); if (el) el.click(); }); return; }
   if (a === 'bgClose') { if (ev.target === t) { ui.sheet = null; renderSheet(); } return; }
-  if (t.type === 'checkbox' && !['hold', 'queueToggle', 'regItems', 'mgrToggle', 'syncAuto', 'lockToggle', 'markPick', 'stOn', 'rpTog', 'rpCol', 'autoSubToggle', 'queuePend', 'credAuto', 'artsSel', 'artsAll', 'autoStockTog'].includes(a)) return;
+  if (t.type === 'checkbox' && !['hold', 'queueToggle', 'regItems', 'mgrToggle', 'syncAuto', 'lockToggle', 'markPick', 'stOn', 'rpTog', 'rpCol', 'autoSubToggle', 'queuePend', 'credAuto', 'artsSel', 'artsAll', 'artsGrp', 'autoStockTog'].includes(a)) return;
   const _busy = BUSY[a];
   if (_busy && !(ui.locked && GUARDED.has(a))) { loader(true, _busy); await new Promise(r => setTimeout(r, 40)); }
   try {
@@ -2191,6 +2250,9 @@ document.addEventListener('click', async ev => {
       ls.forEach(l => { l.status = 'issued'; l.issued.push({ slip, serial: String(f.serial || '').trim(), at }); if (S.stock[l.code]) S.stock[l.code].qty = Math.round((S.stock[l.code].qty - l.qty) * 1000) / 1000; });
       save(); toast(slip + ' saved. Add the next slip if there is one.');
       const W2 = S.lines.filter(l => l.req === f.req && l.status === 'waiting'); f.pick = {}; W2.forEach(l => f.pick[l.id] = 1); f.slip = nextSlip(); f.serial = ''; renderSheet(); render(); break; }
+    case 'paperAdd': { const r = requests().find(x => x.req === v); if (!r || !paperOpen(r.date)) { toast('Photos can only be added on the request date or the next day.'); break; } ui.paperFor = v; const pi = document.getElementById('paperIn'); pi.value = ''; pi.click(); break; }
+    case 'paperView': { const [rq, i] = v.split('|'); const p = paperList(rq)[+i]; if (p && !paperSrc(p.id) && p.cloud) { loader(true, 'Loading the photo from the cloud'); await loadCloudPhoto(p); loader(false); render(); } openPaperViewer(rq, +i); break; }
+    case 'photoSync': syncPhotos(false); break;
     case 'rsClose': { const l = S.lines.find(x => String(x.id) === v); if (!l) break; if (!(await uiConfirm('Close ' + itemName(l.code) + ' ' + num(l.qty) + ' ' + itemUom(l.code) + '? It stops being pending.', 'Close', true))) break; audit('close', l); l.status = 'dropped'; save(); renderSheet(); render(); break; }
     case 'rsOpen': { const l = S.lines.find(x => String(x.id) === v); if (!l) break; if (!(await uiConfirm('Make ' + itemName(l.code) + ' ' + num(l.qty) + ' ' + itemUom(l.code) + ' pending again?', 'Make pending'))) break; audit('reopen', l); l.status = 'waiting'; save(); renderSheet(); render(); break; }
     case 'rsAll': { const req = ui.form.req; const W = S.lines.filter(l => l.req === req && l.status === 'waiting'); if (!W.length) break; if (!(await uiConfirm('Mark request ' + req + ' as completed? ' + W.length + ' pending article' + (W.length > 1 ? 's are' : ' is') + ' closed (not issued).', 'Mark completed', true))) break; W.forEach(l => { audit('close', l); l.status = 'dropped'; }); save(); renderSheet(); render(); toast(req + ' marked completed.'); break; }
@@ -2211,6 +2273,8 @@ document.addEventListener('click', async ev => {
     case 'artsSel': if (t.checked) ui.arts.sel[v] = 1; else delete ui.arts.sel[v]; render(); break;
     case 'artsAll': { const L = artsList(); if (t.checked) L.forEach(x => ui.arts.sel[x.l.id] = 1); else L.forEach(x => delete ui.arts.sel[x.l.id]); render(); break; }
     case 'artsBClear': ui.arts.sel = {}; render(); break;
+    case 'artsGrpOpen': ui.arts.open = ui.arts.open || {}; ui.arts.open[v] = !ui.arts.open[v]; { const b = document.getElementById('artsres'); if (b) b.innerHTML = artsResults(); } break;
+    case 'artsGrp': { const xs = artsList().filter(x => x.l.code === v); if (t.checked) xs.forEach(x => ui.arts.sel[x.l.id] = 1); else xs.forEach(x => delete ui.arts.sel[x.l.id]); render(); break; }
     case 'artQty': { const l = S.lines.find(x => String(x.id) === v); if (!l) break; const nv = await uiPrompt('New quantity for ' + itemName(l.code) + ' (' + l.store + ', ' + l.req + '). Now ' + num(l.qty) + ' ' + itemUom(l.code) + '.', String(l.qty), 'Save');
       if (nv == null) break; const q = parseFloat(nv); if (!(q > 0)) { toast('Enter a quantity above 0.'); break; }
       if (!(await uiConfirm('Change ' + itemName(l.code) + ' from ' + num(l.qty) + ' to ' + num(q) + ' ' + itemUom(l.code) + '?', 'Change'))) break;
@@ -2437,6 +2501,21 @@ document.addEventListener('input', ev => {
 document.addEventListener('change', async ev => {
   const el = ev.target;
   if (ui.locked && (el.dataset.set || el.dataset.storeRcv || el.dataset.storeName)) { render(); askUnlock(); return; }
+  if (el.id === 'paperIn') {
+    const f = el.files[0]; el.value = ''; const req = ui.paperFor; if (!f || !req) return;
+    loader(true, 'Saving the paper photo');
+    const img = new Image(), fr = new FileReader();
+    fr.onload = () => { img.onload = () => { try {
+      const M = 2000, k = Math.min(1, M / Math.max(img.width, img.height)); const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+      const url = c.toDataURL('image/jpeg', 0.85), id = 'p' + Date.now() + Math.floor(Math.random() * 1000);
+      let ok = false; if (N && N.paperSave) ok = N.paperSave(id, url.split(',')[1]);
+      if (!ok) { S.paperImg = S.paperImg || {}; S.paperImg[id] = url; }
+      PAPER_MEM[id] = url; S.paper = S.paper || {}; (S.paper[req] = S.paper[req] || []).push({ id, at: new Date().toISOString(), by: S.me.name || '' });
+      save(); render(); setTimeout(() => syncPhotos(true), 1200);
+    } finally { loader(false); } }; img.onerror = () => { loader(false); toast('Could not read this image.'); }; img.src = fr.result; };
+    fr.readAsDataURL(f); return;
+  }
   if (el.id === 'photoIn') {
     const f = el.files[0]; el.value = ''; if (!f) return;
     const img = new Image(); const fr = new FileReader();

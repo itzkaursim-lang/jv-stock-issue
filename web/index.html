@@ -514,6 +514,24 @@ main>*:nth-child(2){animation-delay:.03s}main>*:nth-child(3){animation-delay:.06
 .svic:after{content:"";position:absolute;top:0;right:0;width:16px;height:16px;background:linear-gradient(225deg,#fff 50%,rgba(0,0,0,.08) 50%);border-radius:0 12px 0 4px}
 .svic.pdf{background:#FFD9E3;color:#B4123B}.svic.xls{background:#D6F5E5;color:#0B5E3D}
 .svname{font-weight:600;font-size:15px;padding:12px 14px;border-radius:14px;background:var(--soft);word-break:break-all}
+.pgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.pthumb{position:relative;border:0;padding:0;border-radius:14px;overflow:hidden;aspect-ratio:3/4;background:#EEECF3;cursor:pointer}
+.pthumb img{width:100%;height:100%;object-fit:cover;display:block}.pthumb span{position:absolute;left:0;right:0;bottom:0;padding:4px 6px;font-size:10.5px;color:#fff;background:linear-gradient(transparent,rgba(0,0,0,.6));text-align:left}
+.pbadge{background:#ECE6FF;color:#4B3BA8;border-radius:99px;padding:1px 8px;font-weight:700;font-size:12px}
+#pview .pvbg{position:fixed;inset:0;background:#0A0A0E;z-index:85}
+.pvbox{position:fixed;inset:0;z-index:86;display:flex;flex-direction:column;padding:calc(12px + env(safe-area-inset-top,0px)) 12px calc(16px + env(safe-area-inset-bottom,0px))}
+.pvbar{display:flex;align-items:center;gap:10px;color:#fff;padding:6px 6px 12px}.pvbar>span{flex:1}.pvbar b{display:block;font-size:16px}.pvbar span span{font-size:12.5px;color:#C9C5D6}
+.pvimg{flex:1;overflow:auto;display:flex;align-items:center;justify-content:center;border-radius:18px}.pvimg img{max-width:100%;max-height:100%;transition:transform .2s;transform-origin:center}
+.pvnav{display:flex;gap:8px;justify-content:space-between;padding-top:12px}.pvnav .btn{background:#fff}
+.agrp{border-bottom:1px solid #F0EEF5}.agrp.on{background:#FBFAFF}
+.agh{display:flex;align-items:center;gap:12px;padding:14px 12px 6px 16px}
+.agm{flex:1;min-width:0;display:flex;align-items:center;gap:10px;border:0;background:none;text-align:left;font:inherit;color:inherit;cursor:pointer;padding:0}
+.agn{flex:1;min-width:0}.agn b{display:block;font-size:16px}.agn span{font-size:12.5px;color:var(--mute)}
+.agq{text-align:right}.agq b{display:block;font-size:20px;font-weight:800;line-height:1.1}.agq small{font-size:11px;color:var(--mute);font-weight:700}
+.agm svg{color:var(--mute);flex-shrink:0}
+.art.sub{padding-left:28px;background:#fff;border-top:1px dashed #ECEAF3;border-bottom:0}
+input[type=checkbox].part{background:#B9A7FF;border-color:#B9A7FF}
+.pcloud{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:8px;font-style:normal;font-size:12px;font-weight:700;color:#4B3BA8;background:#ECE6FF}
 </style>
 </head>
 <body>
@@ -524,6 +542,7 @@ main>*:nth-child(2){animation-delay:.03s}main>*:nth-child(3){animation-delay:.06
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 <input type="file" id="fileIn" accept=".xlsx,.xls,.csv" class="hidden">
 <input type="file" id="photoIn" accept="image/*" class="hidden">
-<script src="app.js?v=5.8.0"></script>
+<input type="file" id="paperIn" accept="image/*" capture="environment" class="hidden">
+<script src="app.js?v=5.9.1"></script>
 </body>
 </html>
