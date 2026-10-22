@@ -138,7 +138,7 @@
     }).join('') + '</div>';
   }
   function chip(id, label, on) { return '<button type="button" data-jv="' + id + '" style="display:inline-flex;align-items:center;gap:7px;height:38px;border-radius:99px;padding:0 14px 0 11px;border:0;cursor:pointer;font:700 13px ' + F + ';background:' + (on ? C.ink : '#F2F1F6') + ';color:' + (on ? '#fff' : '#4A4758') + '"><i style="width:8px;height:8px;border-radius:50%;background:' + (on ? '#7CF0B5' : '#C9C5D6') + '"></i>' + label + '</button>'; }
-  function chips(j) { return '<div style="display:flex;gap:8px;flex-wrap:wrap">' + chip('tQueue', 'Queue', !!j.queue) + chip('tAuto', 'Auto submit', !!j.autoSubmit) + chip('tPortal', 'Big panel', portal) + chip('tFull', 'Full screen', immersive) + '</div>'; }
+  function chips(j) { return '<div style="display:flex;gap:8px;flex-wrap:wrap">' + (j.adv ? '<span style="display:inline-flex;align-items:center;height:38px;border-radius:99px;padding:0 14px;font:700 13px ' + F + ';background:#FFE7C2;color:#7A4B00">Advance issue · manual SUBMIT only</span>' : chip('tQueue', 'Queue', !!j.queue) + chip('tAuto', 'Auto submit', !!j.autoSubmit)) + chip('tPortal', 'Big panel', portal) + chip('tFull', 'Full screen', immersive) + '</div>'; }
   function credit() { var who = ME.builder || ME.name || 'JV'; return '<div style="display:flex;align-items:center;justify-content:space-between;font:600 11.5px ' + F + ';color:#9A97A8">' + '<span>JV Stock Issue · Built by ' + esc(who) + '</span>' + (ME.photo ? '<img src="' + ME.photo + '" alt="" style="width:28px;height:28px;border-radius:50%;object-fit:cover;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.2)">' : '') + '</div>'; }
   function row2(a, b) { return '<div style="display:flex;gap:10px;align-items:center">' + a + (b || '') + '</div>'; }
   function wrap(inner) { return '<div style="padding:16px 18px 18px;display:flex;flex-direction:column;gap:14px">' + inner + '</div>'; }
@@ -281,12 +281,12 @@
     if (j.phase === 'await' && !ui.serialBox) {
       var v = verify(j), allOk = v.store && v.slip && v.rcv && v.type && v.rows === v.total;
       var nChecks = [v.store, v.slip, v.rcv, v.type, v.rows === v.total].filter(Boolean).length;
-      h += hero((j.test ? 'Test mode · ' : '') + 'Issue entry', j.store, j, allOk ? C.ok : C.noInk);
+      h += hero((j.test ? 'Test mode · ' : '') + (j.adv ? 'Advance issue' : 'Issue entry'), j.store, j, allOk ? C.ok : C.noInk);
       var inner = statusCard(allOk ? 'ok' : 'no', allOk ? 'Ready to submit' : 'Check before SUBMIT', allOk ? 'All ' + nChecks + ' checks match the CUIMS form' : nChecks + ' of 5 checks match. See the red tiles.');
       inner += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">' + cell('Receiver', 'GA' + esc(j.rcv), j.rname || '', v.rcv) + cell('Requested on', esc(v.dates || '–'), '') + cell('Issue type', 'Offline', 'Department', v.type) + cell('Project area', esc(v.paText || j.store), v.store ? 'matches store' : 'expected ' + j.store, v.store) + '</div>';
       inner += secHead('Articles', v.rows + ' of ' + v.total + ' added') + itemRows(j, portal ? items : items.slice(0, 4));
       if (!portal && items.length > 4) inner += '<div style="font:600 12.5px ' + F + ';color:' + C.faint + ';text-align:center">+ ' + (items.length - 4) + ' more · turn on Big panel to see all</div>';
-      if (allOk && j.autoSubmit && !ui.autoStop) {
+      if (allOk && j.autoSubmit && !j.adv && !ui.autoStop) {
         var secs = ui.autoAt ? Math.max(0, Math.ceil((ui.autoAt - Date.now()) / 1000)) : 4;
         inner += row2('<div style="flex:1;height:52px;border-radius:99px;background:' + C.ink + ';color:#fff;display:flex;align-items:center;justify-content:center;font:700 15.5px ' + F + '">Submitting in ' + secs + ' s</div>', btn('autoStop', 'Stop', 'warn'));
         if (!ui.autoAt) { ui.autoAt = Date.now() + 4000; clearInterval(autoTimer); autoTimer = setInterval(function () {
@@ -302,6 +302,7 @@
     // working states
     var over = j.paused ? 'Paused' : j.phase === 'dup' ? 'Checking' : j.phase === 'capture' ? 'Finding Serial' : j.phase === 'dupfound' ? 'Already on CUIMS' : 'Filling';
     if (j.queue) over += ' · queue on';
+    if (j.adv) over = 'Advance · ' + over;
     if (j.test) over = 'Test mode · ' + over;
     h += hero(over, j.store, j, j.paused ? '#FFB648' : C.ink);
     var inner2 = '';
@@ -333,7 +334,7 @@
     var t = e.target.closest('[data-jv]'); if (!t) return;
     var a = t.getAttribute('data-jv'); var j = job();
     if (a === 'app') { B.showApp(); return; }
-    if (a === 'tQueue' || a === 'tAuto') { var k = a === 'tQueue' ? 'queue' : 'autoSubmit'; var jt = job(); if (jt) { jt[k] = !jt[k]; save(jt); ev('setPref', { key: k, val: jt[k] }); if (k === 'autoSubmit') { ui.autoStop = false; ui.autoAt = 0; } } paint(); return; }
+    if (a === 'tQueue' || a === 'tAuto') { var k = a === 'tQueue' ? 'queue' : 'autoSubmit'; var jt = job(); if (jt && jt.adv) return; if (jt) { jt[k] = !jt[k]; save(jt); ev('setPref', { key: k, val: jt[k] }); if (k === 'autoSubmit') { ui.autoStop = false; ui.autoAt = 0; } } paint(); return; }
     if (a === 'asStop') { try { B.autoStop && B.autoStop(); } catch (er) {} AUTO = null; try { localStorage.removeItem('jvAS'); } catch (er) {} B.showApp(); return; }
     if (a === 'asRetry') { AS = { run: AUTO.run, step: 'start' }; asSave(); location.href = (B.targetUrl && B.targetUrl()) || location.href; return; }
     if (a === 'tPortal') { portal = !portal; try { localStorage.setItem('jvPortal', portal ? '1' : '0'); } catch (er) {} try { B.setCover && B.setCover(portal && !mini); } catch (er) {} paint(); return; }

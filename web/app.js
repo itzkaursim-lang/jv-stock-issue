@@ -306,7 +306,7 @@ function reqCard(r, cont) {
   const sl = reqSlips(r.req);
   return rqCard({ where: 'home', req: r.req, store: r.store, status: tag, cont, x: 'dropReq',
     meta: [fmtShort(r.date), slip ? 'next slip ' + esc(slip) : '<em>No slip</em>', rcv ? 'GA' + esc(rcv) : '<em>No receiver</em>', r.lines.length + ' articles', paperList(r.req).length ? '<span class="pbadge">paper ' + paperList(r.req).length + '</span>' : ''], chips: unavail(r.w, PL),
-    slips: sl.length ? sl : null, cta: later ? '<div class="note" style="text-align:center">Fills from ' + fmtLong(r.date) + '. No stock is kept for it before then.</div>' : (r.can && r.can.length ? '<button class="btn main full" data-a="fillReq" data-v="' + esc(r.req) + '">Fill on CUIMS · ' + r.can.length + ' available</button>' : '') });
+    slips: sl.length ? sl : null, cta: later && isBaseKitchen(r.store) ? (advLines(r).length ? '<button class="btn adv full" data-a="advIssue" data-v="' + esc(r.req) + '">Issue on CUIMS now · ' + advLines(r).length + ' in stock</button>' : '<div class="note" style="text-align:center">Nothing in stock yet for this advance request.</div>') : later ? '<div class="note" style="text-align:center">Fills from ' + fmtLong(r.date) + '. No stock is kept for it before then.</div>' : (r.can && r.can.length ? '<button class="btn main full" data-a="fillReq" data-v="' + esc(r.req) + '">Fill on CUIMS · ' + r.can.length + ' available</button>' : '') });
 }
 function appBar() {
   const lk = '<svg viewBox="0 0 24 24" width="21" height="21" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><rect x="5" y="11" width="14" height="10" rx="2.5"/><path d="' + (ui.locked ? 'M8 11V7a4 4 0 0 1 8 0v4' : 'M8 11V7a4 4 0 0 1 7.5-1.8') + '"/></svg>';
@@ -483,6 +483,7 @@ function vReq() {
   const rcv = (r.lines.find(l => l.rcv) || {}).rcv || (S.stores[r.store] || {}).rcv || '';
   let h = reqNavBar() + '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:8px">' + esc(r.store) + '</h1><div class="sub">Request ' + esc(r.req) + ' · ' + fmtLong(r.date) + ' · Receiver ' + (rcv ? 'GA' + esc(rcv) : 'not set') + '</div></div></header><main>';
   h += meta([st.can.length + ' ready', (st.w.length - st.can.length) + ' waiting', st.iss.length + ' issued', (st.w.find(l => l.slip) || {}).slip ? 'next slip ' + esc(st.w.find(l => l.slip).slip) : '<em>no slip set</em>']);
+  if (isBaseKitchen(r.store) && r.date > today()) { const A = advLines(r); h += '<div class="advbox"><b>Base Kitchen · advance request for ' + fmtLong(r.date) + '</b><span>Only you can issue this early, by tapping below. It uses any stock in hand (' + A.length + ' of ' + r.lines.filter(l => l.status === 'waiting').length + ' articles available). It is never picked by queue or auto submit.</span><button class="btn adv full" data-a="advIssue" data-v="' + esc(r.req) + '"' + (A.length ? '' : ' disabled') + '>Issue on CUIMS now</button></div>'; }
   h += paperCard(r);
   h += '<div class="card">';
   const ordr = { issue: 0, short: 1, hold: 2, missing: 3 };
@@ -561,10 +562,12 @@ function vPend() {
 }
 
 /* ---------------- Start fill sheet ---------------- */
-function openStart(store, lineIds, title) {
+const isBaseKitchen = st => /BASE\s*-?\s*KITCHEN/i.test(String(st || ''));
+function advLines(r) { if (!isBaseKitchen(r.store) || !(r.date > today())) return []; return r.lines.filter(l => l.status === 'waiting' && !S.hold[l.id] && S.stock[l.code] && S.stock[l.code].qty >= l.qty); }
+function openStart(store, lineIds, title, adv) {
   const ls = S.lines.filter(l => lineIds.includes(l.id));
   const rcv = (ls.find(l => l.rcv) || {}).rcv || (S.stores[store] || {}).rcv || '';
-  ui.sheet = { kind: 'start', store, lineIds, title, slip: plannedSlip(lineIds) || nextSlip(), rcv, off: {}, qty: {}, req: (ls[0] || {}).req };
+  ui.sheet = { kind: 'start', store, lineIds, title, slip: plannedSlip(lineIds) || nextSlip(), rcv, off: {}, qty: {}, req: (ls[0] || {}).req, adv: !!adv, advRemark: '' };
   renderSheet();
 }
 function shStart() {
@@ -574,6 +577,7 @@ function shStart() {
   const areaOk = !S.areas.length || S.areas.some(a => a.toUpperCase() === s.store.toUpperCase());
   const old = S.lastLoginAt && (Date.now() - new Date(S.lastLoginAt)) > 2 * 3600e3;
   let h = '<div class="row"><h2>' + esc(s.title) + '</h2><button class="btn sm ghost" data-a="closeSheet">Close</button></div>';
+  if (s.adv) h += '<div class="advbox"><b>Advance issue · Base Kitchen</b><span>Requested for ' + fmtLong((ls[0] || {}).date || today()) + '. Uses any stock in hand. Queue and Auto submit stay off: you tap SUBMIT yourself.</span><label class="f" style="margin-top:8px">Remarks (optional)<input type="text" data-adv="1" value="' + esc(s.advRemark || '') + '" placeholder="Leave blank for no remark"></label></div>';
   h += '<label class="f">Slip No for this entry<input type="text" data-in="slip" value="' + esc(s.slip) + '" class="mono' + (sp ? ' bad' : '') + '" autocomplete="off" autocapitalize="characters" placeholder="e.g. JV/915"></label>' + (sp ? '<div class="err">' + esc(sp) + '</div>' : '<div class="okt">Slip No is free to use.</div>');
   h += '<label class="f">Receiver (6 digits, this entry only)<input type="text" inputmode="numeric" maxlength="6" data-in="rcv" value="' + esc(s.rcv) + '" class="mono' + (rp ? ' bad' : '') + '"></label>' + (rp ? '<div class="err">' + rp + '</div>' : '<div class="note">CUIMS will pick GA' + esc(s.rcv) + ' … (GA) from the list.</div>');
   if (!areaOk) h += '<div class="err">"' + esc(s.store) + '" is not in the CUIMS Project Area list. Fix the store name in Settings or the request.</div>';
@@ -581,19 +585,19 @@ function shStart() {
   h += '<div class="row"><span class="sect">Articles for this entry</span><span class="note">' + s.lineIds.filter(id => !s.off[id]).length + ' selected</span></div>';
   h += '<div class="card">' + ls.map(l => '<div class="line"><div class="row" style="align-items:center"><label class="chk" style="min-height:0;gap:10px;flex:1"><input type="checkbox" data-a="stOn" data-v="' + l.id + '"' + (s.off[l.id] ? '' : ' checked') + '><span><b>' + esc(itemName(l.code)) + '</b><div class="note mono">' + esc(l.code) + ' · Req ' + esc(l.req) + '</div></span></label>' +
     '<input type="number" inputmode="decimal" data-stq="' + l.id + '" value="' + esc(s.qty[l.id] != null ? s.qty[l.id] : l.qty) + '" style="width:96px;text-align:right"><span class="note" style="width:38px">' + esc(itemUom(l.code)) + '</span></div>' +
-    meta([S.stock[l.code] ? num(S.stock[l.code].qty) + ' in stock' : '', remarkFor(l.date) ? 'remark added' : '']) + '</div>').join('') + '</div>';
+    meta([S.stock[l.code] ? num(S.stock[l.code].qty) + ' in stock' : '', !s.adv && remarkFor(l.date) ? 'remark added' : '']) + '</div>').join('') + '</div>';
   h += '<div class="card pad col"><b>Add an article to this entry</b><div class="grid2"><input type="text" data-stadd="code" value="' + esc(s.addCode || '') + '" placeholder="Item code e.g. GR-198" autocapitalize="characters" class="mono"><input type="number" inputmode="decimal" data-stadd="qty" value="' + esc(s.addQty || '') + '" placeholder="Qty"></div><button class="btn" data-a="stAdd">+ Add article</button></div>';
-  h += '<label class="chk"><input type="checkbox" data-a="queueToggle"' + (S.queue ? ' checked' : '') + '> Queue mode: after I submit, fill the next request automatically</label>';
-  if (S.queue) h += queueBox();
+  if (!s.adv) h += '<label class="chk"><input type="checkbox" data-a="queueToggle"' + (S.queue ? ' checked' : '') + '> Queue mode: after I submit, fill the next request automatically</label>';
+  if (S.queue && !s.adv) h += queueBox();
   h += '<button class="btn main full" data-a="startFill"' + (sp || rp ? ' disabled' : '') + '>Start filling on CUIMS</button>';
   h += '<div class="note" style="text-align:center">' + (S.autoSubmit ? 'Auto submit is on: SUBMIT is tapped after a 100% recheck, with a 4-second Stop window.' : 'The app never taps SUBMIT. You check and submit yourself.') + '</div>';
   return h;
 }
-function startJob(store, slip, rcv, lineIds) {
+function startJob(store, slip, rcv, lineIds, adv) {
   const ls = S.lines.filter(l => lineIds.includes(l.id) && l.status === 'waiting');
-  const nq = S.queue ? nextQueueJob(lineIds) : null;
-  const job = { id: 'J' + Date.now(), test: !!S.testMode, slip, rcv, store, queue: !!S.queue, next: nq ? nq.req + ' · ' + nq.store : '', autoSubmit: !!S.autoSubmit && !S.testMode, phase: 'dup', paused: false, log: [], tries: {},
-    items: ls.map(l => ({ lineId: l.id, req: l.req, reqDate: l.date, code: l.code, name: itemName(l.code), uom: itemUom(l.code), qty: l.qty, remark: l.remark || remarkFor(l.date), skip: false })) };
+  const nq = S.queue && !adv ? nextQueueJob(lineIds) : null;
+  const job = { id: 'J' + Date.now(), adv: !!adv, test: !!S.testMode, slip, rcv, store, queue: !!S.queue && !adv, next: nq ? nq.req + ' · ' + nq.store : '', autoSubmit: !!S.autoSubmit && !S.testMode && !adv, phase: 'dup', paused: false, log: [], tries: {},
+    items: ls.map(l => ({ lineId: l.id, req: l.req, reqDate: l.date, code: l.code, name: itemName(l.code), uom: itemUom(l.code), qty: l.qty, remark: adv ? adv.remark : (l.remark || remarkFor(l.date)), skip: false })) };
   if (!N) { toast('Open this inside the JV Stock Issue app to fill CUIMS.'); return; }
   N.startJob(JSON.stringify(job));
 }
@@ -1683,7 +1687,7 @@ function recordSubmit(e) {
   save();
   toast('Saved ' + job.slip + ', Serial ' + (e.serial || '–') + '.');
   render();
-  if (S.queue) {
+  if (S.queue && !job.adv) {
     const nx = nextQueueJob(); const slip = nx ? (plannedSlip(nx.ids) || nextSlip()) : '';
     if (nx && slip) { setTimeout(() => { toast('Queue: ' + nx.store + ', request ' + nx.req + ', Slip ' + slip); startJob(nx.store, slip, nx.rcv, nx.ids); }, 2500); return; }
     toast('Queue finished: nothing else can be issued today.');
@@ -2103,7 +2107,7 @@ function shEditReq() {
 }
 
 /* ---------------- lock ---------------- */
-const GUARDED = new Set(['paperAdd', 'mrSave', 'mrRemove', 'manReqToggle', 'msSave', 'artQty', 'artHold', 'artDel', 'artsBHold', 'artsBRel', 'artsBDel', 'testToggle', 'testClear', 'dcRenum', 'dcMerge', 'dcKeepFirst', 'dcDate', 'dcBad', 'renumReq', 'impRenum', 'impDrop', 'credSave', 'credDel', 'corrOpen', 'corrSave', 'bulkEdit', 'bulkSave', 'dropReq', 'dropStore', 'editReq', 'saveReq', 'markDone', 'markSave', 'newManual', 'saveEntry', 'delEntry', 'newReturn', 'saveReturn', 'delReturn',
+const GUARDED = new Set(['advIssue', 'paperAdd', 'mrSave', 'mrRemove', 'manReqToggle', 'msSave', 'artQty', 'artHold', 'artDel', 'artsBHold', 'artsBRel', 'artsBDel', 'testToggle', 'testClear', 'dcRenum', 'dcMerge', 'dcKeepFirst', 'dcDate', 'dcBad', 'renumReq', 'impRenum', 'impDrop', 'credSave', 'credDel', 'corrOpen', 'corrSave', 'bulkEdit', 'bulkSave', 'dropReq', 'dropStore', 'editReq', 'saveReq', 'markDone', 'markSave', 'newManual', 'saveEntry', 'delEntry', 'newReturn', 'saveReturn', 'delReturn',
   'rmStore', 'addStore', 'wipe', 'restore', 'bkRestore', 'bkDel', 'bkKeep', 'bkSave', 'bkNoteSave', 'photo', 'photoDel', 'mode', 'lockToggle', 'syncAuto', 'mgrToggle', 'moveStore', 'saveUrls', 'resetZoom', 'hold', 'cropSave']);
 let pendingAuth = null;
 function askUnlock(after) {
@@ -2153,6 +2157,9 @@ document.addEventListener('click', async ev => {
     case 'openReq': { if (ui.view !== 'req') { const ids = []; document.querySelectorAll('[data-a="openReq"][data-v]').forEach(x => { if (!ids.includes(x.dataset.v)) ids.push(x.dataset.v); }); ui.reqList = ids.length > 1 ? ids : null; }
       ui.lastReq = v; ui.view = 'req'; ui.req = v; render(); window.scrollTo(0, 0); break; }
     case 'reqGo': goReq(+v); break;
+    case 'advIssue': { const r = requests().find(x => x.req === v); if (!r) break; const L = advLines(r);
+      if (!L.length) { toast('Nothing of this request is in stock right now.'); break; }
+      openStart(r.store, L.map(l => l.id), r.store + ' · ' + r.req + ' (advance)', true); break; }
     case 'back': ui.view = null; render(); break;
     case 'hold': if (t.checked) S.hold[v] = 1; else delete S.hold[v]; save(); render(); break;
     case 'fillReq': { ui.lastReq = v; const PL = plan(); const r = requests().find(x => x.req === v); const ids = r.lines.filter(l => l.status === 'waiting' && PL[l.id] === 'issue').map(l => l.id); openStart(r.store, ids, r.store + ', request ' + r.req); break; }
@@ -2385,7 +2392,7 @@ document.addEventListener('click', async ev => {
       const ids = s.lineIds.filter(id => !s.off[id]);
       if (!ids.length) { toast('Select at least one article.'); break; }
       for (const id of ids) { if (s.qty[id] == null) continue; const q = parseFloat(s.qty[id]); const l = S.lines.find(x => x.id === id); if (!(q > 0)) { toast('Qty must be above 0 for ' + l.code); return; } l.qty = q; }
-      save(true); ui.sheet = null; renderSheet(); startJob(s.store, s.slip, s.rcv, ids); break; }
+      save(true); ui.sheet = null; renderSheet(); startJob(s.store, s.slip, s.rcv, ids, s.adv ? { remark: String(s.advRemark || '').trim() } : null); break; }
     case 'stOn': if (t.checked) delete ui.sheet.off[v]; else ui.sheet.off[v] = 1; renderSheet(); break;
     case 'stAdd': { const s = ui.sheet; const code = String(s.addCode || '').trim().toUpperCase(), q = parseFloat(s.addQty);
       if (!code || !(q > 0)) { toast('Enter item code and qty.'); break; }
@@ -2519,6 +2526,7 @@ document.addEventListener('input', ev => {
   if (el.dataset.rp) { rptPref(ui.sheet.type)[el.dataset.rp] = el.value; save(true); if (el.tagName === 'SELECT') renderSheet(); return; }
   if (el.dataset.crop) { ui.sheet.zoom = parseFloat(el.value); const im = document.querySelector('#cropBox img'); if (im) { const V = 280, c = ui.sheet, base = Math.max(V / c.img.width, V / c.img.height) * c.zoom, dw = c.img.width * base, dh = c.img.height * base; im.style.width = dw + 'px'; im.style.height = dh + 'px'; im.style.left = ((V - dw) / 2 + c.x) + 'px'; im.style.top = ((V - dh) / 2 + c.y) + 'px'; } return; }
   if (el.dataset.url) { ui[el.dataset.url === 'emp' ? 'urlEmp' : 'urlMgr'] = el.value.trim(); return; }
+  if (el.dataset.adv) { ui.sheet.advRemark = el.value; return; }
   if (el.dataset.stq) { ui.sheet.qty[el.dataset.stq] = el.value; return; }
   if (el.dataset.stadd) { ui.sheet[el.dataset.stadd === 'code' ? 'addCode' : 'addQty'] = el.value; return; }
   if (el.dataset.f) { ui.form[el.dataset.f] = el.value; return; }
