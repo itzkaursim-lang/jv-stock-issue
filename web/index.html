@@ -543,6 +543,10 @@ input[type=checkbox].part{background:#B9A7FF;border-color:#B9A7FF}
 .advbox{display:flex;flex-direction:column;gap:6px;padding:14px 16px;border-radius:22px;background:#FFF1D9;border:1.5px dashed #FFB648}
 .advbox b{font-size:15.5px;color:#5C3800}.advbox span{font-size:13px;color:#7A5A20;line-height:1.45}.advbox .btn{margin-top:6px}
 .btn.adv{background:#FFB648;border-color:#FFB648;color:#2A1C00;box-shadow:0 6px 16px rgba(255,182,72,.35)}
+.daychips{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 4px;scrollbar-width:none}.daychips::-webkit-scrollbar{display:none}
+.daychips button{flex-shrink:0;height:42px;padding:0 16px;border-radius:99px;border:1.5px solid #D9D6E3;background:#fff;font:600 14px 'Outfit',sans-serif;color:#141414;cursor:pointer}
+.daychips button.on{background:#141414;border-color:#141414;color:#fff}
+.daysum{display:flex;flex-direction:column;gap:2px;padding:12px 16px;border-radius:20px;background:#ECE6FF;color:#2B2546}.daysum b{font-size:16px}.daysum span{font-size:13px}
 </style>
 </head>
 <body>
@@ -554,6 +558,6 @@ input[type=checkbox].part{background:#B9A7FF;border-color:#B9A7FF}
 <input type="file" id="fileIn" accept=".xlsx,.xls,.csv" class="hidden">
 <input type="file" id="photoIn" accept="image/*" class="hidden">
 <input type="file" id="paperIn" accept="image/*" capture="environment" class="hidden">
-<script src="app.js?v=10.3.0"></script>
+<script src="app.js?v=10.4.0"></script>
 </body>
 </html>
