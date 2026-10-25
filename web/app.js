@@ -366,6 +366,9 @@ function vHome() {
     h += '<button class="dday' + (iso === t ? ' on' : '') + (iso === today() ? ' today' : '') + '" data-a="homeDate" data-v="' + iso + '"><i' + (has ? ' class="dot"' : '') + '></i><span>' + dd.toLocaleString('en-GB', { weekday: 'short' }) + '</span><b>' + dd.getDate() + '</b></button>'; }
   h += '</div>';
   h += stockCard();
+  { const RQ = dayReqs, withP = RQ.filter(r => paperList(r.req).length), photos = RQ.reduce((n, r) => n + paperList(r.req).length, 0);
+    if (RQ.length) h += '<button class="papercard" data-a="paperDay" data-v="' + t + '"><span class="pcic">' + '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="15" rx="3"/><circle cx="12" cy="12.5" r="3.5"/><path d="M8 5l1.5-2h5L16 5"/></svg></span>' +
+      '<span class="pct"><b>Paper photos · ' + withP.length + ' of ' + RQ.length + ' requests</b><span>' + photos + ' photo' + (photos === 1 ? '' : 's') + ' · ' + (RQ.length - withP.length ? (RQ.length - withP.length) + ' without a photo' : 'all requests covered') + '</span><span class="pcbar"><i style="width:' + Math.round(withP.length / RQ.length * 100) + '%"></i></span></span>' + ico('right', 18) + '</button>'; }
   if (!isToday) h += '<button class="banner tap" data-a="homeDate" data-v="' + today() + '" style="border:0;background:var(--lavBg);color:var(--lavInk)"><b>Showing ' + fmtLong(t) + '.</b> Tap to go back to today.</button>';
   if (S.updateInfo && S.updateInfo.newer) h += '<button class="banner t-in tap" data-a="goUpdate" style="border:0"><b>Update ' + esc(S.updateInfo.tag) + ' available.</b> Tap to install.</button>';
   if (!S.me.name) h += '<button class="banner t-pt tap" data-a="goProfile" style="border:0"><b>Add your name and emp code</b> so entries and PDFs show who made them.</button>';
@@ -831,6 +834,7 @@ function vFind() {
   h += '<div class="grid2"><label class="f">From<input type="date" data-in="sFrom" value="' + esc(s.from) + '"></label><label class="f">To<input type="date" data-in="sTo" value="' + esc(s.to) + '"></label></div>';
   h += pickBtn('sStore', { title: 'Store', search: true, full: true, opts: [['', 'All stores']].concat(stores.map(x => [x, x])), val: s.store || '', set: v => { ui.search.store = v; render(); } }, 'Store');
   h += '<button class="stockcard lite" data-a="stockOpen"><span class="sci">' + ico('right', 18).replace('M9 6l6 6-6 6', 'M4 7h16M4 12h16M4 17h10') + '</span><span class="sct"><b>Search live stock</b><span>Any item: closing qty, needed and free</span></span>' + ico('right', 18) + '</button>';
+  h += '<button class="btn full" data-a="mgOpen">Select many · delete · complete</button>';
   h += '<div id="sres">' + sResults(res) + '</div>';
   return h + '</main>';
 }
@@ -1306,6 +1310,7 @@ function renderDrawer() {
     item('batchReq', 'Batch add requests', 'Many stores at once, or paste from Excel', '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/>') +
     item('stockOpen', 'Live stock search', 'Find any item, see needed and free qty', '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>') +
     item('consOpen', 'Store-wise consumption', 'What each store took, by week or month', '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>') +
+    item('mgOpen', 'Manage data', 'Filter, select many, delete or complete', '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M7 9l2 2 4-4M7 15h10"/>') +
     item('artsOpen', 'Pending articles', 'Edit qty, hold or remove, one or many', '<path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6l1 1 2-2M3 12l1 1 2-2M3 18l1 1 2-2"/>') +
     item('dcOpen', 'Data check', 'Find clashes and errors, fix on the spot', '<path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/><path d="M9 12l2 2 4-4"/>') +
     item('testToggle', S.testMode ? 'Leave Test mode' : 'Test mode', S.testMode ? 'Back to your real data' : 'Try things without touching real data', '<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3"/>') +
@@ -1612,6 +1617,17 @@ function shCorr() {
   h += '<button class="btn main full" data-a="corrSave">Save correction</button>';
   return h;
 }
+function shPaperDay() {
+  const d = ui.sheet.day, RQ = sortBy(requests().filter(r => r.date === d), 'req_asc', r => ({ req: r.req, store: r.store, date: r.date }));
+  const withP = RQ.filter(r => paperList(r.req).length), photos = RQ.reduce((n, r) => n + paperList(r.req).length, 0), can = paperOpen(d);
+  let h = '<div class="row"><h2>Paper photos</h2><button class="btn sm ghost" data-a="closeSheet">Close</button></div>';
+  h += '<div class="grid3"><div class="tile t-in"><b>' + RQ.length + '</b><span>Requests</span></div><div class="tile t-ok"><b>' + withP.length + '</b><span>With photo</span></div><div class="tile t-pt"><b>' + photos + '</b><span>Photos</span></div></div>';
+  h += '<div class="note">' + fmtLong(d) + ' · ' + (can ? 'photos can be added until ' + fmtShort(paperDeadline(d)) : 'closed for new photos') + '</div>';
+  h += '<div class="card" style="overflow:hidden">' + RQ.map(r => { const n = paperList(r.req).length, cl = paperList(r.req).filter(p => p.cloud).length;
+    return '<div class="line" style="flex-direction:row;align-items:center;gap:10px"><span style="flex:1;min-width:0"><span class="reqno sm" data-req="' + esc(r.req) + '">' + esc(r.req) + '</span> <b>' + esc(r.store) + '</b><div class="meta"><span>' + (n ? n + ' photo' + (n > 1 ? 's' : '') + (cl === n ? ' · backed up' : cl ? ' · ' + cl + ' backed up' : '') : '<em>no photo</em>') + '</span></div></span>' +
+      (n ? pill('Done', 'c-ok') : '') + (can ? '<button class="btn sm ' + (n ? 'ghost' : 'main') + '" data-a="paperAddFrom" data-v="' + esc(r.req) + '">' + (n ? '+ More' : '+ Photo') + '</button>' : '') + '<button class="btn sm ghost" data-a="paperOpenReq" data-v="' + esc(r.req) + '">Open</button></div>'; }).join('') + '</div>';
+  return h;
+}
 function shCrop() {
   const c = ui.sheet, V = 280, base = Math.max(V / c.img.width, V / c.img.height) * c.zoom;
   const dw = c.img.width * base, dh = c.img.height * base;
@@ -1727,22 +1743,25 @@ window.jvBack = () => {
 function render() {
   const app = document.getElementById('app');
   const y = window.scrollY;
-  app.innerHTML = appBar() + (S.testMode ? '<div class="testbar"><span><b>TEST MODE</b> · your real data is safe and hidden. Cloud backup is paused. Entries submitted on CUIMS are still real.</span><button class="btn sm" data-a="testToggle">Exit</button></div>' : '') + (ui.view === 'stock' ? vStock() : ui.view === 'cons' ? vCons() : ui.view === 'arts' ? vArts() : ui.view === 'check' ? vCheck() : ui.view === 'done' ? vDone() : ui.view === 'expiry' ? vExpiry() : ui.view === 'count' ? vCount() : ui.view === 'countLog' ? vCountLog() : ui.view === 'taskLog' ? vTaskLog() : ui.view === 'req' ? vReq() : ({ home: vHome, pend: vPend, reg: vReg, find: vFind, set: vSet })[ui.tab]());
+  app.innerHTML = appBar() + (S.testMode ? '<div class="testbar"><span><b>TEST MODE</b> · your real data is safe and hidden. Cloud backup is paused. Entries submitted on CUIMS are still real.</span><button class="btn sm" data-a="testToggle">Exit</button></div>' : '') + (ui.view === 'manage' ? vManage() : ui.view === 'stock' ? vStock() : ui.view === 'cons' ? vCons() : ui.view === 'arts' ? vArts() : ui.view === 'check' ? vCheck() : ui.view === 'done' ? vDone() : ui.view === 'expiry' ? vExpiry() : ui.view === 'count' ? vCount() : ui.view === 'countLog' ? vCountLog() : ui.view === 'taskLog' ? vTaskLog() : ui.view === 'req' ? vReq() : ({ home: vHome, pend: vPend, reg: vReg, find: vFind, set: vSet })[ui.tab]());
   document.querySelector('#tabs .in').innerHTML = TABS.map(([k, l]) => '<button data-a="tab" data-v="' + k + '" class="' + (ui.tab === k && !ui.view ? 'on' : '') + '" aria-label="' + l + '"><span class="nic">' + ICON[k] + '</span><span class="nl">' + l + '</span></button>').join('');
   renderDrawer();
   paintSync();
   enhanceDates(document.getElementById('app'));
+  enhanceRcv(document.getElementById('app'));
+  if (ui.lastReq) flashReq(ui.lastReq);
   window.scrollTo(0, y);
 }
 function renderSheet() {
   const el = document.getElementById('sheet');
   if (!ui.sheet) { el.innerHTML = ''; return; }
   const k = ui.sheet.kind;
-  const body = k === 'manReq' ? shManReq() : k === 'mslips' ? shMslips() : k === 'reqStatus' ? shReqStatus() : k === 'corr' ? shCorr() : k === 'batch' ? shBatch() : k === 'newReq' ? shNewReq() : k === 'export' ? shExport() : k === 'crop' ? shCrop() : k === 'backups' ? shBackups() : k === 'start' ? shStart() : k === 'upload' ? shUpload() : k === 'entry' ? shEntry() : k === 'return' ? shReturn() : k === 'editReq' ? shEditReq() : k === 'bulk' ? shBulk() : k === 'mark' ? shMark() : '';
+  const body = k === 'paperDay' ? shPaperDay() : k === 'manReq' ? shManReq() : k === 'mslips' ? shMslips() : k === 'reqStatus' ? shReqStatus() : k === 'corr' ? shCorr() : k === 'batch' ? shBatch() : k === 'newReq' ? shNewReq() : k === 'export' ? shExport() : k === 'crop' ? shCrop() : k === 'backups' ? shBackups() : k === 'start' ? shStart() : k === 'upload' ? shUpload() : k === 'entry' ? shEntry() : k === 'return' ? shReturn() : k === 'editReq' ? shEditReq() : k === 'bulk' ? shBulk() : k === 'mark' ? shMark() : '';
   const sc = el.querySelector('.sheet') ? el.querySelector('.sheet').scrollTop : 0;
   el.innerHTML = '<div class="sheetbg" data-a="bgClose"><div class="sheet" role="dialog" aria-modal="true">' + body + '</div></div>';
   el.querySelector('.sheet').scrollTop = sc;
   enhanceDates(document.getElementById('sheet'));
+  enhanceRcv(document.getElementById('sheet'));
 }
 const SORT_OPTS = [['reqdate', 'Day, then Request No'], ['req_asc', 'Request No, low to high'], ['req_desc', 'Request No, high to low'], ['name_asc', 'Store name A to Z'], ['name_desc', 'Store name Z to A'],
   ['date_asc', 'Date, oldest first'], ['date_desc', 'Date, newest first'], ['custom', 'My store order'], ['stock', 'Stock priority (most ready first)'], ['size', 'Most articles first']];
@@ -1977,6 +1996,64 @@ function vCons() {
   h += '</div><button class="btn" data-a="consExport">Download full report</button>';
   return h + '</main>';
 }
+function mgInit() { ui.mg = ui.mg || { type: 'req', q: '', rf: '', rt: '', if: '', it: '', stores: {}, st: {}, sel: {}, showF: false }; return ui.mg; }
+function mgReqs() {
+  const M = mgInit(), q = String(M.q || '').toUpperCase(), PL = plan();
+  let L = requests().map(r => { const w = r.lines.filter(l => l.status === 'waiting'), iss = r.lines.filter(l => l.status === 'issued');
+    const st = r.date > today() && w.length ? 'scheduled' : !w.length ? 'completed' : iss.length ? 'partly' : 'pending';
+    return { kind: 'req', id: r.req, req: r.req, store: r.store, date: r.date, st, n: r.lines.filter(l => l.status !== 'dropped').length, w: w.length, slips: reqSlips(r.req) }; });
+  Object.values(S.manReqs || {}).forEach(m => { if (!L.some(x => x.req === m.req)) L.push({ kind: 'req', id: m.req, req: m.req, store: m.store, date: m.date, st: 'manual', man: true, mst: m.status, n: m.total || 0, w: 0, slips: reqSlips(m.req) }); });
+  return L.filter(x => (!M.rf || x.date >= M.rf) && (!M.rt || x.date <= M.rt) && (!Object.keys(M.stores).length || M.stores[x.store]) && (!Object.keys(M.st).length || M.st[x.st] || (x.man && M.st.manual))
+    && (!M.if && !M.it || x.slips.some(e => (!M.if || entryDate(e) >= M.if) && (!M.it || entryDate(e) <= M.it))) && (!q || (x.req + ' ' + x.store).toUpperCase().includes(q)));
+}
+function mgSlips() {
+  const M = mgInit(), q = String(M.q || '').toUpperCase();
+  return S.entries.map(e => { const reqs = [...new Set(e.items.map(i => i.req).filter(Boolean).concat(e.reqs ? String(e.reqs).split(/\s*,\s*/) : []))]; const rd = reqs.map(reqDateOfRaw).filter(Boolean).sort()[0] || ((S.manReqs || {})[reqs[0]] || {}).date || '';
+    return { kind: 'slip', id: String(e.id), e, req: reqs.join(', '), store: e.store, date: entryDate(e), rdate: rd, st: e.kind === 'manual' ? 'manual' : 'app' }; })
+    .filter(x => (!M.if || x.date >= M.if) && (!M.it || x.date <= M.it) && (!M.rf || x.rdate >= M.rf) && (!M.rt || (x.rdate && x.rdate <= M.rt)) && (!Object.keys(M.stores).length || M.stores[x.store]) && (!Object.keys(M.st).length || M.st[x.st])
+      && (!q || (x.req + ' ' + x.store + ' ' + x.e.slip + ' ' + (x.e.serial || '')).toUpperCase().includes(q)));
+}
+function mgRets() {
+  const M = mgInit(), q = String(M.q || '').toUpperCase();
+  return S.returns.map(r => ({ kind: 'ret', id: String(r.id), r, store: r.store, date: r.date })).filter(x => (!M.if || x.date >= M.if) && (!M.it || x.date <= M.it) && (!Object.keys(M.stores).length || M.stores[x.store]) && (!q || (x.r.no + ' ' + x.store + ' ' + (x.r.serial || '')).toUpperCase().includes(q)));
+}
+function mgList() { const M = mgInit(); const L = M.type === 'req' ? mgReqs() : M.type === 'slip' ? mgSlips() : mgRets(); return L.sort((a, b) => String(b.date).localeCompare(String(a.date)) || String(a.req || a.id).localeCompare(String(b.req || b.id), undefined, { numeric: true })); }
+const MG_ST = { req: [['pending', 'Pending'], ['partly', 'Partly done'], ['completed', 'Completed'], ['scheduled', 'Scheduled'], ['manual', 'Manual record']], slip: [['app', 'App slips'], ['manual', 'Manual slips']], ret: [] };
+function mgResults() {
+  const M = mgInit(), L = mgList(), selN = L.filter(x => M.sel[x.id]).length, all = L.length && selN === L.length;
+  let h = '<div class="row" style="align-items:center"><label class="chk" style="min-height:40px"><input type="checkbox" data-a="mgAll"' + (all ? ' checked' : '') + '> Select all ' + L.length + '</label><span class="note">' + selN + ' selected</span></div>';
+  if (!L.length) return h + '<div class="card pad note">Nothing matches these filters.</div>';
+  h += '<div class="card" style="overflow:hidden">' + L.slice(0, 400).map(x => {
+    let main, tag;
+    if (x.kind === 'req') { tag = x.man ? (x.mst === 'done' ? pill('Manual · done', 'c-ok') : pill('Manual · pending', 'c-gd')) : x.st === 'completed' ? pill('Completed', 'c-ok') : x.st === 'partly' ? pill(x.w + ' left', 'c-gd') : x.st === 'scheduled' ? pill('Scheduled', 'c-in') : pill('Pending', 'c-no');
+      main = '<span class="reqno sm" data-req="' + esc(x.req) + '">' + esc(x.req) + '</span> <b>' + esc(x.store) + '</b><div class="meta"><span>' + fmtShort(x.date) + '</span><i></i><span>' + x.n + ' articles</span><i></i><span>' + x.slips.length + ' slip' + (x.slips.length === 1 ? '' : 's') + '</span></div>'; }
+    else if (x.kind === 'slip') { tag = x.st === 'manual' ? '<span class="stag man" style="position:static">Manual</span>' : '<span class="stag appt" style="position:static">App</span>';
+      main = '<b class="mono">' + esc(x.e.slip) + '</b> ' + serFmt(x.e.serial) + ' <b>' + esc(x.store) + '</b><div class="meta"><span>' + fmtShort(x.date) + ' ' + esc(entryTime(x.e)) + '</span><i></i><span>' + entryCount(x.e) + ' art.</span>' + (x.req ? '<i></i><span class="reqno sm" data-req="' + esc(x.req.split(', ')[0]) + '">' + esc(x.req) + '</span>' : '') + '</div>'; }
+    else { tag = '<span class="stag ret" style="position:static">Return</span>'; main = '<b class="mono">' + esc(x.r.no) + '</b> <b>' + esc(x.store) + '</b><div class="meta"><span>' + fmtShort(x.date) + '</span><i></i><span>' + x.r.items.length + ' items</span></div>'; }
+    return '<label class="mgrow' + (M.sel[x.id] ? ' on' : '') + '"><input type="checkbox" data-a="mgSel" data-v="' + esc(x.id) + '"' + (M.sel[x.id] ? ' checked' : '') + '><span class="mgm">' + main + '</span>' + tag + '</label>';
+  }).join('') + '</div>' + (L.length > 400 ? '<div class="note">Showing 400. Narrow the filters to see the rest.</div>' : '');
+  return h;
+}
+function vManage() {
+  const M = mgInit(), stores = allStores();
+  const nF = (M.rf || M.rt ? 1 : 0) + (M.if || M.it ? 1 : 0) + Object.keys(M.stores).length + Object.keys(M.st).length;
+  let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Manage data</h1><div class="sub">Filter, select many, then delete, complete or export in one go. Undo works for 5 seconds.</div></div></header><main>';
+  h += '<div class="seg">' + [['req', 'Requests'], ['slip', 'Slips'], ['ret', 'Returns']].map(([k, l]) => '<button data-a="mgType" data-v="' + k + '" class="' + (M.type === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>';
+  h += '<div class="sbox"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input type="search" data-mg="q" value="' + esc(M.q) + '" placeholder="Request No, store, slip, serial" autocomplete="off"></div>';
+  h += '<div class="card" style="overflow:hidden"><button class="mgfh" data-a="mgF"><b>Filters</b>' + (nF ? pill(nF + ' on', 'c-in') : '<span class="note">none</span>') + ico(M.showF ? 'up' : 'down', 18) + '</button>';
+  if (M.showF) {
+    h += '<div class="pad col" style="gap:12px;padding-top:0">';
+    if (M.type !== 'ret') h += '<div><div class="note" style="font-weight:600;margin-bottom:6px">Request date</div><div class="grid2"><label class="f">From<input type="date" data-mg="rf" value="' + esc(M.rf) + '"></label><label class="f">To<input type="date" data-mg="rt" value="' + esc(M.rt) + '"></label></div></div>';
+    h += '<div><div class="note" style="font-weight:600;margin-bottom:6px">Issue date</div><div class="grid2"><label class="f">From<input type="date" data-mg="if" value="' + esc(M.if) + '"></label><label class="f">To<input type="date" data-mg="it" value="' + esc(M.it) + '"></label></div></div>';
+    if (MG_ST[M.type].length) h += '<div><div class="note" style="font-weight:600;margin-bottom:6px">Status (pick any)</div><div class="fchips">' + MG_ST[M.type].map(([k, l]) => '<button data-a="mgSt" data-v="' + k + '" class="' + (M.st[k] ? 'on' : '') + '">' + l + '</button>').join('') + '</div></div>';
+    h += '<div><div class="note" style="font-weight:600;margin-bottom:6px">Stores (pick any)</div><div class="fchips">' + stores.map(st => '<button data-a="mgStore" data-v="' + esc(st) + '" class="' + (M.stores[st] ? 'on' : '') + '">' + esc(st) + '</button>').join('') + '</div></div>';
+    h += '<button class="btn sm ghost" data-a="mgClearF">Clear all filters</button></div>';
+  }
+  h += '</div><div id="mgres">' + mgResults() + '</div></main>';
+  const selN = mgList().filter(x => M.sel[x.id]).length;
+  if (selN) h += '<div class="selbar"><b>' + selN + ' selected</b>' + (M.type === 'req' ? '<button class="btn sm" data-a="mgDone">Complete</button><button class="btn sm" data-a="mgPend">Clear pending</button>' : M.type === 'slip' ? '<button class="btn sm" data-a="mgDelSlipPend">Undo issue</button>' : '') + '<button class="btn sm" data-a="mgExport">Export</button><button class="btn sm danger" data-a="mgDel">Delete</button><button class="xbtn" data-a="mgClear" aria-label="Clear selection">' + ico('x', 16) + '</button></div>';
+  return h;
+}
 function vCheck() {
   const I = dataIssues();
   let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Data check</h1><div class="sub">Finds clashes and errors in your data, with a button to fix each one.</div></div></header><main>';
@@ -2001,11 +2078,11 @@ function renumberReq(from, to) {
   if (ui.lastReq === from) ui.lastReq = to;
   return true;
 }
-const UNDO_KEYS = ['lines', 'entries', 'returns', 'hold', 'corrections', 'audit'];
+const UNDO_KEYS = ['lines', 'entries', 'returns', 'hold', 'corrections', 'audit', 'manReqs', 'paper'];
 const UNDOABLE = { artQty: 'Quantity changed', artHold: 'Hold changed', artDel: 'Article removed', artsBHold: 'Articles put on hold', artsBRel: 'Articles released', artsBDel: 'Articles removed', dropReq: 'Request removed', dropStore: 'Store pending removed',
   renumReq: 'Request renumbered', dcRenum: 'Request renumbered', impRenum: 'Request renumbered', impDrop: "App's request removed", corrSave: 'Correction saved', markSave: 'Slip added', dcMerge: 'Items merged', dcKeepFirst: 'Duplicate removed', dcDate: 'Date changed', dcBad: 'Incomplete removed',
-  bulkSave: 'Requests edited', delEntry: 'Entry deleted', delReturn: 'Return deleted', rsClose: 'Article closed', rsOpen: 'Article made pending', rsAll: 'Request completed', rsAdd: 'Article added', saveReq: 'Request edited', saveEntry: 'Entry saved', uploadOk: 'Import done', btSave: 'Batch saved', nrSave: 'Request added', hold: 'Hold changed' };
-const UNDO_STOCK = new Set(['markSave', 'delEntry', 'saveEntry', 'uploadOk']);
+  bulkSave: 'Requests edited', mgDone: 'Requests completed', mgPend: 'Pending cleared', mgDel: 'Deleted', mgDelSlipPend: 'Slips deleted, articles pending again', delEntry: 'Entry deleted', delReturn: 'Return deleted', rsClose: 'Article closed', rsOpen: 'Article made pending', rsAll: 'Request completed', rsAdd: 'Article added', saveReq: 'Request edited', saveEntry: 'Entry saved', uploadOk: 'Import done', btSave: 'Batch saved', nrSave: 'Request added', hold: 'Hold changed' };
+const UNDO_STOCK = new Set(['markSave', 'delEntry', 'saveEntry', 'uploadOk', 'mgDelSlipPend']);
 let undoTimer = null;
 function undoArm(a) { const snap = {}; UNDO_KEYS.concat(UNDO_STOCK.has(a) ? ['stock', 'stockAt', 'stockSrc'] : []).forEach(k => snap[k] = JSON.stringify(S[k] == null ? null : S[k])); ui.pendUndo = { a, label: UNDOABLE[a], snap, at: Date.now() }; }
 function undoFire() { const u = ui.pendUndo; ui.pendUndo = null; if (!u || Date.now() - u.at > 120000) return; ui.undo = u; showUndo(); }
@@ -2022,6 +2099,15 @@ window.jvSaved = (name, mime) => {
     '<div class="svname">' + esc(name) + '</div><div class="grid3"><button class="btn" data-sv="share">Share</button><button class="btn" data-sv="close">Close</button><button class="btn main" data-sv="open">Open</button></div></div>';
   el.querySelectorAll('[data-sv]').forEach(b => b.onclick = e => { e.stopPropagation(); const k = b.dataset.sv; el.innerHTML = ''; if (k === 'open' && N && N.openLastFile) N.openLastFile(); if (k === 'share' && N && N.shareLastFile) N.shareLastFile(); });
 };
+function flashReq(req) {
+  document.querySelectorAll('.sel,.selrow').forEach(x => x.classList.remove('sel', 'selrow'));
+  document.querySelectorAll('[data-req="' + CSS.escape(req) + '"]').forEach(x => {
+    const c = x.closest('.art,.leftrow,.line,.rcard,.card'); if (!c) return;
+    const cls = c.classList.contains('rcard') || (c.classList.contains('card') && !c.classList.contains('line')) ? 'sel' : 'selrow';
+    if (cls === 'sel') c.classList.add('rcard');
+    void c.offsetWidth; c.classList.add(cls);
+  });
+}
 function uiConfirm(msg, okLabel, danger) {
   return new Promise(res => {
     let el = document.getElementById('dlg'); if (!el) { el = document.createElement('div'); el.id = 'dlg'; document.body.appendChild(el); }
@@ -2049,6 +2135,27 @@ function jvStockFile2(b64, name) {
     
   } catch (e) { toast('Could not read the downloaded stock file: ' + e.message); }
 }
+function rcvBook() {
+  const m = {}; const put = (c, n) => { c = String(c || '').replace(/\D/g, ''); n = String(n || '').trim(); if (c.length === 6 && n && !/^GA\d+$/i.test(n)) m[c] = n; };
+  Object.values(S.stores || {}).forEach(x => put(x.rcv, x.rname));
+  (S.entries || []).forEach(e => put(e.rcv, e.rname)); (S.returns || []).forEach(r => put(r.by, r.byName));
+  Object.values(S.manReqs || {}).forEach(x => put(x.rcv, x.rname));
+  Object.entries(S.rnames || {}).forEach(([c, n]) => put(c, n));
+  return m;
+}
+function rcvName(code) { return rcvBook()[String(code || '').replace(/\D/g, '')] || ''; }
+const RCV_SEL = 'input[data-in="rcv"],input[data-nr="rcv"],input[data-mr="rcv"],input[data-f="rcv"],input[data-store-rcv],input[data-bg$="|rcv"],input[data-br$="|rcv"],input[data-ef="rcv"],input[data-rf="by"]';
+function rcvHint(inp) {
+  let h = inp.parentNode.querySelector('.rcvname'); if (!h) { h = document.createElement('span'); h.className = 'rcvname'; inp.insertAdjacentElement('afterend', h); }
+  const v = String(inp.value || '').replace(/\D/g, '');
+  if (!v) { h.textContent = ''; h.className = 'rcvname'; return; }
+  if (v.length < 6) { h.textContent = 'Type all 6 digits'; h.className = 'rcvname wait'; return; }
+  const n = rcvName(v);
+  h.className = 'rcvname ' + (n ? 'ok' : 'new'); h.textContent = n ? 'GA' + v + ' · ' + n : 'GA' + v + ' · name not saved yet (CUIMS will show it)';
+  const mr = document.querySelector('input[data-mr="rname"]'); if (n && mr && !mr.value && ui.form) { mr.value = n; ui.form.rname = n; }
+}
+function enhanceRcv(root) { if (root) root.querySelectorAll(RCV_SEL).forEach(rcvHint); }
+document.addEventListener('input', e => { if (e.target.matches && e.target.matches(RCV_SEL)) rcvHint(e.target); }, true);
 function enhanceDates(root) {
   (root || document).querySelectorAll('input[type="date"]').forEach(inp => {
     const b = document.createElement('button'); b.type = 'button'; b.className = 'datebtn'; b.dataset.dp = '1';
@@ -2134,7 +2241,7 @@ function shEditReq() {
 }
 
 /* ---------------- lock ---------------- */
-const GUARDED = new Set(['advIssue', 'paperAdd', 'mrSave', 'mrRemove', 'manReqToggle', 'msSave', 'artQty', 'artHold', 'artDel', 'artsBHold', 'artsBRel', 'artsBDel', 'testToggle', 'testClear', 'dcRenum', 'dcMerge', 'dcKeepFirst', 'dcDate', 'dcBad', 'renumReq', 'impRenum', 'impDrop', 'credSave', 'credDel', 'corrOpen', 'corrSave', 'bulkEdit', 'bulkSave', 'dropReq', 'dropStore', 'editReq', 'saveReq', 'markDone', 'markSave', 'newManual', 'saveEntry', 'delEntry', 'newReturn', 'saveReturn', 'delReturn',
+const GUARDED = new Set(['mgDone', 'mgPend', 'mgDel', 'mgDelSlipPend', 'paperAddFrom', 'advIssue', 'paperAdd', 'mrSave', 'mrRemove', 'manReqToggle', 'msSave', 'artQty', 'artHold', 'artDel', 'artsBHold', 'artsBRel', 'artsBDel', 'testToggle', 'testClear', 'dcRenum', 'dcMerge', 'dcKeepFirst', 'dcDate', 'dcBad', 'renumReq', 'impRenum', 'impDrop', 'credSave', 'credDel', 'corrOpen', 'corrSave', 'bulkEdit', 'bulkSave', 'dropReq', 'dropStore', 'editReq', 'saveReq', 'markDone', 'markSave', 'newManual', 'saveEntry', 'delEntry', 'newReturn', 'saveReturn', 'delReturn',
   'rmStore', 'addStore', 'wipe', 'restore', 'bkRestore', 'bkDel', 'bkKeep', 'bkSave', 'bkNoteSave', 'photo', 'photoDel', 'mode', 'lockToggle', 'syncAuto', 'mgrToggle', 'moveStore', 'saveUrls', 'resetZoom', 'hold', 'cropSave']);
 let pendingAuth = null;
 function askUnlock(after) {
@@ -2161,7 +2268,7 @@ document.addEventListener('keydown', ev => {
 });
 document.addEventListener('click', ev => {
   const q = ev.target.closest && ev.target.closest('[data-req]');
-  if (q && q.dataset.req && q.dataset.req !== '–') { ui.lastReq = q.dataset.req; document.querySelectorAll('.rcard.sel,.selrow').forEach(x => x.classList.remove('sel', 'selrow')); document.querySelectorAll('[data-req="' + CSS.escape(ui.lastReq) + '"]').forEach(x => { const c = x.closest('.rcard,.card,.line'); if (c) c.classList.add(c.classList.contains('line') ? 'selrow' : 'sel'); }); }
+  if (q && q.dataset.req && q.dataset.req !== '–') { ui.lastReq = q.dataset.req; flashReq(ui.lastReq); }
 }, true);
 document.addEventListener('click', async ev => {
   const t = ev.target.closest('[data-a]'); if (!t) return;
@@ -2171,7 +2278,7 @@ document.addEventListener('click', async ev => {
   if (a === 'lockTap') { if (ui.locked) askUnlock(); else { ui.locked = true; render(); renderSheet(); } return; }
   if (ui.locked && GUARDED.has(a)) { ev.preventDefault(); if (t.type === 'checkbox') t.checked = !t.checked; const sel = '[data-a="' + a + '"]' + (v != null ? '[data-v="' + CSS.escape(v) + '"]' : ''); askUnlock(() => { const el = document.querySelector(sel); if (el) el.click(); }); return; }
   if (a === 'bgClose') { if (ev.target === t) { ui.sheet = null; renderSheet(); } return; }
-  if (t.type === 'checkbox' && !['hold', 'queueToggle', 'regItems', 'mgrToggle', 'syncAuto', 'lockToggle', 'markPick', 'stOn', 'rpTog', 'rpCol', 'autoSubToggle', 'queuePend', 'credAuto', 'artsSel', 'artsAll', 'artsGrp', 'autoStockTog'].includes(a)) return;
+  if (t.type === 'checkbox' && !['hold', 'queueToggle', 'regItems', 'mgrToggle', 'syncAuto', 'lockToggle', 'markPick', 'stOn', 'rpTog', 'rpCol', 'autoSubToggle', 'queuePend', 'credAuto', 'artsSel', 'artsAll', 'artsGrp', 'autoStockTog', 'mgSel', 'mgAll'].includes(a)) return;
   const _busy = BUSY[a];
   if (_busy && !(ui.locked && GUARDED.has(a))) { loader(true, _busy); await new Promise(r => setTimeout(r, 40)); }
   try {
@@ -2184,6 +2291,38 @@ document.addEventListener('click', async ev => {
     case 'openReq': { if (ui.view !== 'req') { const ids = []; document.querySelectorAll('[data-a="openReq"][data-v]').forEach(x => { if (!ids.includes(x.dataset.v)) ids.push(x.dataset.v); }); ui.reqList = ids.length > 1 ? ids : null; }
       ui.lastReq = v; ui.view = 'req'; ui.req = v; render(); window.scrollTo(0, 0); break; }
     case 'reqGo': goReq(+v); break;
+    case 'mgOpen': ui.drawer = false; mgInit(); ui.view = 'manage'; render(); window.scrollTo(0, 0); break;
+    case 'mgType': ui.mg.type = v; ui.mg.sel = {}; ui.mg.st = {}; render(); break;
+    case 'mgF': ui.mg.showF = !ui.mg.showF; render(); break;
+    case 'mgSt': if (ui.mg.st[v]) delete ui.mg.st[v]; else ui.mg.st[v] = 1; ui.mg.sel = {}; render(); break;
+    case 'mgStore': if (ui.mg.stores[v]) delete ui.mg.stores[v]; else ui.mg.stores[v] = 1; ui.mg.sel = {}; render(); break;
+    case 'mgClearF': Object.assign(ui.mg, { rf: '', rt: '', if: '', it: '', stores: {}, st: {}, sel: {} }); render(); break;
+    case 'mgSel': if (t.checked) ui.mg.sel[v] = 1; else delete ui.mg.sel[v]; render(); break;
+    case 'mgAll': { const L = mgList(); if (t.checked) L.forEach(x => ui.mg.sel[x.id] = 1); else ui.mg.sel = {}; render(); break; }
+    case 'mgClear': ui.mg.sel = {}; render(); break;
+    case 'mgExport': { const X = mgList().filter(x => ui.mg.sel[x.id]); const rows = X.map(x => x.kind === 'req' ? { 'Request No': x.req, Store: x.store, 'Request date': fmtLong(x.date), Status: x.man ? 'Manual · ' + (x.mst === 'done' ? 'completed' : 'pending') : x.st, Articles: x.n, Pending: x.w, Slips: x.slips.map(e => e.slip + (e.serial ? ' #' + e.serial : '')).join(', ') } : x.kind === 'slip' ? { Slip: x.e.slip, Serial: x.e.serial || '', Store: x.store, 'Issue date': fmtLong(x.date), Time: entryTime(x.e), 'Request No': x.req, Articles: entryCount(x.e), Type: x.st } : { 'Return No': x.r.no, Store: x.store, Date: fmtLong(x.date), Serial: x.r.serial || '', Items: x.r.items.length });
+      saveWb([['Selected', rows]], 'Selected-' + ui.mg.type + '-' + today() + '.xlsx'); break; }
+    case 'mgDone': case 'mgPend': { const X = mgList().filter(x => ui.mg.sel[x.id] && x.kind === 'req'); if (!X.length) break;
+      if (!(await uiConfirm((a === 'mgDone' ? 'Mark ' : 'Clear pending of ') + X.length + ' request' + (X.length > 1 ? 's' : '') + (a === 'mgDone' ? ' as completed? Their pending articles are closed (not issued).' : '? Their pending articles are removed; issued slips stay.'), a === 'mgDone' ? 'Mark completed' : 'Clear pending', true))) break;
+      X.forEach(x => { if (x.man) { if (a === 'mgDone') S.manReqs[x.req].status = 'done'; return; } S.lines.forEach(l => { if (l.req === x.req && l.status === 'waiting') { audit(a === 'mgDone' ? 'close' : 'remove', l); l.status = 'dropped'; } }); });
+      ui.mg.sel = {}; save(); render(); break; }
+    case 'mgDelSlipPend': { const X = mgList().filter(x => ui.mg.sel[x.id] && x.kind === 'slip'); if (!X.length) break;
+      if (!(await uiConfirm('Delete ' + X.length + ' slip' + (X.length > 1 ? 's' : '') + ' and make their articles pending again? Use this only if they were NOT really submitted on CUIMS.', 'Delete & make pending', true))) break;
+      X.forEach(x => { const ids = new Set(x.e.items.map(i => i.lineId)); S.lines.forEach(l => { if (ids.has(l.id) && l.status === 'issued') { l.issued = l.issued.filter(z => z.slip !== x.e.slip); if (!l.issued.length) { l.status = 'waiting'; if (S.stock[l.code]) S.stock[l.code].qty = Math.round((S.stock[l.code].qty + l.qty) * 1000) / 1000; } } }); });
+      const del = new Set(X.map(x => x.id)); S.entries = S.entries.filter(e => !del.has(String(e.id))); ui.mg.sel = {}; save(); render(); break; }
+    case 'mgDel': { const M = ui.mg, X = mgList().filter(x => M.sel[x.id]); if (!X.length) break;
+      const what = M.type === 'req' ? 'request' : M.type === 'slip' ? 'slip' : 'return';
+      const extra = M.type === 'req' ? ' Their articles, manual records and slips made only for them are deleted. Stock is not changed.' : M.type === 'slip' ? ' Pending and stock are not changed.' : '';
+      if (!(await uiConfirm('Delete ' + X.length + ' ' + what + (X.length > 1 ? 's' : '') + '?' + extra, 'Delete ' + X.length, true))) break;
+      if (M.type === 'req') { const R = new Set(X.map(x => x.req)); const lineIds = new Set(S.lines.filter(l => R.has(l.req)).map(l => l.id));
+        S.lines = S.lines.filter(l => !R.has(l.req)); X.forEach(x => { if (S.manReqs) delete S.manReqs[x.req]; if (S.paper) delete S.paper[x.req]; });
+        S.entries = S.entries.map(e => { const items = e.items.filter(i => !lineIds.has(i.lineId) && !R.has(i.req)); const reqs = e.reqs ? String(e.reqs).split(/\s*,\s*/).filter(q => !R.has(q)).join(', ') : e.reqs; return Object.assign({}, e, { items, reqs }); }).filter(e => e.items.length || (e.reqs && e.reqs.length)); }
+      else if (M.type === 'slip') { const del = new Set(X.map(x => x.id)); S.entries = S.entries.filter(e => !del.has(String(e.id))); }
+      else { const del = new Set(X.map(x => x.id)); S.returns = S.returns.filter(r => !del.has(String(r.id))); }
+      M.sel = {}; save(); render(); break; }
+    case 'paperAddFrom': { ui.paperBack = ui.sheet; ui.paperFor = v; const pi = document.getElementById('paperIn'); pi.value = ''; pi.click(); break; }
+    case 'paperOpenReq': ui.sheet = null; renderSheet(); ui.lastReq = v; ui.view = 'req'; ui.req = v; render(); window.scrollTo(0, 0); break;
+    case 'paperDay': ui.sheet = { kind: 'paperDay', day: v }; renderSheet(); break;
     case 'advIssue': { const r = requests().find(x => x.req === v); if (!r) break; const L = advLines(r);
       if (!L.length) { toast('Nothing of this request is in stock right now.'); break; }
       openStart(r.store, L.map(l => l.id), r.store + ' · ' + r.req + ' (advance)', true); break; }
@@ -2536,6 +2675,7 @@ document.addEventListener('input', ev => {
   if (el.dataset.cadd) { ui.form[el.dataset.cadd === 'code' ? 'addCode' : 'addQty'] = el.value; return; }
   if (el.dataset.cons) { ui.cons[el.dataset.cons] = el.value; render(); return; }
   if (el.dataset.stk) { ui.stk.q = el.value; clearTimeout(ui.kT); ui.kT = setTimeout(() => { const b = document.getElementById('stkres'); if (b) b.innerHTML = stockResults(); }, 120); return; }
+  if (el.dataset.mg) { const k = el.dataset.mg; ui.mg[k] = el.value; ui.mg.sel = {}; if (k === 'q') { clearTimeout(ui.mgT); ui.mgT = setTimeout(() => { const b = document.getElementById('mgres'); if (b) b.innerHTML = mgResults(); }, 120); } else render(); return; }
   if (el.dataset.artsday) { ui.arts.dayPick = el.value || today(); ui.arts.sel = {}; render(); return; }
   if (el.dataset.arts) { ui.arts.q = el.value; clearTimeout(ui.aT); ui.aT = setTimeout(() => { const b = document.getElementById('artsres'); if (b) b.innerHTML = artsResults(); }, 120); return; }
   if (el.dataset.asc) { autoStockCfg()[el.dataset.asc] = el.value.trim(); save(true); return; }
@@ -2580,7 +2720,7 @@ document.addEventListener('change', async ev => {
       let ok = false; if (N && N.paperSave) ok = N.paperSave(id, url.split(',')[1]);
       if (!ok) { S.paperImg = S.paperImg || {}; S.paperImg[id] = url; }
       PAPER_MEM[id] = url; S.paper = S.paper || {}; (S.paper[req] = S.paper[req] || []).push({ id, at: new Date().toISOString(), by: S.me.name || '' });
-      save(); render(); setTimeout(() => syncPhotos(true), 1200);
+      save(); render(); if (ui.paperBack) { ui.sheet = ui.paperBack; ui.paperBack = null; renderSheet(); } setTimeout(() => syncPhotos(true), 1200);
     } finally { loader(false); } }; img.onerror = () => { loader(false); toast('Could not read this image.'); }; img.src = fr.result; };
     fr.readAsDataURL(f); return;
   }

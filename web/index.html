@@ -547,6 +547,18 @@ input[type=checkbox].part{background:#B9A7FF;border-color:#B9A7FF}
 .daychips button{flex-shrink:0;height:42px;padding:0 16px;border-radius:99px;border:1.5px solid #D9D6E3;background:#fff;font:600 14px 'Outfit',sans-serif;color:#141414;cursor:pointer}
 .daychips button.on{background:#141414;border-color:#141414;color:#fff}
 .daysum{display:flex;flex-direction:column;gap:2px;padding:12px 16px;border-radius:20px;background:#ECE6FF;color:#2B2546}.daysum b{font-size:16px}.daysum span{font-size:13px}
+.rcvname{display:block;font-size:12.5px;font-weight:600;margin-top:4px;min-height:0}.rcvname.ok{color:#0B5E3D}.rcvname.new{color:#7A4B00}.rcvname.wait{color:var(--mute)}
+.papercard{display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;border-radius:26px;border:0;background:#fff;text-align:left;font:inherit;color:inherit;cursor:pointer;box-shadow:0 2px 10px rgba(20,20,20,.04)}
+.papercard .pcic{width:46px;height:46px;border-radius:50%;background:#FFE7F7;color:#9B1C7E;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.papercard .pct{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px}.papercard .pct b{font-size:15.5px}.papercard .pct span{font-size:12.5px;color:var(--mute)}
+.pcbar{display:block;height:6px;border-radius:99px;background:#EEECF3;overflow:hidden;margin-top:3px}.pcbar i{display:block;height:100%;background:#F27BD8;border-radius:99px}
+.selrow{animation:none}
+.mgfh{display:flex;align-items:center;gap:10px;width:100%;padding:14px 18px;border:0;background:none;font:inherit;color:inherit;cursor:pointer;text-align:left}.mgfh b{flex:1;font-size:16px}
+.fchips{display:flex;flex-wrap:wrap;gap:6px}.fchips button{height:36px;padding:0 13px;border-radius:99px;border:1.5px solid #D9D6E3;background:#fff;font:600 13px 'Outfit',sans-serif;color:#141414;cursor:pointer}.fchips button.on{background:#141414;border-color:#141414;color:#fff}
+.mgrow{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid #F0EEF5;cursor:pointer}.mgrow.on{background:#F3EFFF}
+.mgm{flex:1;min-width:0;font-size:14.5px;line-height:1.4}.mgm b{font-size:14.5px}
+#mgres{display:flex;flex-direction:column;gap:12px}
+.selbar{flex-wrap:wrap;row-gap:6px}
 </style>
 </head>
 <body>
@@ -558,6 +570,6 @@ input[type=checkbox].part{background:#B9A7FF;border-color:#B9A7FF}
 <input type="file" id="fileIn" accept=".xlsx,.xls,.csv" class="hidden">
 <input type="file" id="photoIn" accept="image/*" class="hidden">
 <input type="file" id="paperIn" accept="image/*" capture="environment" class="hidden">
-<script src="app.js?v=10.4.0"></script>
+<script src="app.js?v=30.3.0"></script>
 </body>
 </html>
