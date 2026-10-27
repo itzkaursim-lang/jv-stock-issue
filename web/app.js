@@ -487,7 +487,7 @@ function vReq() {
   const rcv = (r.lines.find(l => l.rcv) || {}).rcv || (S.stores[r.store] || {}).rcv || '';
   let h = reqNavBar() + '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:8px">' + esc(r.store) + '</h1><div class="sub">Request ' + esc(r.req) + ' · ' + fmtLong(r.date) + ' · Receiver ' + (rcv ? 'GA' + esc(rcv) : 'not set') + '</div></div></header><main>';
   h += meta([st.can.length + ' ready', (st.w.length - st.can.length) + ' waiting', st.iss.length + ' issued', (st.w.find(l => l.slip) || {}).slip ? 'next slip ' + esc(st.w.find(l => l.slip).slip) : '<em>no slip set</em>']);
-  if (isBaseKitchen(r.store) && r.date > today()) { const A = advLines(r); h += '<div class="advbox"><b>Base Kitchen · advance request for ' + fmtLong(r.date) + '</b><span>Only you can issue this early, by tapping below. It uses any stock in hand (' + A.length + ' of ' + r.lines.filter(l => l.status === 'waiting').length + ' articles available). It is never picked by queue or auto submit.</span><button class="btn adv full" data-a="advIssue" data-v="' + esc(r.req) + '"' + (A.length ? '' : ' disabled') + '>Issue on CUIMS now</button></div>'; }
+  if (isBaseKitchen(r.store) && r.date > today()) { const A = advLines(r); h += '<div class="advbox"><b>' + esc(r.store) + ' · advance request for ' + fmtLong(r.date) + '</b><span>Only you can issue this early, by tapping below. It uses any stock in hand (' + A.length + ' of ' + r.lines.filter(l => l.status === 'waiting').length + ' articles available). It is never picked by queue or auto submit.</span><button class="btn adv full" data-a="advIssue" data-v="' + esc(r.req) + '"' + (A.length ? '' : ' disabled') + '>Issue on CUIMS now</button></div>'; }
   h += paperCard(r);
   h += '<div class="card">';
   const ordr = { issue: 0, short: 1, hold: 2, missing: 3 };
@@ -566,7 +566,7 @@ function vPend() {
 }
 
 /* ---------------- Start fill sheet ---------------- */
-const isBaseKitchen = st => /BASE\s*-?\s*KITCHEN/i.test(String(st || ''));
+const isBaseKitchen = st => /BASE\s*-?\s*KITCHEN|\bEVENTS?\b/i.test(String(st || ''));
 function advLines(r) { if (!isBaseKitchen(r.store) || !(r.date > today())) return []; return r.lines.filter(l => l.status === 'waiting' && !S.hold[l.id] && S.stock[l.code] && S.stock[l.code].qty >= l.qty); }
 function openStart(store, lineIds, title, adv) {
   const ls = S.lines.filter(l => lineIds.includes(l.id));
@@ -581,7 +581,7 @@ function shStart() {
   const areaOk = !S.areas.length || S.areas.some(a => a.toUpperCase() === s.store.toUpperCase());
   const old = S.lastLoginAt && (Date.now() - new Date(S.lastLoginAt)) > 2 * 3600e3;
   let h = '<div class="row"><h2>' + esc(s.title) + '</h2><button class="btn sm ghost" data-a="closeSheet">Close</button></div>';
-  if (s.adv) h += '<div class="advbox"><b>Advance issue · Base Kitchen</b><span>Requested for ' + fmtLong((ls[0] || {}).date || today()) + '. Uses any stock in hand. Queue and Auto submit stay off: you tap SUBMIT yourself.</span><label class="f" style="margin-top:8px">Remarks (optional)<input type="text" data-adv="1" value="' + esc(s.advRemark || '') + '" placeholder="Leave blank for no remark"></label></div>';
+  if (s.adv) h += '<div class="advbox"><b>Advance issue · ' + esc(s.store) + '</b><span>Requested for ' + fmtLong((ls[0] || {}).date || today()) + '. Uses any stock in hand. Queue and Auto submit stay off: you tap SUBMIT yourself.</span><label class="f" style="margin-top:8px">Remarks (optional)<input type="text" data-adv="1" value="' + esc(s.advRemark || '') + '" placeholder="Leave blank for no remark"></label></div>';
   h += '<label class="f">Slip No for this entry<input type="text" data-in="slip" value="' + esc(s.slip) + '" class="mono' + (sp ? ' bad' : '') + '" autocomplete="off" autocapitalize="characters" placeholder="e.g. JV/915"></label>' + (sp ? '<div class="err">' + esc(sp) + '</div>' : '<div class="okt">Slip No is free to use.</div>');
   h += '<label class="f">Receiver (6 digits, this entry only)<input type="text" inputmode="numeric" maxlength="6" data-in="rcv" value="' + esc(s.rcv) + '" class="mono' + (rp ? ' bad' : '') + '"></label>' + (rp ? '<div class="err">' + rp + '</div>' : '<div class="note">CUIMS will pick GA' + esc(s.rcv) + ' … (GA) from the list.</div>');
   if (!areaOk) h += '<div class="err">"' + esc(s.store) + '" is not in the CUIMS Project Area list. Fix the store name in Settings or the request.</div>';
