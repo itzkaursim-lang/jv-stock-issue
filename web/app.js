@@ -1904,7 +1904,8 @@ function stockRows() {
   const K = ui.stk, q = String(K.q || '').trim().toUpperCase(), words = q.split(/\s+/).filter(Boolean), D = stockDemand();
   let L = Object.entries(S.stock).map(([c, v]) => ({ c, v, need: D[c] || 0 }));
   if (words.length) L = L.filter(x => words.every(w => x.c.includes(w) || String(x.v.name).toUpperCase().includes(w)));
-  if (K.f === 'in') L = L.filter(x => x.v.qty > 0); else if (K.f === 'zero') L = L.filter(x => !(x.v.qty > 0)); else if (K.f === 'short') L = L.filter(x => x.need > x.v.qty); else if (K.f === 'need') L = L.filter(x => x.need > 0);
+  if (K.f === 'edited') L = L.filter(x => (S.stockEdits || {})[x.c]);
+  else if (K.f === 'in') L = L.filter(x => x.v.qty > 0); else if (K.f === 'zero') L = L.filter(x => !(x.v.qty > 0)); else if (K.f === 'short') L = L.filter(x => x.need > x.v.qty); else if (K.f === 'need') L = L.filter(x => x.need > 0);
   L.sort((a, b) => (words.length ? (String(a.v.name).toUpperCase().startsWith(q) ? 0 : 1) - (String(b.v.name).toUpperCase().startsWith(q) ? 0 : 1) : 0) || (b.need - a.need) || String(a.v.name).localeCompare(String(b.v.name)));
   return L;
 }
@@ -1915,10 +1916,13 @@ function stockResults() {
   h += '<div class="card" style="overflow:hidden">' + L.slice(0, 120).map(x => {
     const free = Math.round((x.v.qty - x.need) * 1000) / 1000, open = K.open === x.c;
     let row = '<button class="stkrow" data-a="stkOpen" data-v="' + esc(x.c) + '"><span class="sn"><b>' + esc(x.v.name) + '</b><span class="mono">' + esc(x.c) + '</span></span><span class="sq"><b>' + num(x.v.qty) + '</b><small>' + esc(x.v.uom) + '</small></span></button>';
-    row += '<div class="scrow" style="padding:0 18px 12px">' + (x.need ? '<span class="sc gd">needed ' + num(x.need) + '</span><span class="sc ' + (free < 0 ? 'no' : 'ok') + '">' + (free < 0 ? 'short ' + num(-free) : 'free ' + num(free)) + '</span>' : (x.v.qty > 0 ? '<span class="sc ok">in stock</span>' : '<span class="sc no">zero</span>')) + '</div>';
+    const ed = (S.stockEdits || {})[x.c];
+    row += '<div class="scrow" style="padding:0 18px 12px">' + (ed ? '<span class="sc gd">edited ' + esc(ago(ed.at)) + '</span>' : '') + (x.need ? '<span class="sc gd">needed ' + num(x.need) + '</span><span class="sc ' + (free < 0 ? 'no' : 'ok') + '">' + (free < 0 ? 'short ' + num(-free) : 'free ' + num(free)) + '</span>' : (x.v.qty > 0 ? '<span class="sc ok">in stock</span>' : '<span class="sc no">zero</span>')) + '</div>';
     if (open) {
       const W = S.lines.filter(l => l.code === x.c && l.status === 'waiting').sort((a, b) => a.date.localeCompare(b.date));
       const I = []; S.entries.slice().reverse().some(e => { e.items.forEach(i => { if (i.code === x.c && I.length < 6) I.push({ e, i }); }); return I.length >= 6; });
+      row += '<div class="rqbtns" style="padding:0 18px 12px;grid-template-columns:1fr 1fr 1fr"><button class="btn sm main" data-a="stkEdit" data-v="' + esc(x.c) + '">Edit qty</button><button class="btn sm" data-a="stkRen" data-v="' + esc(x.c) + '">Name / UOM</button><button class="btn sm danger-t" data-a="stkDel" data-v="' + esc(x.c) + '">Delete</button></div>' +
+        (ed ? '<div class="note" style="padding:0 18px 10px">Changed by ' + esc(ed.by || 'you') + ' from ' + num(ed.from) + ' to ' + num(ed.to) + ' · ' + esc(fmtDT(ed.at)) + '. The next stock upload replaces it.</div>' : '');
       row += '<div class="leftbox"><div class="lefthead">Waiting for it · ' + W.length + '</div>' + (W.length ? W.map(l => '<div class="leftrow"><span><b><span class="reqno sm" data-req="' + esc(l.req) + '">' + esc(l.req) + '</span> ' + esc(l.store) + '</b><span>' + fmtShort(l.date) + (l.date > today() ? ' · scheduled' : '') + '</span></span><b class="qty">' + num(l.qty) + '</b></div>').join('') : '<div class="note">No open request needs it.</div>') +
         '<div class="lefthead" style="margin-top:10px">Recent issues</div>' + (I.length ? I.map(o => '<div class="leftrow"><span><b>' + esc(o.e.store) + '</b><span>' + esc(o.e.slip) + ' · #' + esc(o.e.serial || '–') + ' · ' + fmtShort(entryDate(o.e)) + '</span></span><b class="qty">' + num(o.i.qty) + '</b></div>').join('') : '<div class="note">Not issued yet.</div>') + '</div>';
     }
@@ -1929,10 +1933,12 @@ function stockResults() {
 function vStock() {
   ui.stk = ui.stk || { q: '', f: 'all', open: null };
   const K = ui.stk;
-  let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Live stock</h1><div class="sub">Search any item. See what open requests need and what is free.</div></div></header><main>';
+  let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Live stock</h1><div class="sub">Search any item. See what open requests need and what is free. Tap an item to edit it.</div></div></header><main>';
   h += stockCard();
   h += '<div class="sbox"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input type="search" data-stk="q" value="' + esc(K.q) + '" placeholder="Item name or code" autocomplete="off"></div>';
   h += '<div class="seg">' + [['all', 'All'], ['in', 'In stock'], ['zero', 'Zero'], ['need', 'Needed'], ['short', 'Short']].map(([k, l]) => '<button data-a="stkF" data-v="' + k + '" class="' + (K.f === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>';
+  const nEd = Object.keys(S.stockEdits || {}).length;
+  h += '<div class="grid2"><button class="btn" data-a="stkAdd">+ Add item</button><button class="btn" data-a="stkEdited"' + (nEd ? '' : ' disabled') + '>' + (K.f === 'edited' ? 'Show all' : 'Edited · ' + nEd) + '</button></div>';
   h += '<div id="stkres">' + stockResults() + '</div>';
   return h + '</main>';
 }
@@ -2081,8 +2087,8 @@ function renumberReq(from, to) {
 const UNDO_KEYS = ['lines', 'entries', 'returns', 'hold', 'corrections', 'audit', 'manReqs', 'paper'];
 const UNDOABLE = { artQty: 'Quantity changed', artHold: 'Hold changed', artDel: 'Article removed', artsBHold: 'Articles put on hold', artsBRel: 'Articles released', artsBDel: 'Articles removed', dropReq: 'Request removed', dropStore: 'Store pending removed',
   renumReq: 'Request renumbered', dcRenum: 'Request renumbered', impRenum: 'Request renumbered', impDrop: "App's request removed", corrSave: 'Correction saved', markSave: 'Slip added', dcMerge: 'Items merged', dcKeepFirst: 'Duplicate removed', dcDate: 'Date changed', dcBad: 'Incomplete removed',
-  bulkSave: 'Requests edited', mgDone: 'Requests completed', mgPend: 'Pending cleared', mgDel: 'Deleted', mgDelSlipPend: 'Slips deleted, articles pending again', delEntry: 'Entry deleted', delReturn: 'Return deleted', rsClose: 'Article closed', rsOpen: 'Article made pending', rsAll: 'Request completed', rsAdd: 'Article added', saveReq: 'Request edited', saveEntry: 'Entry saved', uploadOk: 'Import done', btSave: 'Batch saved', nrSave: 'Request added', hold: 'Hold changed' };
-const UNDO_STOCK = new Set(['markSave', 'delEntry', 'saveEntry', 'uploadOk', 'mgDelSlipPend']);
+  bulkSave: 'Requests edited', stkEdit: 'Stock changed', stkRen: 'Item renamed', stkDel: 'Item deleted', stkAdd: 'Item added', mgDone: 'Requests completed', mgPend: 'Pending cleared', mgDel: 'Deleted', mgDelSlipPend: 'Slips deleted, articles pending again', delEntry: 'Entry deleted', delReturn: 'Return deleted', rsClose: 'Article closed', rsOpen: 'Article made pending', rsAll: 'Request completed', rsAdd: 'Article added', saveReq: 'Request edited', saveEntry: 'Entry saved', uploadOk: 'Import done', btSave: 'Batch saved', nrSave: 'Request added', hold: 'Hold changed' };
+const UNDO_STOCK = new Set(['stkEdit', 'markSave', 'delEntry', 'saveEntry', 'uploadOk', 'mgDelSlipPend']);
 let undoTimer = null;
 function undoArm(a) { const snap = {}; UNDO_KEYS.concat(UNDO_STOCK.has(a) ? ['stock', 'stockAt', 'stockSrc'] : []).forEach(k => snap[k] = JSON.stringify(S[k] == null ? null : S[k])); ui.pendUndo = { a, label: UNDOABLE[a], snap, at: Date.now() }; }
 function undoFire() { const u = ui.pendUndo; ui.pendUndo = null; if (!u || Date.now() - u.at > 120000) return; ui.undo = u; showUndo(); }
@@ -2241,7 +2247,7 @@ function shEditReq() {
 }
 
 /* ---------------- lock ---------------- */
-const GUARDED = new Set(['mgDone', 'mgPend', 'mgDel', 'mgDelSlipPend', 'paperAddFrom', 'advIssue', 'paperAdd', 'mrSave', 'mrRemove', 'manReqToggle', 'msSave', 'artQty', 'artHold', 'artDel', 'artsBHold', 'artsBRel', 'artsBDel', 'testToggle', 'testClear', 'dcRenum', 'dcMerge', 'dcKeepFirst', 'dcDate', 'dcBad', 'renumReq', 'impRenum', 'impDrop', 'credSave', 'credDel', 'corrOpen', 'corrSave', 'bulkEdit', 'bulkSave', 'dropReq', 'dropStore', 'editReq', 'saveReq', 'markDone', 'markSave', 'newManual', 'saveEntry', 'delEntry', 'newReturn', 'saveReturn', 'delReturn',
+const GUARDED = new Set(['stkEdit', 'stkRen', 'stkDel', 'stkAdd', 'mgDone', 'mgPend', 'mgDel', 'mgDelSlipPend', 'paperAddFrom', 'advIssue', 'paperAdd', 'mrSave', 'mrRemove', 'manReqToggle', 'msSave', 'artQty', 'artHold', 'artDel', 'artsBHold', 'artsBRel', 'artsBDel', 'testToggle', 'testClear', 'dcRenum', 'dcMerge', 'dcKeepFirst', 'dcDate', 'dcBad', 'renumReq', 'impRenum', 'impDrop', 'credSave', 'credDel', 'corrOpen', 'corrSave', 'bulkEdit', 'bulkSave', 'dropReq', 'dropStore', 'editReq', 'saveReq', 'markDone', 'markSave', 'newManual', 'saveEntry', 'delEntry', 'newReturn', 'saveReturn', 'delReturn',
   'rmStore', 'addStore', 'wipe', 'restore', 'bkRestore', 'bkDel', 'bkKeep', 'bkSave', 'bkNoteSave', 'photo', 'photoDel', 'mode', 'lockToggle', 'syncAuto', 'mgrToggle', 'moveStore', 'saveUrls', 'resetZoom', 'hold', 'cropSave']);
 let pendingAuth = null;
 function askUnlock(after) {
@@ -2432,6 +2438,22 @@ document.addEventListener('click', async ev => {
     case 'consExport': openExport('cons'); break;
     case 'stockOpen': ui.drawer = false; ui.view = 'stock'; render(); window.scrollTo(0, 0); break;
     case 'stkF': ui.stk.f = v; ui.stk.open = null; render(); break;
+    case 'stkEdited': ui.stk.f = ui.stk.f === 'edited' ? 'all' : 'edited'; ui.stk.open = null; render(); break;
+    case 'stkEdit': { const it = S.stock[v]; if (!it) break; const nv = await uiPrompt('New quantity for ' + it.name + ' (' + v + '). Now ' + num(it.qty) + ' ' + it.uom + '.', String(it.qty), 'Save');
+      if (nv == null) break; const q = parseFloat(nv); if (isNaN(q) || q < 0) { toast('Enter 0 or more.'); break; }
+      if (!(await uiConfirm('Change ' + it.name + ' stock from ' + num(it.qty) + ' to ' + num(q) + ' ' + it.uom + '?', 'Change'))) break;
+      undoArm('stkEdit'); S.stockEdits = S.stockEdits || {}; const prev = S.stockEdits[v]; S.stockEdits[v] = { from: prev ? prev.from : it.qty, to: q, at: new Date().toISOString(), by: S.me.name || '' };
+      S.stockLog = (S.stockLog || []).concat([{ at: new Date().toISOString(), src: 'edit', code: v, from: it.qty, to: q, by: S.me.name || '' }]).slice(-300);
+      it.qty = q; save(); render(); break; }
+    case 'stkRen': { const it = S.stock[v]; if (!it) break; const nm = await uiPrompt('Item name for ' + v, it.name, 'Next'); if (nm == null) break; const um = await uiPrompt('Unit (UOM) for ' + v, it.uom, 'Save'); if (um == null) break;
+      undoArm('stkEdit'); it.name = nm.trim() || it.name; it.uom = um.trim().toUpperCase() || it.uom; save(); render(); break; }
+    case 'stkDel': { const it = S.stock[v]; if (!it) break; if (!(await uiConfirm('Delete ' + it.name + ' (' + v + ') from the stock list? Requests that need it will show "Not in stock".', 'Delete', true))) break;
+      undoArm('stkEdit'); delete S.stock[v]; if (S.stockEdits) delete S.stockEdits[v]; ui.stk.open = null; save(); render(); break; }
+    case 'stkAdd': { const c = await uiPrompt('Item code (e.g. GR-198)', '', 'Next'); if (!c) break; const code = c.trim().toUpperCase(); if (S.stock[code]) { toast(code + ' already exists. Use Edit qty.'); ui.stk.q = code; render(); break; }
+      const nm = await uiPrompt('Item name', '', 'Next'); if (nm == null) break; const um = await uiPrompt('Unit (KG, NOS, LTR…)', 'KG', 'Next'); if (um == null) break; const qq = await uiPrompt('Quantity in stock', '0', 'Add'); if (qq == null) break;
+      const q = parseFloat(qq); if (isNaN(q) || q < 0) { toast('Enter 0 or more.'); break; }
+      undoArm('stkEdit'); S.stock[code] = { name: nm.trim() || code, uom: um.trim().toUpperCase() || 'NOS', qty: q }; S.stockEdits = S.stockEdits || {}; S.stockEdits[code] = { from: 0, to: q, at: new Date().toISOString(), by: S.me.name || '', added: true };
+      save(); ui.stk.q = code; ui.stk.open = code; render(); break; }
     case 'stkOpen': ui.stk.open = ui.stk.open === v ? null : v; { const b = document.getElementById('stkres'); if (b) b.innerHTML = stockResults(); } break;
     case 'regSt': ui.reg.st = v; render(); break;
     case 'rqTog': ui.rqOpen = ui.rqOpen || {}; ui.rqOpen[v] = !ui.rqOpen[v]; render(); break;
@@ -2762,7 +2784,7 @@ document.addEventListener('change', async ev => {
 
 function doImport() {
   const u = ui.upload, r = u.result;
-  if (u.kind === 'stock') { S.stock = r.stock; S.stockAt = new Date().toISOString(); S.stockSrc = u.auto ? 'auto' : 'file'; S.stockLog = (S.stockLog || []).concat([{ at: S.stockAt, src: S.stockSrc, n: r.count, by: S.me.name || '' }]).slice(-60); save(); toast('Stock replaced: ' + r.count + ' items. Everything re-planned.'); }
+  if (u.kind === 'stock') { S.stock = r.stock; S.stockEdits = {}; S.stockAt = new Date().toISOString(); S.stockSrc = u.auto ? 'auto' : 'file'; S.stockLog = (S.stockLog || []).concat([{ at: S.stockAt, src: S.stockSrc, n: r.count, by: S.me.name || '' }]).slice(-60); save(); toast('Stock replaced: ' + r.count + ' items. Everything re-planned.'); }
   else {
     r.rows.forEach(x => {
       S.lines.push({ fromFile: true, id: nid(), req: x.req, store: x.store, date: x.date, code: x.code, qty: x.qty, rcv: x.rcv, slip: x.slip || '', src: x.src, earlier: x.earlier || '', status: 'waiting', issued: [] });
