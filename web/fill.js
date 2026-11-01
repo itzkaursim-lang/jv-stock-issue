@@ -111,10 +111,10 @@
   function hero(over, title, j, ringCol) {
     var k = j ? cnt(j) : null;
     var collapse = '<button type="button" data-jv="hide" aria-label="Hide panel" style="width:40px;height:40px;border-radius:50%;border:0;background:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 4px 12px rgba(20,20,20,.08);flex-shrink:0">' + ic('down', 20, C.ink) + '</button>';
-    var h = '<div style="padding:18px 18px 16px;background:radial-gradient(120% 140% at 0% 0%,#D9CEFF 0%,#EDE8FF 45%,#fff 100%)">' +
+    var h = '<div style="padding:18px 18px 16px;background:' + (j && j.kind === 'return' ? 'radial-gradient(120% 140% at 0% 0%,#BFD7FF 0%,#E3EEFF 45%,#fff 100%)' : 'radial-gradient(120% 140% at 0% 0%,#D9CEFF 0%,#EDE8FF 45%,#fff 100%)') + '">' +
       '<div style="display:flex;align-items:center;gap:12px"><img src="' + LOGO + '" alt="JV Stock Issue" style="width:46px;height:46px;border-radius:15px;box-shadow:0 8px 18px rgba(60,40,140,.28);flex-shrink:0">' +
       '<div style="flex:1;min-width:0"><div style="font:800 11.5px ' + F + ';letter-spacing:.09em;color:' + C.over + ';text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(over) + '</div><div style="font:800 19px ' + F + ';letter-spacing:-.01em;color:' + C.ink + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(title) + '</div></div>' + collapse + '</div>';
-    if (j) h += '<div style="display:flex;gap:8px;margin-top:14px;align-items:center">' + idTile('Request', reqOf(j), C.lavInk) + idTile('Slip', j.slip, C.ink) + ring(k.done, k.total, ringCol || C.ink) + '</div>';
+    if (j) h += '<div style="display:flex;gap:8px;margin-top:14px;align-items:center">' + (j.kind === 'return' ? idTile('Return from', j.store, C.lavInk) + idTile('Return No', j.slip, C.ink) : idTile('Request', reqOf(j), C.lavInk) + idTile('Slip', j.slip, C.ink)) + ring(k.done, k.total, ringCol || C.ink) + '</div>';
     return h + '</div>';
   }
   function idTile(l, v, col) { return '<div style="flex:1;min-width:0;background:#fff;border-radius:18px;padding:9px 12px;box-shadow:0 2px 8px rgba(60,40,140,.06)"><span style="display:block;font:700 10.5px ' + F + ';color:' + C.faint + ';letter-spacing:.06em;text-transform:uppercase">' + l + '</span><b style="display:block;font:800 19px ' + F + ';color:' + col + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(v) + '</b></div>'; }
@@ -138,7 +138,7 @@
     }).join('') + '</div>';
   }
   function chip(id, label, on) { return '<button type="button" data-jv="' + id + '" style="display:inline-flex;align-items:center;gap:7px;height:38px;border-radius:99px;padding:0 14px 0 11px;border:0;cursor:pointer;font:700 13px ' + F + ';background:' + (on ? C.ink : '#F2F1F6') + ';color:' + (on ? '#fff' : '#4A4758') + '"><i style="width:8px;height:8px;border-radius:50%;background:' + (on ? '#7CF0B5' : '#C9C5D6') + '"></i>' + label + '</button>'; }
-  function chips(j) { return '<div style="display:flex;gap:8px;flex-wrap:wrap">' + (j.adv ? '<span style="display:inline-flex;align-items:center;height:38px;border-radius:99px;padding:0 14px;font:700 13px ' + F + ';background:#FFE7C2;color:#7A4B00">Advance issue · manual SUBMIT only</span>' : chip('tQueue', 'Queue', !!j.queue) + chip('tAuto', 'Auto submit', !!j.autoSubmit)) + chip('tPortal', 'Big panel', portal) + chip('tFull', 'Full screen', immersive) + '</div>'; }
+  function chips(j) { return '<div style="display:flex;gap:8px;flex-wrap:wrap">' + (j.adv || j.kind === 'return' ? '<span style="display:inline-flex;align-items:center;height:38px;border-radius:99px;padding:0 14px;font:700 13px ' + F + ';background:' + (j.kind === 'return' ? '#E3EEFF;color:#173A7A' : '#FFE7C2;color:#7A4B00') + '">' + (j.kind === 'return' ? 'Return' : 'Advance issue') + ' · manual SUBMIT only</span>' : chip('tQueue', 'Queue', !!j.queue) + chip('tAuto', 'Auto submit', !!j.autoSubmit)) + chip('tPortal', 'Big panel', portal) + chip('tFull', 'Full screen', immersive) + '</div>'; }
   function credit() { var who = ME.builder || ME.name || 'JV'; return '<div style="display:flex;align-items:center;justify-content:space-between;font:600 11.5px ' + F + ';color:#9A97A8">' + '<span>JV Stock Issue · Built by ' + esc(who) + '</span>' + (ME.photo ? '<img src="' + ME.photo + '" alt="" style="width:28px;height:28px;border-radius:50%;object-fit:cover;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.2)">' : '') + '</div>'; }
   function row2(a, b) { return '<div style="display:flex;gap:10px;align-items:center">' + a + (b || '') + '</div>'; }
   function wrap(inner) { return '<div style="padding:16px 18px 18px;display:flex;flex-direction:column;gap:14px">' + inner + '</div>'; }
@@ -151,6 +151,9 @@
     var rows = items.filter(function (x) { return gridRow(x.code); }).length;
     var dates = {}; items.forEach(function (x) { if (x.reqDate) dates[x.reqDate] = 1; });
     var dl = Object.keys(dates).map(function (d) { var p = d.split('-'); return p.length === 3 ? (+p[2]) + ' ' + MON[+p[1] - 1] + ' ' + p[0] : d; }).join(', ');
+    if (j.kind === 'return') { var er = empBox(), dt0 = $('ContentPlaceHolder1_ddldoctype'), dc0 = declBox();
+      var isRet = !!dt0 && dt0.selectedIndex >= 0 && /return/i.test(dt0.options[dt0.selectedIndex].text);
+      return { store: isRet, paText: isRet ? 'Return' : 'not Return', slip: !!dc0 && dc0.checked, rcv: !!er && er.value.indexOf(j.rcv) >= 0, type: ($('ContentPlaceHolder1_ddldepartment') || {}).value === '1366', rows: rows, total: items.length, dates: j.retDateText || '' }; }
     return { store: paText.toUpperCase() === String(j.store).toUpperCase(), paText: paText, slip: !!sb && sb.value.trim() === j.slip, rcv: !!rc && rc.value.indexOf(j.rcv) >= 0, type: !!it && it.value === 'Offline', rows: rows, total: items.length, dates: dl };
   }
   var lastNote = '';
@@ -281,9 +284,9 @@
     if (j.phase === 'await' && !ui.serialBox) {
       var v = verify(j), allOk = v.store && v.slip && v.rcv && v.type && v.rows === v.total;
       var nChecks = [v.store, v.slip, v.rcv, v.type, v.rows === v.total].filter(Boolean).length;
-      h += hero((j.test ? 'Test mode · ' : '') + (j.adv ? 'Advance issue' : 'Issue entry'), j.store, j, allOk ? C.ok : C.noInk);
+      h += hero((j.test ? 'Test mode · ' : '') + (j.kind === 'return' ? 'Return entry' : j.adv ? 'Advance issue' : 'Issue entry'), j.store, j, allOk ? C.ok : C.noInk);
       var inner = statusCard(allOk ? 'ok' : 'no', allOk ? 'Ready to submit' : 'Check before SUBMIT', allOk ? 'All ' + nChecks + ' checks match the CUIMS form' : nChecks + ' of 5 checks match. See the red tiles.');
-      inner += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">' + cell('Receiver', 'GA' + esc(j.rcv), j.rname || '', v.rcv) + cell('Requested on', esc(v.dates || '–'), '') + cell('Issue type', 'Offline', 'Department', v.type) + cell('Project area', esc(v.paText || j.store), v.store ? 'matches store' : 'expected ' + j.store, v.store) + '</div>';
+      inner += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">' + (j.kind === 'return' ? cell('By employee', 'GA' + esc(j.rcv), j.rname || '', v.rcv) + cell('Returned on', esc(v.dates || '–'), 'in every remark') + cell('Department', 'HOSTEL MESS (GA)', 'Return from Department', v.type) + cell('Type · Declaration', esc(v.paText), v.slip ? 'declaration ticked' : 'tick the declaration', v.store && v.slip) : cell('Receiver', 'GA' + esc(j.rcv), j.rname || '', v.rcv) + cell('Requested on', esc(v.dates || '–'), '') + cell('Issue type', 'Offline', 'Department', v.type) + cell('Project area', esc(v.paText || j.store), v.store ? 'matches store' : 'expected ' + j.store, v.store)) + '</div>';
       inner += secHead('Articles', v.rows + ' of ' + v.total + ' added') + itemRows(j, portal ? items : items.slice(0, 4));
       if (!portal && items.length > 4) inner += '<div style="font:600 12.5px ' + F + ';color:' + C.faint + ';text-align:center">+ ' + (items.length - 4) + ' more · turn on Big panel to see all</div>';
       if (allOk && j.autoSubmit && !j.adv && !ui.autoStop) {
@@ -302,6 +305,7 @@
     // working states
     var over = j.paused ? 'Paused' : j.phase === 'dup' ? 'Checking' : j.phase === 'capture' ? 'Finding Serial' : j.phase === 'dupfound' ? 'Already on CUIMS' : 'Filling';
     if (j.queue) over += ' · queue on';
+    if (j.kind === 'return') over = 'Return · ' + over;
     if (j.adv) over = 'Advance · ' + over;
     if (j.test) over = 'Test mode · ' + over;
     h += hero(over, j.store, j, j.paused ? '#FFB648' : C.ink);
@@ -334,7 +338,7 @@
     var t = e.target.closest('[data-jv]'); if (!t) return;
     var a = t.getAttribute('data-jv'); var j = job();
     if (a === 'app') { B.showApp(); return; }
-    if (a === 'tQueue' || a === 'tAuto') { var k = a === 'tQueue' ? 'queue' : 'autoSubmit'; var jt = job(); if (jt && jt.adv) return; if (jt) { jt[k] = !jt[k]; save(jt); ev('setPref', { key: k, val: jt[k] }); if (k === 'autoSubmit') { ui.autoStop = false; ui.autoAt = 0; } } paint(); return; }
+    if (a === 'tQueue' || a === 'tAuto') { var k = a === 'tQueue' ? 'queue' : 'autoSubmit'; var jt = job(); if (jt && (jt.adv || jt.kind === 'return')) return; if (jt) { jt[k] = !jt[k]; save(jt); ev('setPref', { key: k, val: jt[k] }); if (k === 'autoSubmit') { ui.autoStop = false; ui.autoAt = 0; } } paint(); return; }
     if (a === 'asStop') { try { B.autoStop && B.autoStop(); } catch (er) {} AUTO = null; try { localStorage.removeItem('jvAS'); } catch (er) {} B.showApp(); return; }
     if (a === 'asRetry') { AS = { run: AUTO.run, step: 'start' }; asSave(); location.href = (B.targetUrl && B.targetUrl()) || location.href; return; }
     if (a === 'tPortal') { portal = !portal; try { localStorage.setItem('jvPortal', portal ? '1' : '0'); } catch (er) {} try { B.setCover && B.setCover(portal && !mini); } catch (er) {} paint(); return; }
@@ -423,7 +427,36 @@
 
   async function act(j, k, label, fn) { guard(j, k); await fn(); await idle(); }
 
+  function rowFor(re) {
+    var tds = [].slice.call(document.querySelectorAll('td,th,span,label,div')).filter(function (x) { return x.children.length <= 1 && re.test((x.textContent || '').trim()); });
+    for (var i = 0; i < tds.length; i++) { var td = tds[i].closest('td') || tds[i]; var n = td.nextElementSibling; while (n) { var f = n.querySelector('input:not([type=hidden]),select'); if (f) return f; n = n.nextElementSibling; } }
+    return null;
+  }
+  function empBox() { var r = $('txtIssueTo'); if (r && r.offsetParent !== null) return r; return rowFor(/^By\s*Employee/i) || r; }
+  function declBox() {
+    var cbs = [].slice.call(document.querySelectorAll('input[type=checkbox]')).filter(function (c) { var t = ((c.closest('td,tr,div') || {}).textContent || '') + ' ' + (c.id || ''); return /declar/i.test(t); });
+    return cbs[0] || null;
+  }
+  async function returnHead(j) {
+    if (!j.tabbed) { j.tabbed = true; save(j); if ($('DivInsert')) $('DivInsert').click(); await sleep(600); return false; }
+    var dt = live('ContentPlaceHolder1_ddldoctype'); if (!dt) pauseWith('Transaction Type box not ready');
+    var ro = Array.prototype.find.call(dt.options, function (o) { return /^return$/i.test(o.text.trim()) || /^return$/i.test(o.value); });
+    if (!ro) pauseWith('"Return" is not in the Transaction Type list');
+    if (dt.value !== ro.value) { await act(j, 'rtype', 'Transaction Type', function () { dt.value = ro.value; fire(dt, 'change'); }); log(job(), 'Transaction Type = Return'); return false; }
+    var dep = $('ContentPlaceHolder1_rblIssue_1') || [].slice.call(document.querySelectorAll('input[type=radio]')).find(function (r) { var l = document.querySelector('label[for="' + r.id + '"]'); return l && /department/i.test(l.textContent); });
+    if (!dep) pauseWith('Department option not found');
+    if (!dep.checked) { await act(j, 'rdept', 'Return From', function () { dep.click(); }); log(job(), 'Return From = Department'); return false; }
+    var dc = declBox();
+    if (!dc) { j.tries.decl = (j.tries.decl || 0) + 1; save(j); if (j.tries.decl > 15) pauseWith('Declaration tick box not found'); await sleep(600); return false; }
+    if (!dc.checked) { await act(j, 'decl', 'Declaration', function () { dc.click(); }); log(job(), 'Declaration ticked'); return false; }
+    var rc = empBox(); if (!rc) pauseWith('By Employee box not found');
+    if (rc.value.indexOf(j.rcv) < 0) { await pickReceiver(j, rc); return false; }
+    var dp = live('ContentPlaceHolder1_ddldepartment'); if (!dp) pauseWith('Department box is disabled');
+    if (dp.value !== '1366') { await act(j, 'dep', 'Department', function () { dp.value = '1366'; fire(dp, 'change'); }); log(job(), 'Department = HOSTEL MESS (GA)'); return false; }
+    return true;
+  }
   async function stepFill(j) {
+    if (j.kind === 'return') { if (!(await returnHead(j))) return; } else {
     var dt = live('ContentPlaceHolder1_ddldoctype'); if (!dt) pauseWith('Transaction Type box not ready');
     if (dt.value !== 'Issue') { await act(j, 'type', 'Transaction Type', function () { dt.value = 'Issue'; fire(dt, 'change'); }); log(job(), 'Transaction Type = Issue'); return; }
     var dep = $('ContentPlaceHolder1_rblIssue_1'); if (!dep) pauseWith('Department option not found');
@@ -445,6 +478,7 @@
     var op = pa && Array.prototype.find.call(pa.options, function (o) { return o.text.trim().toUpperCase() === String(j.store).trim().toUpperCase(); });
     if (!op) pauseWith('Project Area "' + j.store + '" is not in the CUIMS list');
     if (pa.value !== op.value) { await act(j, 'pa', 'Project Area', function () { pa.value = op.value; fire(pa, 'change'); }); log(job(), 'Project Area = ' + op.text.trim()); return; }
+    }
 
     var next = curItem(j);
     if (!next) return finishCheck(j);
@@ -571,6 +605,12 @@
   }
   async function stepCapture(j) {
     var ps = pageSerial(); if (ps && !j.alertSerial) { j.alertSerial = ps; save(j); }
+    if (j.kind === 'return') {
+      j.capAt = j.capAt || Date.now(); save(j);
+      if (j.alertSerial) { j.phase = 'done'; j.serial = j.alertSerial; save(j); log(j, 'Return saved. Serial ' + j.alertSerial); ev('submitted', { serial: j.alertSerial, rname: j.rname || '', items: j.items }); return 'stop'; }
+      if (Date.now() - j.capAt < 12000) { await sleep(700); return 'wait'; }
+      j.phase = 'await'; j.paused = false; save(j); ui.serialBox = true; log(j, 'Return submitted? Type the Serial No shown by CUIMS below.', true); ev('notfound'); hookSubmit(); return 'stop';
+    }
     if (!j.capSearched) { j.capSearched = true; j.capAt = Date.now(); save(j); log(j, 'Looking for ' + j.slip + ' in Show Transactions'); await searchSlip(j); return; }
     var hit = findSlip(j.slip);
     if (hit && hit.serial) {

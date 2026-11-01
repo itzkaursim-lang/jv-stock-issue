@@ -708,12 +708,13 @@ function vReg() {
   } else {
     const list = S.returns.filter(x => x.date === r.date).sort((a, b) => (a.time || '').localeCompare(b.time || ''));
     h += '<div class="grid2"><button class="btn main" data-a="pdfReturn"' + (list.length ? '' : ' disabled') + '>Make PDF</button><button class="btn" data-a="newReturn">+ New return</button></div>';
-    h += '<div class="note">Same for every return on CUIMS: Return, Department, HOSTEL MESS (GA), Maintenance No, Issue Mode Normal, Against Issue No 1111.</div>';
+    h += '<button class="btn full" data-a="retBatch">+ Batch add returns</button>';
+    h += '<div class="note">On CUIMS the app sets: Return · Department · declaration ticked · By employee · HOSTEL MESS (GA), and the remark "Returned from STORE on date" on every article.</div>';
     if (!list.length) h += '<div class="card pad note">No returns on ' + fmtLong(r.date) + '.</div>';
     list.forEach(x => {
-      h += '<button class="card pad tap col" style="gap:4px" data-a="editReturn" data-v="' + x.id + '"><div class="row"><b>' + esc(x.store) + '</b><span class="mono note">' + esc(x.no) + '</span></div>' +
-        '<div class="note mono">Against ' + esc(x.against) + ' · Serial ' + esc(x.serial || '–') + ' · ' + esc(x.time || '') + '</div>' +
-        '<div class="note">By GA' + esc(x.by) + (x.byName ? ' ' + esc(x.byName) : '') + ' · ' + x.items.length + (x.items.length === 1 ? ' item' : ' items') + ' · entered by ' + esc((x.enteredBy || {}).name || '–') + '</div></button>';
+      h += '<div class="card rcard retcard"><button class="main srch" data-a="editReturn" data-v="' + x.id + '"><div class="row"><span class="stag ret" style="position:static">Return · ' + esc(x.no) + '</span>' + (x.serial ? serFmt(x.serial) : pill('Not on CUIMS yet', 'c-gd')) + '</div>' +
+        '<b class="ttl">' + esc(x.store) + '</b>' + meta(['came ' + fmtShort(x.recvDate || x.date), 'GA' + esc(x.by) + (x.byName || rcvName(x.by) ? ' ' + esc(x.byName || rcvName(x.by)) : ''), x.items.length + (x.items.length === 1 ? ' item' : ' items')]) + '</button>' +
+        (x.serial ? '' : '<div class="cta"><button class="btn ret full" data-a="retCuims" data-v="' + x.id + '">Return on CUIMS</button></div>') + '</div>';
     });
   }
   return h + '</main>';
@@ -741,24 +742,44 @@ function shEntry() {
 function shReturn() {
   const f = ui.form;
   let h = '<div class="row"><h2>' + (f._new ? 'New return' : 'Return ' + esc(f.no)) + '</h2><button class="btn sm ghost" data-a="closeSheet">Close</button></div>';
-  h += '<div class="grid2"><label class="f">Return No (yours)<input type="text" data-f="no" value="' + esc(f.no) + '" class="mono"></label><label class="f">Against Issue No<input type="text" data-f="against" value="' + esc(f.against) + '" class="mono" inputmode="numeric"></label></div>';
+  if (f._new && f._autoNo) f.no = nextReturnNo(f.recvDate || today());
+  const dupNo = S.returns.some(x => String(x.no).toUpperCase() === String(f.no || '').trim().toUpperCase() && x.id !== f.id);
+  h += '<div class="grid2"><label class="f">Return No (yours)<input type="text" data-f="no" data-retno="1" value="' + esc(f.no) + '" class="mono" autocapitalize="characters"><span class="rcvname ' + (dupNo ? 'new' : 'ok') + '">' + (dupNo ? 'Already used. Next free: ' + esc(nextReturnNo(f.recvDate || today())) : RET_RE.test(f.no || '') ? 'Free to use' : 'Format R-DDMM-NN, e.g. ' + esc(nextReturnNo(f.recvDate || today()))) + '</span></label><label class="f">Against Issue No<input type="text" data-f="against" value="' + esc(f.against) + '" class="mono" inputmode="numeric"></label></div>';
   h += '<label class="f">Store (Project Area)<input type="text" data-f="store" list="areaList" value="' + esc(f.store) + '" autocapitalize="characters"></label>' + areaDatalist();
   h += '<div class="grid2"><label class="f">Returned by (6 digits)<input type="text" data-f="by" value="' + esc(f.by) + '" class="mono" inputmode="numeric" maxlength="6"></label><label class="f">Name<input type="text" data-f="byName" value="' + esc(f.byName || '') + '"></label></div>';
-  h += '<div class="grid2"><label class="f">Date<input type="date" data-f="date" value="' + esc(f.date) + '"></label><label class="f">Time<input type="time" data-f="time" value="' + esc(f.time) + '"></label></div>';
+  h += '<label class="f">Return came on (used in the remark)<input type="date" data-f="recvDate" value="' + esc(f.recvDate || f.date || today()) + '"></label>';
+  h += '<div class="advbox" style="background:#E3EEFF;border-color:#5B9BFF"><b style="color:#173A7A">Remark on every article</b><span style="color:#2A4E8F" class="mono">' + esc(retRemark({ store: f.store, recvDate: f.recvDate || f.date })) + '</span></div>';
+  h += '<div class="grid2"><label class="f">Entry date<input type="date" data-f="date" value="' + esc(f.date) + '"></label><label class="f">Time<input type="time" data-f="time" value="' + esc(f.time) + '"></label></div>';
   h += '<label class="f">Serial No (after you submit on CUIMS)<input type="text" data-f="serial" value="' + esc(f.serial || '') + '" class="mono" inputmode="numeric"></label>';
   h += '<label class="f">Overall remarks<input type="text" data-f="remarks" value="' + esc(f.remarks || '') + '"></label>';
   h += '<div class="grid2"><label class="f">Entered by (name)<input type="text" data-f="ebName" value="' + esc(f.ebName) + '"></label><label class="f">Emp code<input type="text" data-f="ebEmp" value="' + esc(f.ebEmp) + '"></label></div>';
   h += '<div class="sect">Items</div>' + itemRowsHtml(f.items) + '<button class="btn ghost" data-a="addItem">+ Add item</button>';
-  h += '<div class="grid2">' + (f._new ? '<span></span>' : '<button class="btn warn" data-a="delReturn">Delete</button>') + '<button class="btn main" data-a="saveReturn">Save</button></div>';
+  h += '<button class="btn ret full" data-a="saveReturnCuims">Save & return on CUIMS</button>';
+  h += '<div class="grid2">' + (f._new ? '<span></span>' : '<button class="btn warn" data-a="delReturn">Delete</button>') + '<button class="btn main" data-a="saveReturn">Save only</button></div>';
   return h;
 }
 function areaDatalist() {
   const opts = [...new Set([...Object.keys(S.stores), ...S.areas])];
   return '<datalist id="areaList">' + opts.map(a => '<option value="' + esc(a) + '">').join('') + '</datalist>';
 }
-function nextReturnNo() {
-  let max = 0; S.returns.forEach(r => { const m = String(r.no).match(/(\d+)$/); if (m) max = Math.max(max, +m[1]); });
-  return 'R-' + String(max + 1).padStart(3, '0');
+const MON3 = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function cuimsDate(iso) { const p = String(iso || today()).split('-'); return MON3[+p[1] - 1] + ' ' + p[2] + ', ' + p[0]; }
+function retRemark(r) { return 'Returned from ' + String(r.store || '').trim() + ' on ' + cuimsDate(r.recvDate || r.date); }
+function startReturnJob(r) {
+  if (!r.store || !/^\d{6}$/.test(r.by) || !r.items.length) { toast('Store, a 6-digit By employee and at least one item are needed.'); return; }
+  const rem = retRemark(r);
+  const job = { id: 'J' + Date.now(), kind: 'return', retId: r.id, slip: r.no, rcv: r.by, rname: r.byName || rcvName(r.by), store: r.store, retDateText: cuimsDate(r.recvDate || r.date), test: !!S.testMode, queue: false, autoSubmit: false, phase: 'fill', paused: false, log: [], tries: {}, next: '',
+    items: r.items.map((i, k) => ({ lineId: 'r' + r.id + '_' + k, req: '', reqDate: '', code: i.code, name: i.name || itemName(i.code), uom: i.uom || itemUom(i.code), qty: Number(i.qty), remark: rem, skip: false })) };
+  if (!N) { toast('Open this inside the JV Stock Issue app to fill CUIMS.'); return; }
+  N.startJob(JSON.stringify(job));
+}
+function retPrefix(iso) { const p = String(iso || today()).split('-'); return 'R-' + p[2] + p[1] + '-'; }
+const RET_RE = /^R-\d{4}-\d{2,3}$/i;
+function nextReturnNo(iso, alsoUsed) {
+  const pre = retPrefix(iso), used = new Set(S.returns.map(r => String(r.no).toUpperCase()).concat((alsoUsed || []).map(x => String(x).toUpperCase())));
+  let max = 0; used.forEach(n => { if (n.startsWith(pre)) { const m = n.slice(pre.length).match(/^(\d+)$/); if (m) max = Math.max(max, +m[1]); } });
+  let k = max + 1; while (used.has(pre + String(k).padStart(2, '0'))) k++;
+  return pre + String(k).padStart(2, '0');
 }
 
 /* ---------------- Search ---------------- */
@@ -1189,6 +1210,16 @@ function todayCount(create) {
   S.counts = S.counts || [];
   let c = S.counts.find(x => x.date === today() && x.status !== 'void');
   if (c && c.status === 'open' && c.items.every(i => i.physical === '' || i.physical == null) && c.items.some(i => excluded(i.code))) { S.counts = S.counts.filter(x => x !== c); c = null; create = true; }
+  if (c && c.status === 'open' && (S.countMode === 'fixed') !== (c.mode === 'fixed') && c.items.every(i => i.physical === '' || i.physical == null)) { S.counts = S.counts.filter(x => x !== c); c = null; create = true; }
+  if (c && c.mode === 'fixed' && c.status === 'open' && c.items.every(i => i.physical === '' || i.physical == null) && c.listSig !== countListSig()) { S.counts = S.counts.filter(x => x !== c); c = null; create = true; }
+  if (!c && create && S.countMode === 'fixed') {
+    const L = (S.countList || []).filter(k => S.stock[k]); if (!L.length) { toast('Add items to your count list first.'); return null; }
+    const per = Math.max(0, parseInt(S.countPerDay, 10) || 0); let pick = L;
+    if (per && per < L.length) { const done = S.counts.filter(x => x.mode === 'fixed' && x.date < today()).length; const st = (done * per) % L.length; pick = L.slice(st).concat(L.slice(0, st)).slice(0, per); }
+    c = { id: nid(), date: today(), status: 'open', mode: 'fixed', listSig: countListSig(), startedAt: new Date().toISOString(), by: meTag(), stockAt: S.stockAt,
+      items: pick.map(k => ({ code: k, name: S.stock[k].name, uom: S.stock[k].uom, system: S.stock[k].qty, physical: '' })) };
+    S.counts.push(c); save();
+  }
   if (!c && create) {
     const recent = new Set(S.counts.filter(x => days(x.date) < 7).flatMap(x => x.items.map(i => i.code)));
     let pool = Object.keys(S.stock).filter(k => S.stock[k].qty > 0 && !recent.has(k) && !excluded(k));
@@ -1201,13 +1232,17 @@ function todayCount(create) {
   }
   return c;
 }
+function countListSig() { return (S.countList || []).join('|') + '#' + (S.countPerDay || 0); }
 function diffOf(i) { if (i.physical === '' || i.physical == null || isNaN(parseFloat(i.physical))) return null; return Math.round((parseFloat(i.physical) - i.system) * 1000) / 1000; }
 function countSummary(c) { let m = 0, ex = 0, sh = 0, left = 0; c.items.forEach(i => { const d = diffOf(i); if (d === null) left++; else if (d === 0) m++; else if (d > 0) ex++; else sh++; }); return { m, ex, sh, left }; }
 function vCount() {
   const c = (S.counts || []).find(x => String(x.id) === String(ui.countId)) || todayCount(false);
   if (!c) { ui.view = null; return vHome(); }
   const sm = countSummary(c), open = c.status === 'open';
-  let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Daily Count Cycle</h1><div class="sub">' + fmtLong(c.date) + ' · ' + c.items.length + ' random articles · system stock from ' + (c.stockAt ? fmtDT(c.stockAt) : '–') + '</div></div></header><main>';
+  let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Daily Count Cycle</h1><div class="sub">' + fmtLong(c.date) + ' · ' + c.items.length + (c.mode === 'fixed' ? ' articles from your list' : ' random articles') + ' · system stock from ' + (c.stockAt ? fmtDT(c.stockAt) : '–') + '</div></div></header><main>';
+  { const untouched = c.status === 'open' && c.items.every(i => i.physical === '' || i.physical == null);
+    h += '<div class="card pad col" style="gap:10px"><div class="row"><b>What to count</b><span class="note">' + (S.countList || []).length + ' in my list</span></div><div class="seg"><button data-a="cMode" data-v="random" class="' + (S.countMode !== 'fixed' ? 'on' : '') + '">20 random</button><button data-a="cMode" data-v="fixed" class="' + (S.countMode === 'fixed' ? 'on' : '') + '">My fixed list</button></div>' +
+      '<button class="btn sm" data-a="clOpen">Edit my count list</button>' + (!untouched && (S.countMode === 'fixed') !== (c.mode === 'fixed') ? '<div class="note">Counting has started, so the change applies from tomorrow.</div>' : '') + '</div>'; }
   h += '<div class="grid3"><div class="tile t-ok"><b>' + sm.m + '</b><span>Match</span></div><div class="tile t-in"><b>' + sm.ex + '</b><span>Excess</span></div><div class="tile t-no"><b>' + sm.sh + '</b><span>Short</span></div></div>';
   h += meta([sm.left ? sm.left + ' still to count' : 'All counted', c.status === 'done' ? 'Finished ' + fmtDT(c.doneAt) : 'In progress']);
   h += '<div class="card" style="overflow:hidden">';
@@ -1280,6 +1315,26 @@ function vDone() {
   });
   if (D.length) h += '<button class="btn" data-a="doneExport">Download done list</button>';
   return h + '</main>';
+}
+function vCountList() {
+  const L = S.countList = S.countList || [], q = String(ui.clq || '').trim().toUpperCase(), words = q.split(/\s+/).filter(Boolean);
+  let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">My count list</h1><div class="sub">Your high-value items for the Daily Count Cycle. Batches, MFD, expiry, differences and history work the same.</div></div></header><main>';
+  h += '<div class="card pad col" style="gap:10px"><div class="seg"><button data-a="cMode" data-v="random" class="' + (S.countMode !== 'fixed' ? 'on' : '') + '">20 random</button><button data-a="cMode" data-v="fixed" class="' + (S.countMode === 'fixed' ? 'on' : '') + '">Use my list</button></div>' +
+    '<label class="f">Items to count per day<input type="number" inputmode="numeric" data-cperday="1" value="' + esc(S.countPerDay || '') + '" placeholder="All ' + L.length + ' every day"></label><div class="note">Leave empty to count the whole list daily, or set a number to rotate through the list (e.g. 10 a day).</div></div>';
+  h += '<div class="sbox"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input type="search" data-clq="1" value="' + esc(ui.clq || '') + '" placeholder="Search stock to add an item" autocomplete="off"></div>';
+  h += '<div id="clres">' + clResults() + '</div>';
+  h += '<div class="shead"><div><h2>In my list · ' + L.length + '</h2><span>Counted in this order</span></div></div>';
+  if (!L.length) h += '<div class="card pad note">No items yet. Search above and tap + Add.</div>';
+  else h += '<div class="card" style="overflow:hidden">' + L.map((k, i) => { const it = S.stock[k]; return '<div class="line" style="flex-direction:row;align-items:center;gap:8px"><b style="width:26px;color:var(--mute)">' + (i + 1) + '</b><span style="flex:1;min-width:0"><b>' + esc(it ? it.name : k) + '</b><div class="meta"><span class="mono">' + esc(k) + '</span><i></i><span>' + (it ? num(it.qty) + ' ' + esc(it.uom) : 'not in stock list') + '</span></div></span><button class="xbtn" data-a="clMove" data-v="' + i + '|-1" aria-label="Move up"' + (i ? '' : ' disabled') + '>' + ico('up', 16) + '</button><button class="xbtn" data-a="clMove" data-v="' + i + '|1" aria-label="Move down"' + (i < L.length - 1 ? '' : ' disabled') + '>' + ico('down', 16) + '</button><button class="xbtn" data-a="clDel" data-v="' + esc(k) + '" aria-label="Remove">' + ico('x', 16) + '</button></div>'; }).join('') + '</div>';
+  if (L.length) h += '<button class="btn ghost danger-t" data-a="clClear">Clear the whole list</button>';
+  return h + '</main>';
+}
+function clResults() {
+  const q = String(ui.clq || '').trim().toUpperCase(), words = q.split(/\s+/).filter(Boolean); if (!words.length) return '';
+  const L = new Set(S.countList || []);
+  const R = Object.entries(S.stock).filter(([c, v]) => words.every(w => c.includes(w) || String(v.name).toUpperCase().includes(w))).slice(0, 25);
+  if (!R.length) return '<div class="card pad note">No stock item matches.</div>';
+  return '<div class="card" style="overflow:hidden">' + R.map(([c, v]) => '<div class="line" style="flex-direction:row;align-items:center;gap:10px"><span style="flex:1;min-width:0"><b>' + esc(v.name) + '</b><div class="meta"><span class="mono">' + esc(c) + '</span><i></i><span>' + num(v.qty) + ' ' + esc(v.uom) + '</span></div></span>' + (L.has(c) ? pill('In list', 'c-ok') : '<button class="btn sm main" data-a="clAdd" data-v="' + esc(c) + '">+ Add</button>') + '</div>').join('') + '</div>';
 }
 function vCountLog() {
   const L = (S.counts || []).slice().sort((a, b) => b.date.localeCompare(a.date));
@@ -1628,6 +1683,25 @@ function shPaperDay() {
       (n ? pill('Done', 'c-ok') : '') + (can ? '<button class="btn sm ' + (n ? 'ghost' : 'main') + '" data-a="paperAddFrom" data-v="' + esc(r.req) + '">' + (n ? '+ More' : '+ Photo') + '</button>' : '') + '<button class="btn sm ghost" data-a="paperOpenReq" data-v="' + esc(r.req) + '">Open</button></div>'; }).join('') + '</div>';
   return h;
 }
+function shRetBatch() {
+  const f = ui.form, stores = allStores();
+  let h = '<div class="row"><h2>Batch add returns</h2><button class="btn sm ghost" data-a="closeSheet">Close</button></div>';
+  h += '<label class="f">Returns came on (in every remark)<input type="date" data-rbf="recvDate" value="' + esc(f.recvDate) + '"></label>';
+  f.groups.forEach((g, gi) => {
+    const pn = (() => { const used = []; for (let k = 0; k <= gi; k++) used.push(nextReturnNo(f.recvDate, used)); return used[gi]; })();
+    h += '<div class="card pad col" style="gap:10px;box-shadow:inset 4px 0 0 #5B9BFF"><div class="row"><b>Return ' + (gi + 1) + ' · <span class="mono" style="color:#2F6FE0">' + esc(pn) + '</span></b><button class="xbtn" data-a="rbDelG" data-v="' + gi + '" aria-label="Remove">' + ico('x', 16) + '</button></div>' +
+      '<label class="f">Store (returned from)<input type="text" data-rb="' + gi + '|store" value="' + esc(g.store) + '" list="rbStores" autocapitalize="characters" placeholder="e.g. LC MESS"></label>' +
+      '<label class="f">By employee (6 digits)<input type="text" data-rb="' + gi + '|by" value="' + esc(g.by) + '" class="mono" inputmode="numeric" maxlength="6"></label>' +
+      g.rows.map((r, ri) => '<div class="rbrow"><input type="text" data-rbr="' + gi + '|' + ri + '|code" value="' + esc(r.code) + '" class="mono" placeholder="Item code" autocapitalize="characters"><input type="number" inputmode="decimal" data-rbr="' + gi + '|' + ri + '|qty" value="' + esc(r.qty) + '" placeholder="Qty"><button class="xbtn" data-a="rbDelR" data-v="' + gi + '|' + ri + '" aria-label="Remove item">' + ico('x', 14) + '</button><span class="rbname">' + (r.code && S.stock[String(r.code).toUpperCase()] ? esc(itemName(String(r.code).toUpperCase())) + ' · ' + esc(itemUom(String(r.code).toUpperCase())) : r.code ? 'code not in stock list' : '') + '</span></div>').join('') +
+      '<button class="btn sm ghost" data-a="rbAddR" data-v="' + gi + '">+ Item</button>' +
+      (g.store ? '<div class="note mono">' + esc(retRemark({ store: g.store, recvDate: f.recvDate })) + '</div>' : '') + '</div>';
+  });
+  h += '<datalist id="rbStores">' + stores.map(x => '<option value="' + esc(x) + '">').join('') + '</datalist>';
+  h += '<button class="btn full" data-a="rbAddG">+ Another return</button>';
+  h += '<div class="card pad col" style="gap:8px"><b>Or paste from Excel</b><div class="note">One row per item: Store, Employee code, Item code, Qty</div><textarea data-rbf="paste" rows="4" placeholder="LC MESS\t600043\tGR-198\t5">' + esc(f.paste || '') + '</textarea><button class="btn sm" data-a="rbPaste">Add pasted rows</button></div>';
+  h += '<button class="btn main full" data-a="rbSave">Save all returns</button>';
+  return h;
+}
 function shCrop() {
   const c = ui.sheet, V = 280, base = Math.max(V / c.img.width, V / c.img.height) * c.zoom;
   const dw = c.img.width * base, dh = c.img.height * base;
@@ -1706,6 +1780,11 @@ window.onSiteEvent = function (raw) {
 function recordSubmit(e) {
   let job = null; try { job = JSON.parse(N.jobGet() || 'null'); } catch (x) {}
   if (!job || job.slip !== e.slip) return;
+  if (job.kind === 'return') {
+    const r = S.returns.find(x => String(x.id) === String(job.retId)); if (!r) return;
+    r.serial = e.serial || r.serial || ''; r.cuimsAt = new Date().toISOString(); if (e.rname) { r.byName = r.byName || e.rname; S.rnames = S.rnames || {}; S.rnames[r.by] = e.rname; }
+    save(); toast('Return ' + r.no + ' saved on CUIMS, Serial ' + (r.serial || '–') + '.'); render(); return;
+  }
   if (S.entries.some(x => String(x.slip).toUpperCase() === String(job.slip).toUpperCase())) return;
   const items = job.items.filter(i => !i.skip);
   const at = new Date().toISOString();
@@ -1743,7 +1822,7 @@ window.jvBack = () => {
 function render() {
   const app = document.getElementById('app');
   const y = window.scrollY;
-  app.innerHTML = appBar() + (S.testMode ? '<div class="testbar"><span><b>TEST MODE</b> · your real data is safe and hidden. Cloud backup is paused. Entries submitted on CUIMS are still real.</span><button class="btn sm" data-a="testToggle">Exit</button></div>' : '') + (ui.view === 'manage' ? vManage() : ui.view === 'stock' ? vStock() : ui.view === 'cons' ? vCons() : ui.view === 'arts' ? vArts() : ui.view === 'check' ? vCheck() : ui.view === 'done' ? vDone() : ui.view === 'expiry' ? vExpiry() : ui.view === 'count' ? vCount() : ui.view === 'countLog' ? vCountLog() : ui.view === 'taskLog' ? vTaskLog() : ui.view === 'req' ? vReq() : ({ home: vHome, pend: vPend, reg: vReg, find: vFind, set: vSet })[ui.tab]());
+  app.innerHTML = appBar() + (S.testMode ? '<div class="testbar"><span><b>TEST MODE</b> · your real data is safe and hidden. Cloud backup is paused. Entries submitted on CUIMS are still real.</span><button class="btn sm" data-a="testToggle">Exit</button></div>' : '') + (ui.view === 'countList' ? vCountList() : ui.view === 'manage' ? vManage() : ui.view === 'stock' ? vStock() : ui.view === 'cons' ? vCons() : ui.view === 'arts' ? vArts() : ui.view === 'check' ? vCheck() : ui.view === 'done' ? vDone() : ui.view === 'expiry' ? vExpiry() : ui.view === 'count' ? vCount() : ui.view === 'countLog' ? vCountLog() : ui.view === 'taskLog' ? vTaskLog() : ui.view === 'req' ? vReq() : ({ home: vHome, pend: vPend, reg: vReg, find: vFind, set: vSet })[ui.tab]());
   document.querySelector('#tabs .in').innerHTML = TABS.map(([k, l]) => '<button data-a="tab" data-v="' + k + '" class="' + (ui.tab === k && !ui.view ? 'on' : '') + '" aria-label="' + l + '"><span class="nic">' + ICON[k] + '</span><span class="nl">' + l + '</span></button>').join('');
   renderDrawer();
   paintSync();
@@ -1756,7 +1835,7 @@ function renderSheet() {
   const el = document.getElementById('sheet');
   if (!ui.sheet) { el.innerHTML = ''; return; }
   const k = ui.sheet.kind;
-  const body = k === 'paperDay' ? shPaperDay() : k === 'manReq' ? shManReq() : k === 'mslips' ? shMslips() : k === 'reqStatus' ? shReqStatus() : k === 'corr' ? shCorr() : k === 'batch' ? shBatch() : k === 'newReq' ? shNewReq() : k === 'export' ? shExport() : k === 'crop' ? shCrop() : k === 'backups' ? shBackups() : k === 'start' ? shStart() : k === 'upload' ? shUpload() : k === 'entry' ? shEntry() : k === 'return' ? shReturn() : k === 'editReq' ? shEditReq() : k === 'bulk' ? shBulk() : k === 'mark' ? shMark() : '';
+  const body = k === 'retBatch' ? shRetBatch() : k === 'paperDay' ? shPaperDay() : k === 'manReq' ? shManReq() : k === 'mslips' ? shMslips() : k === 'reqStatus' ? shReqStatus() : k === 'corr' ? shCorr() : k === 'batch' ? shBatch() : k === 'newReq' ? shNewReq() : k === 'export' ? shExport() : k === 'crop' ? shCrop() : k === 'backups' ? shBackups() : k === 'start' ? shStart() : k === 'upload' ? shUpload() : k === 'entry' ? shEntry() : k === 'return' ? shReturn() : k === 'editReq' ? shEditReq() : k === 'bulk' ? shBulk() : k === 'mark' ? shMark() : '';
   const sc = el.querySelector('.sheet') ? el.querySelector('.sheet').scrollTop : 0;
   el.innerHTML = '<div class="sheetbg" data-a="bgClose"><div class="sheet" role="dialog" aria-modal="true">' + body + '</div></div>';
   el.querySelector('.sheet').scrollTop = sc;
@@ -1838,6 +1917,9 @@ function dataIssues() {
   if (bad.length) out.push({ kind: 'bad', ids: bad.map(l => l.id), n: bad.length });
   const slips = {}; S.entries.forEach(e => (slips[String(e.slip).toUpperCase()] = slips[String(e.slip).toUpperCase()] || []).push(e));
   Object.entries(slips).filter(([k, v]) => v.length > 1).forEach(([k, v]) => out.push({ kind: 'slip', slip: k, n: v.length, stores: v.map(e => e.store) }));
+  const rn = {}; S.returns.forEach(r => (rn[String(r.no).toUpperCase()] = rn[String(r.no).toUpperCase()] || []).push(r));
+  Object.entries(rn).filter(([k, v]) => v.length > 1).forEach(([k, v]) => out.push({ kind: 'retdup', no: k, ids: v.map(r => r.id), stores: v.map(r => r.store) }));
+  const oldF = S.returns.filter(r => !RET_RE.test(String(r.no))); if (oldF.length) out.push({ kind: 'retfmt', n: oldF.length, nos: oldF.map(r => r.no) });
   const miss = S.lines.filter(l => l.status === 'waiting' && Object.keys(S.stock).length && !S.stock[l.code]);
   if (miss.length) out.push({ kind: 'nostock', n: miss.length, codes: [...new Set(miss.map(l => l.code))] });
   return out;
@@ -2072,6 +2154,8 @@ function vCheck() {
     if (x.kind === 'dates') h += '<div class="card pad col" style="gap:10px"><div class="row"><span class="reqno" data-req="' + esc(x.req) + '">' + esc(x.req) + '</span>' + pill('Mixed dates', 'c-gd') + '</div><div class="note">Articles of this request have different dates: ' + x.dates.map(fmtShort).join(', ') + '.</div><div class="grid2"><button class="btn sm" data-a="dcDate" data-v="' + esc(x.req) + '" data-d="' + x.dates[0] + '">Use ' + fmtShort(x.dates[0]) + '</button><button class="btn sm ghost" data-a="dcDate" data-v="' + esc(x.req) + '" data-d="' + x.dates[x.dates.length - 1] + '">Use ' + fmtShort(x.dates[x.dates.length - 1]) + '</button></div></div>';
     if (x.kind === 'bad') h += '<div class="card pad col" style="gap:10px"><div class="row"><b>Incomplete articles</b>' + pill(x.n, 'c-no') + '</div><div class="note">Missing Request No, store, item code or qty.</div><button class="btn sm" data-a="dcBad" data-v="' + x.ids.join(',') + '">Remove ' + x.n + ' incomplete article' + (x.n > 1 ? 's' : '') + '</button></div>';
     if (x.kind === 'slip') h += '<div class="card pad col" style="gap:6px"><div class="row"><b>Slip ' + esc(x.slip) + ' used ' + x.n + ' times</b>' + pill('Check', 'c-no') + '</div><div class="note">' + esc(x.stores.join(', ')) + '. Edit the wrong one in Registers.</div><button class="btn sm ghost" data-a="dcSlip" data-v="' + esc(x.slip) + '">Show in Search</button></div>';
+    if (x.kind === 'retdup') h += '<div class="card pad col" style="gap:8px"><div class="row"><b>Return No ' + esc(x.no) + ' used ' + x.ids.length + ' times</b>' + pill('Duplicate', 'c-no') + '</div><div class="note">' + esc(x.stores.join(', ')) + '</div><button class="btn sm" data-a="dcRetFix" data-v="' + x.ids.slice(1).join(',') + '">Give the extra ' + (x.ids.length - 1) + ' a new number</button></div>';
+    if (x.kind === 'retfmt') h += '<div class="card pad col" style="gap:8px"><div class="row"><b>Old-style Return Nos</b>' + pill(x.n, 'c-gd') + '</div><div class="note mono">' + esc(x.nos.slice(0, 12).join(', ')) + (x.nos.length > 12 ? '…' : '') + '</div><div class="note">Renumber them to R-DDMM-NN by the date each return came.</div><button class="btn sm" data-a="dcRetFmt">Renumber all ' + x.n + '</button></div>';
     if (x.kind === 'nostock') h += '<div class="card pad col" style="gap:6px"><div class="row"><b>Items not in the stock sheet</b>' + pill(x.n, 'c-gd') + '</div><div class="note mono">' + esc(x.codes.slice(0, 20).join(', ')) + (x.codes.length > 20 ? '…' : '') + '</div><div class="note">Upload a fresh stock report, or correct the item code in the request.</div></div>';
   });
   return h + '</main>';
@@ -2087,7 +2171,7 @@ function renumberReq(from, to) {
 const UNDO_KEYS = ['lines', 'entries', 'returns', 'hold', 'corrections', 'audit', 'manReqs', 'paper'];
 const UNDOABLE = { artQty: 'Quantity changed', artHold: 'Hold changed', artDel: 'Article removed', artsBHold: 'Articles put on hold', artsBRel: 'Articles released', artsBDel: 'Articles removed', dropReq: 'Request removed', dropStore: 'Store pending removed',
   renumReq: 'Request renumbered', dcRenum: 'Request renumbered', impRenum: 'Request renumbered', impDrop: "App's request removed", corrSave: 'Correction saved', markSave: 'Slip added', dcMerge: 'Items merged', dcKeepFirst: 'Duplicate removed', dcDate: 'Date changed', dcBad: 'Incomplete removed',
-  bulkSave: 'Requests edited', stkEdit: 'Stock changed', stkRen: 'Item renamed', stkDel: 'Item deleted', stkAdd: 'Item added', mgDone: 'Requests completed', mgPend: 'Pending cleared', mgDel: 'Deleted', mgDelSlipPend: 'Slips deleted, articles pending again', delEntry: 'Entry deleted', delReturn: 'Return deleted', rsClose: 'Article closed', rsOpen: 'Article made pending', rsAll: 'Request completed', rsAdd: 'Article added', saveReq: 'Request edited', saveEntry: 'Entry saved', uploadOk: 'Import done', btSave: 'Batch saved', nrSave: 'Request added', hold: 'Hold changed' };
+  bulkSave: 'Requests edited', dcRetFmt: 'Returns renumbered', dcRetFix: 'Return renumbered', clAdd: 'Count list changed', clDel: 'Count list changed', retBatchSave: 'Returns saved', stkEdit: 'Stock changed', stkRen: 'Item renamed', stkDel: 'Item deleted', stkAdd: 'Item added', mgDone: 'Requests completed', mgPend: 'Pending cleared', mgDel: 'Deleted', mgDelSlipPend: 'Slips deleted, articles pending again', delEntry: 'Entry deleted', delReturn: 'Return deleted', rsClose: 'Article closed', rsOpen: 'Article made pending', rsAll: 'Request completed', rsAdd: 'Article added', saveReq: 'Request edited', saveEntry: 'Entry saved', uploadOk: 'Import done', btSave: 'Batch saved', nrSave: 'Request added', hold: 'Hold changed' };
 const UNDO_STOCK = new Set(['stkEdit', 'markSave', 'delEntry', 'saveEntry', 'uploadOk', 'mgDelSlipPend']);
 let undoTimer = null;
 function undoArm(a) { const snap = {}; UNDO_KEYS.concat(UNDO_STOCK.has(a) ? ['stock', 'stockAt', 'stockSrc'] : []).forEach(k => snap[k] = JSON.stringify(S[k] == null ? null : S[k])); ui.pendUndo = { a, label: UNDOABLE[a], snap, at: Date.now() }; }
@@ -2150,7 +2234,7 @@ function rcvBook() {
   return m;
 }
 function rcvName(code) { return rcvBook()[String(code || '').replace(/\D/g, '')] || ''; }
-const RCV_SEL = 'input[data-in="rcv"],input[data-nr="rcv"],input[data-mr="rcv"],input[data-f="rcv"],input[data-store-rcv],input[data-bg$="|rcv"],input[data-br$="|rcv"],input[data-ef="rcv"],input[data-rf="by"]';
+const RCV_SEL = 'input[data-rb$="|by"],input[data-in="rcv"],input[data-nr="rcv"],input[data-mr="rcv"],input[data-f="rcv"],input[data-store-rcv],input[data-bg$="|rcv"],input[data-br$="|rcv"],input[data-ef="rcv"],input[data-rf="by"]';
 function rcvHint(inp) {
   let h = inp.parentNode.querySelector('.rcvname'); if (!h) { h = document.createElement('span'); h.className = 'rcvname'; inp.insertAdjacentElement('afterend', h); }
   const v = String(inp.value || '').replace(/\D/g, '');
@@ -2247,7 +2331,7 @@ function shEditReq() {
 }
 
 /* ---------------- lock ---------------- */
-const GUARDED = new Set(['stkEdit', 'stkRen', 'stkDel', 'stkAdd', 'mgDone', 'mgPend', 'mgDel', 'mgDelSlipPend', 'paperAddFrom', 'advIssue', 'paperAdd', 'mrSave', 'mrRemove', 'manReqToggle', 'msSave', 'artQty', 'artHold', 'artDel', 'artsBHold', 'artsBRel', 'artsBDel', 'testToggle', 'testClear', 'dcRenum', 'dcMerge', 'dcKeepFirst', 'dcDate', 'dcBad', 'renumReq', 'impRenum', 'impDrop', 'credSave', 'credDel', 'corrOpen', 'corrSave', 'bulkEdit', 'bulkSave', 'dropReq', 'dropStore', 'editReq', 'saveReq', 'markDone', 'markSave', 'newManual', 'saveEntry', 'delEntry', 'newReturn', 'saveReturn', 'delReturn',
+const GUARDED = new Set(['dcRetFmt', 'dcRetFix', 'clClear', 'retCuims', 'saveReturnCuims', 'rbSave', 'stkEdit', 'stkRen', 'stkDel', 'stkAdd', 'mgDone', 'mgPend', 'mgDel', 'mgDelSlipPend', 'paperAddFrom', 'advIssue', 'paperAdd', 'mrSave', 'mrRemove', 'manReqToggle', 'msSave', 'artQty', 'artHold', 'artDel', 'artsBHold', 'artsBRel', 'artsBDel', 'testToggle', 'testClear', 'dcRenum', 'dcMerge', 'dcKeepFirst', 'dcDate', 'dcBad', 'renumReq', 'impRenum', 'impDrop', 'credSave', 'credDel', 'corrOpen', 'corrSave', 'bulkEdit', 'bulkSave', 'dropReq', 'dropStore', 'editReq', 'saveReq', 'markDone', 'markSave', 'newManual', 'saveEntry', 'delEntry', 'newReturn', 'saveReturn', 'delReturn',
   'rmStore', 'addStore', 'wipe', 'restore', 'bkRestore', 'bkDel', 'bkKeep', 'bkSave', 'bkNoteSave', 'photo', 'photoDel', 'mode', 'lockToggle', 'syncAuto', 'mgrToggle', 'moveStore', 'saveUrls', 'resetZoom', 'hold', 'cropSave']);
 let pendingAuth = null;
 function askUnlock(after) {
@@ -2297,6 +2381,23 @@ document.addEventListener('click', async ev => {
     case 'openReq': { if (ui.view !== 'req') { const ids = []; document.querySelectorAll('[data-a="openReq"][data-v]').forEach(x => { if (!ids.includes(x.dataset.v)) ids.push(x.dataset.v); }); ui.reqList = ids.length > 1 ? ids : null; }
       ui.lastReq = v; ui.view = 'req'; ui.req = v; render(); window.scrollTo(0, 0); break; }
     case 'reqGo': goReq(+v); break;
+    case 'retCuims': { const r = S.returns.find(x => String(x.id) === v); if (r) startReturnJob(r); break; }
+    case 'retBatch': ui.form = { recvDate: today(), groups: [{ store: '', by: '', rows: [{ code: '', qty: '' }] }], paste: '' }; ui.sheet = { kind: 'retBatch' }; renderSheet(); break;
+    case 'rbAddG': ui.form.groups.push({ store: '', by: '', rows: [{ code: '', qty: '' }] }); renderSheet(); break;
+    case 'rbDelG': ui.form.groups.splice(+v, 1); if (!ui.form.groups.length) ui.form.groups.push({ store: '', by: '', rows: [{ code: '', qty: '' }] }); renderSheet(); break;
+    case 'rbAddR': ui.form.groups[+v].rows.push({ code: '', qty: '' }); renderSheet(); break;
+    case 'rbDelR': { const [g, r] = v.split('|').map(Number); ui.form.groups[g].rows.splice(r, 1); if (!ui.form.groups[g].rows.length) ui.form.groups[g].rows.push({ code: '', qty: '' }); renderSheet(); break; }
+    case 'rbPaste': { const f = ui.form; const G = {}; String(f.paste || '').split(/\r?\n/).forEach(line => { const c = line.split(/\t|,|;/).map(x => x.trim()); if (c.length < 4 || !c[0] || !/^\d{6}$/.test(c[1].replace(/^GA/i, ''))) return; const k = c[0].toUpperCase() + '|' + c[1].replace(/^GA/i, ''); (G[k] = G[k] || { store: c[0].toUpperCase(), by: c[1].replace(/^GA/i, ''), rows: [] }).rows.push({ code: c[2].toUpperCase(), qty: c[3] }); });
+      const add = Object.values(G); if (!add.length) { toast('Paste rows as: Store, Employee code, Item code, Qty'); break; }
+      f.groups = f.groups.filter(g => g.store || g.by || g.rows.some(r => r.code)).concat(add); f.paste = ''; renderSheet(); break; }
+    case 'rbSave': { const f = ui.form; const G = f.groups.map(g => ({ store: String(g.store || '').trim().toUpperCase(), by: String(g.by || '').trim(), rows: g.rows.filter(r => r.code && parseFloat(r.qty) > 0) })).filter(g => g.store || g.rows.length);
+      const bad = G.find(g => !g.store || !/^\d{6}$/.test(g.by) || !g.rows.length); if (bad) { toast('Each return needs a store, a 6-digit employee and at least one item.'); break; }
+      if (!G.length) { toast('Add at least one return.'); break; }
+      if (!(await uiConfirm('Save ' + G.length + ' return' + (G.length > 1 ? 's' : '') + ' (' + G.reduce((n, g) => n + g.rows.length, 0) + ' items), came on ' + cuimsDate(f.recvDate) + '?', 'Save returns'))) break;
+      undoArm('retBatchSave');
+      G.forEach((g, i) => S.returns.push({ id: nid(), no: nextReturnNo(f.recvDate || today()), against: '1111', store: g.store, by: g.by, byName: rcvName(g.by), date: today(), recvDate: f.recvDate || today(), time: timeNow(), serial: '', remarks: '', enteredBy: { name: S.me.name || '', emp: S.me.emp || '' },
+        items: g.rows.map(r => ({ code: r.code.toUpperCase(), name: itemName(r.code.toUpperCase()), uom: itemUom(r.code.toUpperCase()), qty: parseFloat(r.qty), remark: '' })) }));
+      ui.reg.type = 'return'; ui.reg.date = today(); save(); ui.sheet = null; renderSheet(); ui.tab = 'reg'; render(); break; }
     case 'mgOpen': ui.drawer = false; mgInit(); ui.view = 'manage'; render(); window.scrollTo(0, 0); break;
     case 'mgType': ui.mg.type = v; ui.mg.sel = {}; ui.mg.st = {}; render(); break;
     case 'mgF': ui.mg.showF = !ui.mg.showF; render(); break;
@@ -2485,6 +2586,15 @@ document.addEventListener('click', async ev => {
       const nl = { id: nid(), req: f.req, store: base.store, date: base.date, code: c, qty: q, rcv: base.rcv || '', slip: '', remark: base.remark || '', src: base.src, earlier: '', status: 'waiting', issued: [] }; S.lines.push(nl); audit('add', nl); f.addCode = ''; f.addQty = ''; save(); renderSheet(); render(); break; }
     case 'testToggle': { ui.drawer = false; renderDrawer(); const on = !S.testMode; if (!(await uiConfirm(on ? 'Turn on Test mode? Your real requests, slips and stock are put aside and a separate test copy starts. Nothing you do in test mode touches real data.' : 'Leave Test mode? Your real data comes back exactly as it was. Test data is kept for next time.', on ? 'Start testing' : 'Leave test mode'))) break; setTestMode(on); break; }
     case 'testClear': if (await uiConfirm('Delete all test data?', 'Delete', true)) { S.lines = []; S.entries = []; S.returns = []; S.counts = []; S.taskLog = {}; S.corrections = []; S.hold = {}; S.stock = deep((S._real || {}).stock) || S.stock; save(); render(); } break;
+    case 'cMode': S.countMode = v === 'fixed' ? 'fixed' : 'random'; if (S.countMode === 'fixed' && !(S.countList || []).length) { save(); ui.view = 'countList'; render(); toast('Add your high-value items first.'); break; } save(); render(); break;
+    case 'clOpen': ui.view = 'countList'; render(); window.scrollTo(0, 0); break;
+    case 'clAdd': S.countList = S.countList || []; if (!S.countList.includes(v)) S.countList.push(v); save(); { const b = document.getElementById('clres'); if (b) b.innerHTML = clResults(); } render(); break;
+    case 'clDel': S.countList = (S.countList || []).filter(k => k !== v); save(); render(); break;
+    case 'clMove': { const [i, d] = v.split('|').map(Number); const L = S.countList; const j = i + d; if (j < 0 || j >= L.length) break; [L[i], L[j]] = [L[j], L[i]]; save(true); render(); break; }
+    case 'clClear': if (await uiConfirm('Remove all ' + (S.countList || []).length + ' items from your count list?', 'Clear', true)) { undoArm('clDel'); S.countList = []; save(); render(); } break;
+    case 'dcRetFix': { const ids = v.split(',').map(String); S.returns.filter(r => ids.includes(String(r.id))).forEach(r => { r.no = nextReturnNo(r.recvDate || r.date); }); save(); render(); break; }
+    case 'dcRetFmt': { if (!(await uiConfirm('Renumber all old-style returns to R-DDMM-NN, in date and time order?', 'Renumber'))) break; undoArm('dcRetFmt');
+      S.returns.filter(r => !RET_RE.test(String(r.no))).sort((a, b) => String(a.recvDate || a.date).localeCompare(String(b.recvDate || b.date)) || String(a.time || '').localeCompare(String(b.time || ''))).forEach(r => { r.no = nextReturnNo(r.recvDate || r.date); }); save(); render(); break; }
     case 'dcOpen': ui.drawer = false; ui.view = 'check'; render(); window.scrollTo(0, 0); break;
     case 'dcRenum': { const st = t.dataset.s; const to = await uiPrompt('New Request No for ' + st + ' (now ' + v + ')', v + '-' + st.replace(/[^A-Z0-9]/gi, '').slice(0, 4), 'Renumber'); if (to && renumberReqStore(v, st, to)) { save(); render(); toast(st + ' is now ' + to + '.'); } break; }
     case 'dcMerge': { const ids = v.split(',').map(Number); const L = S.lines.filter(l => ids.includes(l.id)); L[0].qty = L.reduce((a, l) => a + l.qty, 0); L.slice(1).forEach(l => l.status = 'dropped'); save(); render(); break; }
@@ -2638,15 +2748,16 @@ document.addEventListener('click', async ev => {
       const i = S.entries.findIndex(e => e.id === rec.id); if (i >= 0) S.entries[i] = rec; else S.entries.push(rec);
       save(); ui.sheet = null; renderSheet(); render(); toast('Entry saved.'); break; }
     case 'delEntry': if (await uiConfirm('Delete this register entry? Stock and pending are not changed.', 'Delete', true)) { S.entries = S.entries.filter(e => e.id !== ui.form.id); save(); ui.sheet = null; renderSheet(); render(); } break;
-    case 'newReturn': ui.form = { _new: true, no: nextReturnNo(), against: '1111', store: '', by: '', byName: '', date: ui.reg.date, time: timeNow(), serial: '', remarks: '', ebName: S.me.name, ebEmp: S.me.emp, items: [blankItem()] }; ui.sheet = { kind: 'return' }; renderSheet(); break;
+    case 'newReturn': ui.form = { _new: true, _autoNo: true, no: nextReturnNo(today()), against: '1111', store: '', by: '', byName: '', recvDate: today(), date: ui.reg.date, time: timeNow(), serial: '', remarks: '', ebName: S.me.name, ebEmp: S.me.emp, items: [blankItem()] }; ui.sheet = { kind: 'return' }; renderSheet(); break;
     case 'editReturn': { const r = S.returns.find(x => String(x.id) === v); ui.form = Object.assign(JSON.parse(JSON.stringify(r)), { ebName: (r.enteredBy || {}).name || '', ebEmp: (r.enteredBy || {}).emp || '' }); ui.sheet = { kind: 'return' }; renderSheet(); break; }
-    case 'saveReturn': { const f = ui.form; const items = cleanItems(f.items);
+    case 'saveReturn': case 'saveReturnCuims': { const f = ui.form; const items = cleanItems(f.items);
       if (!f.store.trim() || !/^\d{6}$/.test(f.by)) { toast('Store and a 6-digit "Returned by" are needed.'); break; }
       if (!items.length) { toast('Add at least one item with code and qty.'); break; }
-      const rec = { id: f.id || nid(), no: f.no.trim(), against: (f.against || '1111').trim(), store: f.store.trim().toUpperCase(), by: f.by, byName: (f.byName || '').trim(), date: f.date, time: f.time, serial: (f.serial || '').trim(), remarks: (f.remarks || '').trim(), enteredBy: { name: f.ebName.trim(), emp: f.ebEmp.trim() }, items };
+      if (S.returns.some(x => String(x.no).toUpperCase() === String(f.no || '').trim().toUpperCase() && x.id !== f.id)) { toast('Return No ' + f.no + ' is already used. Next free: ' + nextReturnNo(f.recvDate || today()) + '.'); break; }
+      const rec = { id: f.id || nid(), no: f.no.trim().toUpperCase(), against: (f.against || '1111').trim(), store: f.store.trim().toUpperCase(), by: f.by, byName: (f.byName || '').trim() || rcvName(f.by), date: f.date, recvDate: f.recvDate || f.date, time: f.time, serial: (f.serial || '').trim(), remarks: (f.remarks || '').trim(), enteredBy: { name: f.ebName.trim(), emp: f.ebEmp.trim() }, items };
       if (rec.byName) { S.rnames = S.rnames || {}; S.rnames[rec.by] = rec.byName; }
       const i = S.returns.findIndex(x => x.id === rec.id); if (i >= 0) S.returns[i] = rec; else S.returns.push(rec);
-      save(); ui.sheet = null; renderSheet(); render(); toast('Return saved.'); break; }
+      save(); ui.sheet = null; renderSheet(); render(); if (a === 'saveReturnCuims') startReturnJob(rec); else toast('Return saved.'); break; }
     case 'delReturn': if (await uiConfirm('Delete this return?', 'Delete', true)) { S.returns = S.returns.filter(x => x.id !== ui.form.id); save(); ui.sheet = null; renderSheet(); render(); } break;
     case 'rmItem': ui.form.items.splice(+v, 1); if (!ui.form.items.length) ui.form.items.push(blankItem()); renderSheet(); break;
     case 'addItem': ui.form.items.push(blankItem()); renderSheet(); break;
@@ -2697,6 +2808,14 @@ document.addEventListener('input', ev => {
   if (el.dataset.cadd) { ui.form[el.dataset.cadd === 'code' ? 'addCode' : 'addQty'] = el.value; return; }
   if (el.dataset.cons) { ui.cons[el.dataset.cons] = el.value; render(); return; }
   if (el.dataset.stk) { ui.stk.q = el.value; clearTimeout(ui.kT); ui.kT = setTimeout(() => { const b = document.getElementById('stkres'); if (b) b.innerHTML = stockResults(); }, 120); return; }
+  if (el.dataset.retno) { ui.form._autoNo = false; ui.form.no = el.value.toUpperCase(); const sp = el.parentNode.querySelector('.rcvname'); if (sp) { const d = S.returns.some(x => String(x.no).toUpperCase() === el.value.trim().toUpperCase() && x.id !== ui.form.id); sp.className = 'rcvname ' + (d ? 'new' : 'ok'); sp.textContent = d ? 'Already used. Next free: ' + nextReturnNo(ui.form.recvDate || today()) : RET_RE.test(el.value.trim()) ? 'Free to use' : 'Format R-DDMM-NN'; } return; }
+  if (el.dataset.f === 'recvDate' && ui.sheet && ui.sheet.kind === 'return') { ui.form.recvDate = el.value; renderSheet(); return; }
+  if (el.dataset.clq) { ui.clq = el.value; clearTimeout(ui.clT); ui.clT = setTimeout(() => { const b = document.getElementById('clres'); if (b) b.innerHTML = clResults(); }, 120); return; }
+  if (el.dataset.cperday) { S.countPerDay = el.value ? Math.max(1, parseInt(el.value, 10) || 0) : 0; save(true); return; }
+  if (el.dataset.rbf) { ui.form[el.dataset.rbf] = el.value; if (el.dataset.rbf === 'recvDate') renderSheet(); return; }
+  if (el.dataset.rb) { const [g, k] = el.dataset.rb.split('|'); ui.form.groups[+g][k] = k === 'by' ? el.value.replace(/\D/g, '') : el.value; return; }
+  if (el.dataset.rbr) { const [g, r, k] = el.dataset.rbr.split('|'); ui.form.groups[+g].rows[+r][k] = k === 'code' ? el.value.toUpperCase() : el.value;
+    if (k === 'code') { const c = el.value.trim().toUpperCase(), sp = el.parentNode.querySelector('.rbname'); if (sp) sp.textContent = c ? (S.stock[c] ? itemName(c) + ' · ' + itemUom(c) : 'code not in stock list') : ''; } return; }
   if (el.dataset.mg) { const k = el.dataset.mg; ui.mg[k] = el.value; ui.mg.sel = {}; if (k === 'q') { clearTimeout(ui.mgT); ui.mgT = setTimeout(() => { const b = document.getElementById('mgres'); if (b) b.innerHTML = mgResults(); }, 120); } else render(); return; }
   if (el.dataset.artsday) { ui.arts.dayPick = el.value || today(); ui.arts.sel = {}; render(); return; }
   if (el.dataset.arts) { ui.arts.q = el.value; clearTimeout(ui.aT); ui.aT = setTimeout(() => { const b = document.getElementById('artsres'); if (b) b.innerHTML = artsResults(); }, 120); return; }
