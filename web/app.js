@@ -284,7 +284,7 @@ function slipRow(e, req) {
 }
 function rqCard(o) {
   const key = 'rq:' + o.where + ':' + o.req, open = !!(ui.rqOpen || {})[key];
-  let h = '<div class="card rcard' + (o.cont ? ' contcard' : '') + (ui.lastReq === o.req ? ' sel' : '') + '"><div class="scard"><' + (o.tap === false ? 'div' : 'button data-a="openReq" data-v="' + esc(o.req) + '"') + ' class="main"><div class="row"><span class="reqno" data-req="' + esc(o.req) + '">' + esc(o.req) + '</span>' + (o.status ? pill(o.status[0], o.status[1]) : '') + '</div>' +
+  let h = '<div class="card rcard' + (o.cont ? ' contcard' : '') + (ui.lastReq === o.req ? ' sel' : '') + '"><div class="scard"><' + (o.tap === false ? 'div' : 'button data-a="' + (o.tapA || 'openReq') + '" data-v="' + esc(o.tapV != null ? o.tapV : o.req) + '"') + ' class="main"><div class="row"><span class="reqno" data-req="' + esc(o.req) + '">' + esc(o.req) + '</span>' + (o.status ? pill(o.status[0], o.status[1]) : '') + '</div>' +
     '<b class="ttl">' + esc(o.store) + '</b>' + meta(o.meta || []) + (o.chips || '') + '</' + (o.tap === false ? 'div' : 'button') + '>' +
     (o.x ? '<div class="side"><button class="xbtn" data-a="' + o.x + '" data-v="' + esc(o.req) + '" aria-label="Remove">' + ico('x', 18) + '</button></div>' : '') + '</div>';
   if (o.slips) h += '<div class="slips">' + (o.slips.length ? o.slips.map(e => slipRow(e, o.req)).join('') : '<div class="slipline none">No slip entered yet</div>') + '</div>';
@@ -706,15 +706,25 @@ function vReg() {
         btns: '<button class="btn sm" data-a="mslips" data-v="' + esc(g.req) + '">+ Add slips & serials</button><button class="btn sm ghost" data-a="reqStatus" data-v="' + esc(g.req) + '">Pending / completed</button>' });
     });
   } else {
-    const list = S.returns.filter(x => x.date === r.date).sort((a, b) => (a.time || '').localeCompare(b.time || ''));
-    h += '<div class="grid2"><button class="btn main" data-a="pdfReturn"' + (list.length ? '' : ' disabled') + '>Make PDF</button><button class="btn" data-a="newReturn">+ New return</button></div>';
-    h += '<button class="btn full" data-a="retBatch">+ Batch add returns</button>';
-    h += '<div class="note">On CUIMS the app sets: Return · Department · declaration ticked · By employee · HOSTEL MESS (GA), and the remark "Returned from STORE on date" on every article.</div>';
-    if (!list.length) h += '<div class="card pad note">No returns on ' + fmtLong(r.date) + '.</div>';
-    list.forEach(x => {
-      h += '<div class="card rcard retcard"><button class="main srch" data-a="editReturn" data-v="' + x.id + '"><div class="row"><span class="stag ret" style="position:static">Return · ' + esc(x.no) + '</span>' + (x.serial ? serFmt(x.serial) : pill('Not on CUIMS yet', 'c-gd')) + '</div>' +
-        '<b class="ttl">' + esc(x.store) + '</b>' + meta(['came ' + fmtShort(x.recvDate || x.date), 'GA' + esc(x.by) + (x.byName || rcvName(x.by) ? ' ' + esc(x.byName || rcvName(x.by)) : ''), x.items.length + (x.items.length === 1 ? ' item' : ' items')]) + '</button>' +
-        (x.serial ? '' : '<div class="cta"><button class="btn ret full" data-a="retCuims" data-v="' + x.id + '">Return on CUIMS</button></div>') + '</div>';
+    const fr = fltGet('ret'), st = r.rst || 'all';
+    let L = S.returns.filter(x => (!fr.rd || (x.recvDate || x.date) === fr.rd) && (!fr.id || x.date === fr.id));
+    const waitN = L.filter(x => !x.serial).length;
+    h += '<div class="fbar">' + ['rd|Came on', 'id|Entry date'].map(z => { const [key, label] = z.split('|'); return '<label class="f fdate"><span>' + label + '</span><span class="fin"><input type="date" data-flt="ret|' + key + '" value="' + esc(fr[key] || '') + '">' + (fr[key] ? '<button class="fx" data-a="fltClear" data-v="ret|' + key + '" aria-label="Clear">' + ico('x', 14) + '</button>' : '') + '</span></label>'; }).join('') + '</div>';
+    h += '<div class="seg">' + [['all', 'All ' + L.length], ['wait', 'Not on CUIMS ' + waitN], ['done', 'On CUIMS ' + (L.length - waitN)]].map(([k, l]) => '<button data-a="retSt" data-v="' + k + '" class="' + (st === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>';
+    L = L.filter(x => st === 'all' || (st === 'wait' ? !x.serial : !!x.serial));
+    L = sortBy(L, getSort('ret'), x => ({ req: x.no, store: x.store, date: x.recvDate || x.date, ready: x.serial ? 0 : 1, size: x.items.length }));
+    h += '<div class="shead"><div><h2>' + L.length + ' returns</h2><span>' + L.reduce((n, x) => n + x.items.length, 0) + ' articles</span></div>' + sortPick('ret') + '</div>';
+    h += '<div class="grid2"><button class="btn main" data-a="newReturn">+ New return</button><button class="btn" data-a="retBatch">+ Batch add returns</button></div>';
+    const Q = retQueue(); if (Q.length) h += '<button class="btn ret full" data-a="retStartAll">Return on CUIMS · ' + Q.length + ' waiting' + (S.queue ? ' (queue on)' : '') + '</button>';
+    h += '<button class="btn sm ghost" data-a="pdfReturn"' + (L.length ? '' : ' disabled') + '>Make PDF</button>';
+    if (!L.length) h += '<div class="card pad note">No returns for these filters.</div>';
+    L.forEach(x => {
+      const nm = x.byName || rcvName(x.by), rem = retRemark(x);
+      h += rqCard({ where: 'ret', req: x.no, store: x.store, tapA: 'editReturn', tapV: x.id, status: x.serial ? ['On CUIMS', 'c-ok'] : ['Not on CUIMS yet', 'c-gd'],
+        meta: ['came ' + fmtShort(x.recvDate || x.date), 'GA' + esc(x.by) + (nm ? ' ' + esc(nm) : ''), x.items.length + (x.items.length === 1 ? ' article' : ' articles')],
+        chips: x.serial ? '<div class="scrow"><span class="stag ret" style="position:static">Serial</span>' + serFmt(x.serial) + '</div>' : '',
+        left: x.items.map(i => ({ code: i.code, qty: i.qty })),
+        cta: x.serial ? '' : '<button class="btn ret full" data-a="retCuims" data-v="' + x.id + '">Return on CUIMS · ' + x.items.length + ' articles</button>' });
     });
   }
   return h + '</main>';
@@ -765,10 +775,12 @@ function areaDatalist() {
 const MON3 = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 function cuimsDate(iso) { const p = String(iso || today()).split('-'); return MON3[+p[1] - 1] + ' ' + p[2] + ', ' + p[0]; }
 function retRemark(r) { return 'Returned from ' + String(r.store || '').trim() + ' on ' + cuimsDate(r.recvDate || r.date); }
+function retQueue(skipId) { return S.returns.filter(r => !r.serial && r.id !== skipId && r.store && /^\d{6}$/.test(r.by) && r.items.length).sort((a, b) => String(a.recvDate || a.date).localeCompare(String(b.recvDate || b.date)) || String(a.no).localeCompare(String(b.no), undefined, { numeric: true })); }
 function startReturnJob(r) {
   if (!r.store || !/^\d{6}$/.test(r.by) || !r.items.length) { toast('Store, a 6-digit By employee and at least one item are needed.'); return; }
   const rem = retRemark(r);
-  const job = { id: 'J' + Date.now(), kind: 'return', retId: r.id, slip: r.no, rcv: r.by, rname: r.byName || rcvName(r.by), store: r.store, retDateText: cuimsDate(r.recvDate || r.date), test: !!S.testMode, queue: false, autoSubmit: false, phase: 'fill', paused: false, log: [], tries: {}, next: '',
+  const nx = S.queue ? retQueue(r.id)[0] : null;
+  const job = { id: 'J' + Date.now(), kind: 'return', retId: r.id, slip: r.no, rcv: r.by, rname: r.byName || rcvName(r.by), store: r.store, retDateText: cuimsDate(r.recvDate || r.date), test: !!S.testMode, queue: !!S.queue, autoSubmit: !!S.autoSubmit && !S.testMode, phase: 'fill', paused: false, log: [], tries: {}, next: nx ? nx.no + ' · ' + nx.store : '',
     items: r.items.map((i, k) => ({ lineId: 'r' + r.id + '_' + k, req: '', reqDate: '', code: i.code, name: i.name || itemName(i.code), uom: i.uom || itemUom(i.code), qty: Number(i.qty), remark: rem, skip: false })) };
   if (!N) { toast('Open this inside the JV Stock Issue app to fill CUIMS.'); return; }
   N.startJob(JSON.stringify(job));
@@ -1558,8 +1570,11 @@ function nextReqNoFrom(used) {
   let mx = 0; S.lines.concat(used.map(r => ({ req: r }))).forEach(l => { if (String(l.req).startsWith(pre)) { const n = parseInt(String(l.req).slice(pre.length), 10); if (n > mx) mx = n; } });
   return pre + String(mx + 1).padStart(2, '0');
 }
+function lastRetBy(store) { const r = S.returns.filter(x => x.store === store && /^\d{6}$/.test(x.by)).sort((a, b) => String(b.date).localeCompare(String(a.date)))[0]; return r ? r.by : ((S.stores[store] || {}).rcv || ''); }
 function batchAddGroup(store) {
-  const f = ui.form; const req = nextReqNoFrom(f.groups.map(g => g.req));
+  const f = ui.form;
+  if (f.mode === 'return') { f.groups.push({ store, req: nextReturnNo(f.date, f.groups.map(g => g.req)), _auto: true, rcv: lastRetBy(store), slip: '', remark: '', items: [] }); f.act = f.groups.length - 1; return; }
+  const req = nextReqNoFrom(f.groups.map(g => g.req));
   let slip = ''; if (f.slipStart) { const m = String(f.slipStart).toUpperCase().match(/^(.*?)(\d+)$/); if (m) { const used = allSlips(); f.groups.forEach(g => used.add(g.slip)); let n = parseInt(m[2], 10); do { slip = m[1] + String(n).padStart(m[2].length, '0'); n++; } while (used.has(slip)); } }
   f.groups.push({ store, req, rcv: (S.stores[store] || {}).rcv || '', slip, remark: '', items: [] }); f.act = f.groups.length - 1;
 }
@@ -1576,26 +1591,34 @@ function batchHits(gi) {
 }
 function shBatch() {
   const f = ui.form, stores = allStores();
-  let h = '<div class="row"><h2>Batch add requests</h2><button class="btn sm ghost" data-a="closeSheet">Close</button></div>';
-  h += '<div class="grid2"><label class="f">Request date<input type="date" data-bt="date" value="' + esc(f.date) + '"></label><label class="f">First Slip No<input type="text" data-bt="slipStart" value="' + esc(f.slipStart || '') + '" class="mono" placeholder="optional, e.g. JV/1042" autocapitalize="characters"></label></div>';
+  const RET = f.mode === 'return';
+  if (RET) { const used = []; f.groups.forEach(g => { if (g._auto) g.req = nextReturnNo(f.date, used); used.push(g.req); }); }
+  let h = '<div class="row"><h2>' + (RET ? (f.single ? 'New return' : 'Batch add returns') : 'Batch add requests') + '</h2><button class="btn sm ghost" data-a="closeSheet">Close</button></div>';
+  h += RET ? '<label class="f">Returns came on (in every remark)<input type="date" data-bt="date" value="' + esc(f.date) + '"></label>'
+    : '<div class="grid2"><label class="f">Request date<input type="date" data-bt="date" value="' + esc(f.date) + '"></label><label class="f">First Slip No<input type="text" data-bt="slipStart" value="' + esc(f.slipStart || '') + '" class="mono" placeholder="optional, e.g. JV/1042" autocapitalize="characters"></label></div>';
   f.groups.forEach((g, gi) => {
     const act = f.act === gi;
     if (!act) { h += '<button class="card bmini" data-a="btAct" data-v="' + gi + '"><span class="reqno">' + esc(g.req) + '</span><b>' + esc(g.store) + '</b><span class="note">' + g.items.length + ' articles' + (g.items.some(x => !(parseFloat(x.qty) > 0)) ? ' · qty missing' : '') + '</span>' + ico('down', 18) + '</button>'; return; }
     h += '<div class="card bgroup act" style="overflow:hidden"><div class="pad col" style="gap:10px"><div class="row"><span class="reqno">' + esc(g.req) + '</span><button class="xbtn" data-a="btDel" data-v="' + gi + '" aria-label="Remove store">' + ico('x', 16) + '</button></div><b class="ttl">' + esc(g.store) + '</b>' +
-      '<div class="grid3"><label class="f">Request No<input type="text" data-bg="' + gi + '|req" value="' + esc(g.req) + '" class="mono"></label><label class="f">Receiver<input type="text" inputmode="numeric" maxlength="6" data-bg="' + gi + '|rcv" value="' + esc(g.rcv) + '" class="mono"></label><label class="f">Slip No<input type="text" data-bg="' + gi + '|slip" value="' + esc(g.slip) + '" class="mono" autocapitalize="characters"></label></div>' +
-      '<label class="f">Custom remark (optional)<input type="text" data-bg="' + gi + '|remark" value="' + esc(g.remark) + '"></label></div>' +
+      (RET ? '<div class="grid2"><label class="f">Return No<input type="text" data-bg="' + gi + '|req" value="' + esc(g.req) + '" class="mono" autocapitalize="characters"></label><label class="f">By employee<input type="text" inputmode="numeric" maxlength="6" data-bg="' + gi + '|rcv" value="' + esc(g.rcv) + '" class="mono"></label></div>' +
+        '<div class="note mono" style="color:#2F6FE0">' + esc(retRemark({ store: g.store, recvDate: f.date })) + '</div></div>'
+      : '<div class="grid3"><label class="f">Request No<input type="text" data-bg="' + gi + '|req" value="' + esc(g.req) + '" class="mono"></label><label class="f">Receiver<input type="text" inputmode="numeric" maxlength="6" data-bg="' + gi + '|rcv" value="' + esc(g.rcv) + '" class="mono"></label><label class="f">Slip No<input type="text" data-bg="' + gi + '|slip" value="' + esc(g.slip) + '" class="mono" autocapitalize="characters"></label></div>' +
+      '<label class="f">Custom remark (optional)<input type="text" data-bg="' + gi + '|remark" value="' + esc(g.remark) + '"></label></div>') +
       g.items.map((it, ii) => '<div class="line" style="flex-direction:row;align-items:center;gap:10px"><span style="flex:1;min-width:0"><b>' + esc(it.name) + '</b><div class="meta"><span class="mono">' + esc(it.code) + '</span>' + (S.stock[it.code] ? '<i></i><span>stock ' + num(S.stock[it.code].qty) + '</span>' : '') + '</div></span><input type="number" inputmode="decimal" enterkeyhint="next" data-bq="' + gi + '|' + ii + '" value="' + esc(it.qty) + '" placeholder="Qty" style="width:88px;text-align:right"><button class="xbtn" data-a="btItemDel" data-v="' + gi + '|' + ii + '" aria-label="Remove">' + ico('x', 16) + '</button></div>').join('') +
       '<div class="pad col" style="gap:8px;background:var(--soft)"><div class="sbox"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input type="search" data-bt="q" value="' + esc(f.q || '') + '" placeholder="Add item: type name or code" autocomplete="off" enterkeyhint="done"></div><div id="bthits">' + batchHits(gi) + '</div></div></div>';
   });
-  h += pickBtn('btStore', { title: 'Add a store', search: true, full: true, placeholder: '+ Add a store', opts: stores.map(st => [st, st, (S.stores[st] || {}).rcv ? 'Receiver GA' + S.stores[st].rcv : '']), val: '', set: v => { batchAddGroup(v); ui.form.q = ''; renderSheet(); const i = document.querySelector('[data-bt="q"]'); if (i) i.focus(); } });
-  h += '<details class="card pad"><summary><b>Paste rows from Excel</b></summary><div class="note" style="margin:8px 0">One row per article: <b>Store, Item code, Qty</b> (tab or comma). Optional 4th column: Request No.</div><textarea data-bt="paste" rows="5">' + esc(f.paste || '') + '</textarea><button class="btn" data-a="btPaste" style="margin-top:8px">Add pasted rows</button></details>';
+  if (!(RET && f.single && f.groups.length)) h += pickBtn('btStore', { title: 'Add a store', search: true, full: true, placeholder: RET ? (f.groups.length ? '+ Another return (store)' : '+ Choose the store it came from') : '+ Add a store', opts: stores.map(st => [st, st, (S.stores[st] || {}).rcv ? 'Receiver GA' + S.stores[st].rcv : '']), val: '', set: v => { batchAddGroup(v); ui.form.q = ''; renderSheet(); const i = document.querySelector('[data-bt="q"]'); if (i) i.focus(); } });
+  h += '<details class="card pad"><summary><b>Paste rows from Excel</b></summary><div class="note" style="margin:8px 0">One row per article: <b>Store, Item code, Qty</b> (tab or comma). Optional 4th column: ' + (RET ? 'Return No' : 'Request No') + '.</div><textarea data-bt="paste" rows="5">' + esc(f.paste || '') + '</textarea><button class="btn" data-a="btPaste" style="margin-top:8px">Add pasted rows</button></details>';
   const rows = f.groups.flatMap(g => g.items.map(it => ({ g, it })));
-  if (rows.length) h += '<div class="sect">Preview · ' + rows.length + ' articles · ' + f.groups.length + ' requests</div><div class="card tblwrap"><table><tr><th>Request</th><th>Store</th><th>Item</th><th>Qty</th><th>Receiver</th><th>Slip</th></tr>' +
-    rows.map(({ g, it }) => '<tr><td><b>' + esc(g.req) + '</b></td><td>' + esc(g.store) + '</td><td>' + esc(it.name) + ' <span class="note mono">' + esc(it.code) + '</span></td><td' + (parseFloat(it.qty) > 0 ? '' : ' style="color:var(--noInk);font-weight:700"') + '>' + esc(it.qty || 'missing') + '</td><td>' + esc(g.rcv || '–') + '</td><td>' + esc(g.slip || '–') + '</td></tr>').join('') + '</table></div>';
-  const bad = f.groups.find(g => !g.req || S.lines.some(l => l.req === g.req) || f.groups.filter(x => x.req === g.req).length > 1);
-  if (bad) h += '<div class="err">Request No ' + esc(bad.req) + ' is empty or already used.</div>';
-  const ok = rows.length && !bad && rows.every(({ it }) => parseFloat(it.qty) > 0);
-  h += '<button class="btn main full" data-a="btSave"' + (ok ? '' : ' disabled') + '>Save all · ' + rows.length + ' articles</button>';
+  if (rows.length) h += '<div class="sect">Preview · ' + rows.length + ' articles · ' + f.groups.length + (RET ? ' returns' : ' requests') + '</div><div class="card tblwrap"><table><tr><th>' + (RET ? 'Return' : 'Request') + '</th><th>Store</th><th>Item</th><th>Qty</th><th>' + (RET ? 'By employee' : 'Receiver') + '</th>' + (RET ? '' : '<th>Slip</th>') + '</tr>' +
+    rows.map(({ g, it }) => '<tr><td><b>' + esc(g.req) + '</b></td><td>' + esc(g.store) + '</td><td>' + esc(it.name) + ' <span class="note mono">' + esc(it.code) + '</span></td><td' + (parseFloat(it.qty) > 0 ? '' : ' style="color:var(--noInk);font-weight:700"') + '>' + esc(it.qty || 'missing') + '</td><td>' + esc(g.rcv || '–') + (g.rcv && rcvName(g.rcv) ? ' ' + esc(rcvName(g.rcv)) : '') + '</td>' + (RET ? '' : '<td>' + esc(g.slip || '–') + '</td>') + '</tr>').join('') + '</table></div>';
+  const bad = f.groups.find(g => !g.req || (RET ? S.returns.some(r => String(r.no).toUpperCase() === String(g.req).toUpperCase()) : S.lines.some(l => l.req === g.req)) || f.groups.filter(x => x.req === g.req).length > 1);
+  if (bad) h += '<div class="err">' + (RET ? 'Return' : 'Request') + ' No ' + esc(bad.req) + ' is empty or already used.</div>';
+  const badRcv = RET && f.groups.find(g => !/^\d{6}$/.test(g.rcv || ''));
+  if (badRcv) h += '<div class="err">' + esc(badRcv.store) + ': By employee needs 6 digits.</div>';
+  const ok = rows.length && !bad && !badRcv && rows.every(({ it }) => parseFloat(it.qty) > 0);
+  h += '<button class="btn main full" data-a="btSave"' + (ok ? '' : ' disabled') + '>' + (RET ? 'Save ' + f.groups.length + ' return' + (f.groups.length > 1 ? 's' : '') + ' · ' : 'Save all · ') + rows.length + ' articles</button>';
+  if (RET && ok) h += '<button class="btn ret full" data-a="btSave" data-v="cuims">Save & return on CUIMS</button>';
   return h;
 }
 function shReqStatus() {
@@ -1783,7 +1806,9 @@ function recordSubmit(e) {
   if (job.kind === 'return') {
     const r = S.returns.find(x => String(x.id) === String(job.retId)); if (!r) return;
     r.serial = e.serial || r.serial || ''; r.cuimsAt = new Date().toISOString(); if (e.rname) { r.byName = r.byName || e.rname; S.rnames = S.rnames || {}; S.rnames[r.by] = e.rname; }
-    save(); toast('Return ' + r.no + ' saved on CUIMS, Serial ' + (r.serial || '–') + '.'); render(); return;
+    save(); toast('Return ' + r.no + ' saved on CUIMS, Serial ' + (r.serial || '–') + '.'); render();
+    if (S.queue && job.queue) { const nx = retQueue(r.id)[0]; if (nx) setTimeout(() => { toast('Queue: return ' + nx.no + ', ' + nx.store + '.'); startReturnJob(nx); }, 1500); }
+    return;
   }
   if (S.entries.some(x => String(x.slip).toUpperCase() === String(job.slip).toUpperCase())) return;
   const items = job.items.filter(i => !i.skip);
@@ -1872,6 +1897,7 @@ function loader(on, msg) {
 }
 const skel = n => Array.from({ length: n || 3 }, () => '<div class="card pad skel"><i style="width:34%"></i><i style="width:72%"></i><i style="width:55%"></i></div>').join('');
 function uiPrompt(msg, value, okLabel) {
+  loader(false);
   return new Promise(res => {
     let el = document.getElementById('dlg'); if (!el) { el = document.createElement('div'); el.id = 'dlg'; document.body.appendChild(el); }
     el.innerHTML = '<div class="pkbg"></div><div class="dlgbox" role="dialog" aria-modal="true"><div class="dlgmsg">' + esc(msg) + '</div><input type="text" id="dlgin" value="' + esc(value || '') + '" class="mono" autocapitalize="characters"><div class="grid2"><button class="btn" data-dlg="0">Cancel</button><button class="btn main" data-dlg="1">' + esc(okLabel || 'OK') + '</button></div></div>';
@@ -2199,6 +2225,7 @@ function flashReq(req) {
   });
 }
 function uiConfirm(msg, okLabel, danger) {
+  loader(false);
   return new Promise(res => {
     let el = document.getElementById('dlg'); if (!el) { el = document.createElement('div'); el.id = 'dlg'; document.body.appendChild(el); }
     el.innerHTML = '<div class="pkbg"></div><div class="dlgbox" role="dialog" aria-modal="true"><div class="dlgic' + (danger ? ' no' : '') + '">' + ico('alert', 26) + '</div><div class="dlgmsg">' + esc(msg) + '</div><div class="grid2"><button class="btn" data-dlg="0">Cancel</button><button class="btn main' + (danger ? ' danger' : '') + '" data-dlg="1">' + esc(okLabel || 'OK') + '</button></div></div>';
@@ -2331,7 +2358,7 @@ function shEditReq() {
 }
 
 /* ---------------- lock ---------------- */
-const GUARDED = new Set(['dcRetFmt', 'dcRetFix', 'clClear', 'retCuims', 'saveReturnCuims', 'rbSave', 'stkEdit', 'stkRen', 'stkDel', 'stkAdd', 'mgDone', 'mgPend', 'mgDel', 'mgDelSlipPend', 'paperAddFrom', 'advIssue', 'paperAdd', 'mrSave', 'mrRemove', 'manReqToggle', 'msSave', 'artQty', 'artHold', 'artDel', 'artsBHold', 'artsBRel', 'artsBDel', 'testToggle', 'testClear', 'dcRenum', 'dcMerge', 'dcKeepFirst', 'dcDate', 'dcBad', 'renumReq', 'impRenum', 'impDrop', 'credSave', 'credDel', 'corrOpen', 'corrSave', 'bulkEdit', 'bulkSave', 'dropReq', 'dropStore', 'editReq', 'saveReq', 'markDone', 'markSave', 'newManual', 'saveEntry', 'delEntry', 'newReturn', 'saveReturn', 'delReturn',
+const GUARDED = new Set(['retStartAll', 'dcRetFmt', 'dcRetFix', 'clClear', 'retCuims', 'saveReturnCuims', 'rbSave', 'stkEdit', 'stkRen', 'stkDel', 'stkAdd', 'mgDone', 'mgPend', 'mgDel', 'mgDelSlipPend', 'paperAddFrom', 'advIssue', 'paperAdd', 'mrSave', 'mrRemove', 'manReqToggle', 'msSave', 'artQty', 'artHold', 'artDel', 'artsBHold', 'artsBRel', 'artsBDel', 'testToggle', 'testClear', 'dcRenum', 'dcMerge', 'dcKeepFirst', 'dcDate', 'dcBad', 'renumReq', 'impRenum', 'impDrop', 'credSave', 'credDel', 'corrOpen', 'corrSave', 'bulkEdit', 'bulkSave', 'dropReq', 'dropStore', 'editReq', 'saveReq', 'markDone', 'markSave', 'newManual', 'saveEntry', 'delEntry', 'newReturn', 'saveReturn', 'delReturn',
   'rmStore', 'addStore', 'wipe', 'restore', 'bkRestore', 'bkDel', 'bkKeep', 'bkSave', 'bkNoteSave', 'photo', 'photoDel', 'mode', 'lockToggle', 'syncAuto', 'mgrToggle', 'moveStore', 'saveUrls', 'resetZoom', 'hold', 'cropSave']);
 let pendingAuth = null;
 function askUnlock(after) {
@@ -2358,7 +2385,7 @@ document.addEventListener('keydown', ev => {
 });
 document.addEventListener('click', ev => {
   const q = ev.target.closest && ev.target.closest('[data-req]');
-  if (q && q.dataset.req && q.dataset.req !== '–') { ui.lastReq = q.dataset.req; flashReq(ui.lastReq); }
+  if (q && q.dataset.req && q.dataset.req !== '–') { ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation(); ui.lastReq = q.dataset.req; flashReq(ui.lastReq); return; }
 }, true);
 document.addEventListener('click', async ev => {
   const t = ev.target.closest('[data-a]'); if (!t) return;
@@ -2381,8 +2408,11 @@ document.addEventListener('click', async ev => {
     case 'openReq': { if (ui.view !== 'req') { const ids = []; document.querySelectorAll('[data-a="openReq"][data-v]').forEach(x => { if (!ids.includes(x.dataset.v)) ids.push(x.dataset.v); }); ui.reqList = ids.length > 1 ? ids : null; }
       ui.lastReq = v; ui.view = 'req'; ui.req = v; render(); window.scrollTo(0, 0); break; }
     case 'reqGo': goReq(+v); break;
+    case 'retSt': ui.reg.rst = v; render(); break;
+    case 'retStartAll': { const Q = retQueue(); if (Q[0]) startReturnJob(Q[0]); break; }
     case 'retCuims': { const r = S.returns.find(x => String(x.id) === v); if (r) startReturnJob(r); break; }
-    case 'retBatch': ui.form = { recvDate: today(), groups: [{ store: '', by: '', rows: [{ code: '', qty: '' }] }], paste: '' }; ui.sheet = { kind: 'retBatch' }; renderSheet(); break;
+    case 'retBatch': ui.drawer = false; ui.form = { mode: 'return', date: today(), groups: [], act: 0, q: '', paste: '' }; ui.sheet = { kind: 'batch' }; renderSheet(); break;
+    case 'retBatchOld': ui.form = { recvDate: today(), groups: [{ store: '', by: '', rows: [{ code: '', qty: '' }] }], paste: '' }; ui.sheet = { kind: 'retBatch' }; renderSheet(); break;
     case 'rbAddG': ui.form.groups.push({ store: '', by: '', rows: [{ code: '', qty: '' }] }); renderSheet(); break;
     case 'rbDelG': ui.form.groups.splice(+v, 1); if (!ui.form.groups.length) ui.form.groups.push({ store: '', by: '', rows: [{ code: '', qty: '' }] }); renderSheet(); break;
     case 'rbAddR': ui.form.groups[+v].rows.push({ code: '', qty: '' }); renderSheet(); break;
@@ -2523,10 +2553,16 @@ document.addEventListener('click', async ev => {
     case 'btPaste': { const f = ui.form; let n = 0, skip = 0;
       String(f.paste || '').split(/\r?\n/).forEach(line => { const c = line.split(/	|,/).map(x => x.trim()); if (c.length < 3 || !c[0] || !c[1]) return; const q = parseFloat(c[2]); if (!(q > 0)) { skip++; return; }
         const store = c[0].toUpperCase(), code = c[1].toUpperCase(); let g = f.groups.find(x => x.store === store && (!c[3] || x.req === c[3]));
-        if (!g) { batchAddGroup(store); g = f.groups[f.groups.length - 1]; if (c[3]) g.req = c[3]; }
+        if (!g) { batchAddGroup(store); g = f.groups[f.groups.length - 1]; if (c[3]) { g.req = c[3].toUpperCase(); g._auto = false; } }
         g.items.push({ code, name: itemName(code), uom: itemUom(code), qty: String(q) }); n++; });
       f.paste = ''; renderSheet(); toast(n + ' rows added' + (skip ? ', ' + skip + ' skipped (no qty)' : '') + '.'); break; }
-    case 'btSave': { const f = ui.form; let n = 0;
+    case 'btSave': if (ui.form.mode === 'return') { const f = ui.form; const tm = timeNow(); const made = [];
+        if (!(await uiConfirm('Save ' + f.groups.length + ' return' + (f.groups.length > 1 ? 's' : '') + ', came on ' + cuimsDate(f.date) + '?', 'Save'))) break;
+        undoArm('retBatchSave');
+        f.groups.forEach(g => { const rec = { id: nid(), no: String(g.req).trim().toUpperCase(), against: '1111', store: g.store.toUpperCase(), by: g.rcv, byName: rcvName(g.rcv), date: today(), recvDate: f.date || today(), time: tm, serial: '', remarks: '', enteredBy: { name: S.me.name || '', emp: S.me.emp || '' },
+          items: g.items.map(it => ({ code: it.code, name: it.name || itemName(it.code), uom: it.uom || itemUom(it.code), qty: parseFloat(it.qty), remark: '' })) }; S.returns.push(rec); made.push(rec); });
+        ui.tab = 'reg'; ui.reg.type = 'return'; save(); ui.sheet = null; renderSheet(); render(); if (v === 'cuims' && made[0]) startReturnJob(made[0]); break; }
+      { const f = ui.form; let n = 0;
       f.groups.forEach(g => { const st = g.store.toUpperCase(); g.items.forEach(it => { S.lines.push({ id: nid(), req: g.req.trim(), store: st, date: f.date || today(), code: it.code, qty: parseFloat(it.qty), rcv: g.rcv || '', slip: (g.slip || '').toUpperCase(), remark: (g.remark || '').trim(), src: 'new', earlier: '', status: 'waiting', issued: [] }); n++; });
         if (!S.stores[st]) S.stores[st] = { rcv: g.rcv || '', rname: '' }; });
       save(); ui.sheet = null; renderSheet(); render(); toast(n + ' articles saved in ' + f.groups.length + ' requests.'); break; }
@@ -2748,7 +2784,8 @@ document.addEventListener('click', async ev => {
       const i = S.entries.findIndex(e => e.id === rec.id); if (i >= 0) S.entries[i] = rec; else S.entries.push(rec);
       save(); ui.sheet = null; renderSheet(); render(); toast('Entry saved.'); break; }
     case 'delEntry': if (await uiConfirm('Delete this register entry? Stock and pending are not changed.', 'Delete', true)) { S.entries = S.entries.filter(e => e.id !== ui.form.id); save(); ui.sheet = null; renderSheet(); render(); } break;
-    case 'newReturn': ui.form = { _new: true, _autoNo: true, no: nextReturnNo(today()), against: '1111', store: '', by: '', byName: '', recvDate: today(), date: ui.reg.date, time: timeNow(), serial: '', remarks: '', ebName: S.me.name, ebEmp: S.me.emp, items: [blankItem()] }; ui.sheet = { kind: 'return' }; renderSheet(); break;
+    case 'newReturn': ui.form = { mode: 'return', single: true, date: today(), groups: [], act: 0, q: '', paste: '' }; ui.sheet = { kind: 'batch' }; renderSheet(); break;
+    case 'newReturnOld': ui.form = { _new: true, _autoNo: true, no: nextReturnNo(today()), against: '1111', store: '', by: '', byName: '', recvDate: today(), date: ui.reg.date, time: timeNow(), serial: '', remarks: '', ebName: S.me.name, ebEmp: S.me.emp, items: [blankItem()] }; ui.sheet = { kind: 'return' }; renderSheet(); break;
     case 'editReturn': { const r = S.returns.find(x => String(x.id) === v); ui.form = Object.assign(JSON.parse(JSON.stringify(r)), { ebName: (r.enteredBy || {}).name || '', ebEmp: (r.enteredBy || {}).emp || '' }); ui.sheet = { kind: 'return' }; renderSheet(); break; }
     case 'saveReturn': case 'saveReturnCuims': { const f = ui.form; const items = cleanItems(f.items);
       if (!f.store.trim() || !/^\d{6}$/.test(f.by)) { toast('Store and a 6-digit "Returned by" are needed.'); break; }
@@ -2827,8 +2864,8 @@ document.addEventListener('input', ev => {
     if (k === 'store') { const d = (S.stores[el.value] || {}).rcv; if (d && !ui.form.rcv) ui.form.rcv = d; }
     if (k === 'q') { const box = document.getElementById('nrhits'); if (box) box.innerHTML = nrHits(); return; }
     if (k === 'req' || k === 'slip') { const fk = focusKey(el); renderSheet(); refocus(fk); } return; }
-  if (el.dataset.bt) { const k = el.dataset.bt; ui.form[k] = el.value; if (k === 'q') { const box = document.getElementById('bthits'); if (box) box.innerHTML = batchHits(ui.form.act); } return; }
-  if (el.dataset.bg) { const [gi, k] = el.dataset.bg.split('|'); ui.form.groups[+gi][k] = k === 'rcv' ? el.value.replace(/\D/g, '') : k === 'slip' ? el.value.toUpperCase() : el.value; return; }
+  if (el.dataset.bt) { const k = el.dataset.bt; ui.form[k] = el.value; if (k === 'date' && ui.form.mode === 'return') { renderSheet(); return; } if (k === 'q') { const box = document.getElementById('bthits'); if (box) box.innerHTML = batchHits(ui.form.act); } return; }
+  if (el.dataset.bg) { const [gi, k] = el.dataset.bg.split('|'); if (k === 'req') ui.form.groups[+gi]._auto = false; ui.form.groups[+gi][k] = k === 'rcv' ? el.value.replace(/\D/g, '') : k === 'slip' ? el.value.toUpperCase() : el.value; return; }
   if (el.dataset.bq) { const [gi, ii] = el.dataset.bq.split('|').map(Number); ui.form.groups[gi].items[ii].qty = el.value; return; }
   if (el.dataset.nrq != null) { ui.form.items[+el.dataset.nrq].qty = el.value; const b = document.querySelector('[data-a=nrSave]'); if (b) { const f = ui.form; b.disabled = !(f.store && f.req && f.items.length && f.items.every(x => parseFloat(x.qty) > 0)); } return; }
   if (el.dataset.var) { const c = curCount(); if (c) { const [a1, k, f] = el.dataset.var.split('|'); const it = c.items[+a1]; it.variants[+k][f] = el.value; syncPhysical(it); save(true); } return; }
