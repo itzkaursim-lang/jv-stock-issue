@@ -290,8 +290,9 @@ function rqCard(o) {
   if (o.slips) h += '<div class="slips">' + (o.slips.length ? o.slips.map(e => slipRow(e, o.req)).join('') : '<div class="slipline none">No slip entered yet</div>') + '</div>';
   if (o.btns) h += '<div class="rqbtns">' + o.btns + '</div>';
   if (o.left && o.left.length) {
-    h += '<button class="leftbtn" data-a="rqTog" data-v="' + esc(key) + '"><span>' + (open ? 'Hide' : 'Show') + ' ' + o.left.length + ' pending article' + (o.left.length > 1 ? 's' : '') + '</span>' + ico(open ? 'up' : 'down', 18) + '</button>';
-    if (open) h += '<div class="leftbox">' + o.left.map(l => '<div class="leftrow"><span><b>' + esc(itemName(l.code)) + '</b><span class="mono">' + esc(l.code) + '</span></span><b class="qty">' + num(l.qty) + ' ' + esc(itemUom(l.code)) + '</b></div>').join('') + '</div>';
+    const lw = o.leftWord || 'pending article', lws = o.leftWords || (lw + 's');
+    h += '<button class="leftbtn' + (o.leftCls ? ' ' + o.leftCls : '') + '" data-a="rqTog" data-v="' + esc(key) + '"><span>' + (open ? 'Hide' : 'Show') + ' ' + o.left.length + ' ' + (o.left.length > 1 ? lws : lw) + '</span>' + ico(open ? 'up' : 'down', 18) + '</button>';
+    if (open) h += '<div class="leftbox' + (o.leftCls ? ' ' + o.leftCls : '') + '">' + o.left.map(l => '<div class="leftrow"><span><b>' + esc(itemName(l.code)) + '</b><span class="mono">' + esc(l.code) + '</span></span><b class="qty">' + num(l.qty) + ' ' + esc(itemUom(l.code)) + '</b></div>').join('') + '</div>';
   }
   if (o.cta) h += '<div class="cta">' + o.cta + '</div>';
   return h + '</div>';
@@ -723,7 +724,7 @@ function vReg() {
       h += rqCard({ where: 'ret', req: x.no, store: x.store, tapA: 'editReturn', tapV: x.id, status: x.serial ? ['On CUIMS', 'c-ok'] : ['Not on CUIMS yet', 'c-gd'],
         meta: ['came ' + fmtShort(x.recvDate || x.date), 'GA' + esc(x.by) + (nm ? ' ' + esc(nm) : ''), x.items.length + (x.items.length === 1 ? ' article' : ' articles')],
         chips: x.serial ? '<div class="scrow"><span class="stag ret" style="position:static">Serial</span>' + serFmt(x.serial) + '</div>' : '',
-        left: x.items.map(i => ({ code: i.code, qty: i.qty })),
+        left: x.items.map(i => ({ code: i.code, qty: i.qty })), leftWord: x.serial ? 'returned article' : 'article to return', leftWords: x.serial ? 'returned articles' : 'articles to return', leftCls: x.serial ? 'okl' : 'retl',
         cta: x.serial ? '' : '<button class="btn ret full" data-a="retCuims" data-v="' + x.id + '">Return on CUIMS · ' + x.items.length + ' articles</button>' });
     });
   }
