@@ -258,7 +258,16 @@
     window.open = function (u) { try { if (AUTO && u && /Format=|OpType=Export|Export/i.test(String(u))) { var a = document.createElement('a'); a.href = u; B.fetchStockUrl && B.fetchStockUrl(a.href); return null; } } catch (e) {} return nativeOpen.apply(window, arguments); };
   }
   J.autoMsg = function (k, m) { if (!AUTO) return; if (k === 'download') { AS.step = 'download'; AS.note = 'Bringing the Excel file to the app'; } else if (k === 'fail') { AS.err = 'Download failed: ' + (m || ''); } asSave(); paint(); };
+  function verifyPanel(j) {
+    var n = (j.targets || []).length, d = Math.min(j.idx || 0, n), cur = (j.targets || [])[d];
+    var h = hero('Verify on CUIMS · read only', j.title || 'Checking entries', j, C.ink);
+    var msg = j.phase === 'done' ? statusCard('ok', 'Finished', 'Opening the report in the app') : statusCard('run', cur ? 'Checking ' + (cur.serial ? 'Serial ' + cur.serial : 'Slip ' + cur.slip) : (j.day && !j.dayDone ? 'Listing ' + j.day.label : 'Working…'), d + ' of ' + n + ' done · nothing is changed on CUIMS');
+    var rows = (j.targets || []).slice(Math.max(0, d - 3), d + 4).map(function (t, i) { var r = (j.res || {})[t.key]; var st = r ? (r.found ? ['Read', C.okInk, '#D6F5E5'] : ['Not found', C.noInk, '#FFE4EA']) : t === cur ? ['Now', '#fff', C.ink] : ['Next', C.mute, '#EEECF3'];
+      return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid ' + C.line + '"><b style="flex:1;font:700 14px ' + F + '">' + esc(t.serial ? 'Serial ' + t.serial : 'Slip ' + t.slip) + '</b><span style="font:700 12px ' + F + ';color:' + st[1] + ';background:' + st[2] + ';border-radius:99px;padding:3px 10px">' + st[0] + '</span></div>'; }).join('');
+    return h + wrap(msg + '<div style="background:' + C.soft + ';border-radius:20px;padding:4px 14px">' + rows + '</div>' + row2('', btn('cancel', 'Stop', 'link')) + credit());
+  }
   function paintInner2() {
+    var jv = job(); if (jv && jv.kind === 'verify' && active(jv)) { bar.innerHTML = verifyPanel(jv); return; }
     var j = job();
     if (mini) {
       var k0 = j && j.items ? cnt(j) : { done: 0, total: 0 };
@@ -414,6 +423,68 @@
     s.value = j.slip;
     bt.click();
     await idle(600);
+  }
+
+  /* ---------- read-only verification (Show Transactions → SHOW) ---------- */
+  function txRows() {
+    var sec = $('divSearchSection') || document; var out = [];
+    [].slice.call(sec.querySelectorAll('tr')).forEach(function (tr) {
+      var tds = tr.querySelectorAll('td'); if (tds.length < 5) return;
+      var serial = '', idx = -1; for (var k = 0; k < tds.length; k++) { var t = tds[k].textContent.trim(); if (/^\d{3,9}$/.test(t)) { serial = t; idx = k; break; } }
+      if (!serial) return;
+      var desc = (tds[idx + 2] || {}).textContent || '', by = (tds[idx + 3] || {}).textContent || '', dt = (tds[idx + 4] || {}).textContent || '';
+      var sm = desc.match(/Slip\s*No\s*:\s*([^\s)]+)/i), rm = desc.match(/(?:Received|Returned)?\s*By\s*(GA\d{6})/i) || desc.match(/(GA\d{6})/i);
+      var btn = tr.querySelector('input[type=submit],input[type=button],a,button');
+      out.push({ serial: serial, mode: ((tds[idx + 1] || {}).textContent || '').trim(), desc: desc.replace(/\s+/g, ' ').trim(), slip: sm ? sm[1].trim() : '', rcv: rm ? rm[1].replace(/^GA/i, '') : '', entryBy: by.replace(/\s+/g, ' ').trim(), entryDate: dt.replace(/\s+/g, ' ').trim(), isReturn: /return/i.test(desc), btnId: btn ? btn.id : '' });
+    });
+    return out;
+  }
+  function serialBox() { return $('ContentPlaceHolder1_txtSerialNoS') || rowFor(/^Serial\s*No$/i); }
+  async function txSearch(o) {
+    if ($('DivUpdate')) $('DivUpdate').click();
+    var s = $('ContentPlaceHolder1_txtSlipOrRequisitionNoS'), bt = $('btnSearch'), sn = serialBox();
+    if (!bt) pauseWith('Show Transactions search not found');
+    if ($('ContentPlaceHolder1_txtFromDateS')) $('ContentPlaceHolder1_txtFromDateS').value = o.from;
+    if ($('ContentPlaceHolder1_txtToDateS')) $('ContentPlaceHolder1_txtToDateS').value = o.to;
+    if (s) s.value = o.slip || ''; if (sn) sn.value = o.serial || '';
+    bt.click(); await idle(700);
+  }
+  function readShown() {
+    var val = function (el) { if (!el) return ''; if (el.tagName === 'SELECT') return el.selectedIndex >= 0 ? el.options[el.selectedIndex].text.trim() : ''; return String(el.value || '').trim(); };
+    var it = $('ContentPlaceHolder1_ddlIssueType') || rowFor(/^Issue\s*Type/i);
+    var slip = ''; var td = it ? it.closest('td') : null; if (td) [].slice.call(td.querySelectorAll('input')).forEach(function (x) { if (x.value && x.value.trim()) slip = x.value.trim(); });
+    if (!slip) { var sb = $('ContentPlaceHolder1_txtSlipNo'); if (sb) slip = sb.value.trim(); }
+    var items = [].slice.call(document.querySelectorAll('[id^="ContentPlaceHolder1_grdselecteditems_lblFinalCode_"]')).map(function (sp) { var r = gridRow(sp.textContent.trim()); return r ? { code: r.code.toUpperCase(), qty: r.qty, remark: r.remark, name: r.name } : null; }).filter(Boolean);
+    return { type: val($('ContentPlaceHolder1_ddldoctype')), pa: val($('ContentPlaceHolder1_ddlProjectArea') || rowFor(/^Project\s*Area/i)), rcv: val(rowFor(/^Rec\w*\s*By/i) || empBox()).replace(/^GA/i, '').slice(0, 6), slip: slip, issueType: val(it), dept: val($('ContentPlaceHolder1_ddldepartment')), date: val(rowFor(/^Date\*?:?$/i)), items: items };
+  }
+  async function stepVerify(j) {
+    j.res = j.res || {}; j.idx = j.idx || 0;
+    if (j.day && !j.dayDone) {
+      if (!j.daySearched) { j.daySearched = true; save(j); log(j, 'Listing all transactions of ' + j.day.label); await txSearch({ from: j.day.us, to: j.day.us }); return; }
+      j.dayRows = txRows(); j.dayDone = true;
+      var have = {}, hs = {}; j.targets.forEach(function (t) { if (t.serial) have[t.serial] = 1; if (t.slip) hs[String(t.slip).toUpperCase()] = 1; });
+      var ig = j.ignore || { serials: [], people: [] }; var pc = function (t) { var m = String(t || '').match(/GA\d{6}/i); return m ? m[0].toUpperCase() : ''; };
+      j.dayRows.forEach(function (r) { if (ig.serials.indexOf(r.serial) >= 0 || (pc(r.entryBy) && ig.people.indexOf(pc(r.entryBy)) >= 0)) return; if (!have[r.serial] && !(r.slip && hs[r.slip.toUpperCase()])) { j.targets.push({ key: 'x' + r.serial, serial: r.serial, slip: r.slip, from: j.day.us, to: j.day.us, extra: true }); have[r.serial] = 1; } });
+      save(j); log(j, j.dayRows.length + ' transactions found on CUIMS'); return;
+    }
+    var t = j.targets[j.idx];
+    if (!t) { j.phase = 'done'; save(j); log(j, 'Verification finished'); ev('verified', { res: j.res, dayRows: j.dayRows || [], scope: j.scope }); setTimeout(function () { try { B.showApp(); } catch (e) {} }, 900); return 'stop'; }
+    if (!t.st) { t.st = 'list'; save(j); log(j, 'Looking up ' + (t.serial ? 'Serial ' + t.serial : 'Slip ' + t.slip)); await txSearch({ from: t.from, to: t.to, serial: t.serial, slip: t.serial ? '' : t.slip }); return; }
+    if (t.st === 'list') {
+      var rows = txRows(), hit = rows.filter(function (r) { return t.serial ? r.serial === t.serial : r.slip.toUpperCase() === String(t.slip).toUpperCase(); });
+      if (!hit.length) { t.tries = (t.tries || 0) + 1; if (t.tries < 3) { await sleep(900); save(j); return 'wait'; } j.res[t.key] = { found: false, serial: t.serial, slip: t.slip }; j.idx++; save(j); return; }
+      if (hit.length > 1) t.multi = hit.map(function (h) { return h.serial; });
+      var h = hit[0]; t.list = h; t.serial = h.serial; t.st = 'show'; save(j);
+      var b = h.btnId ? $(h.btnId) : null;
+      if (!b) { j.res[t.key] = { found: true, list: h, items: null, note: 'SHOW button not found' }; j.idx++; save(j); return; }
+      log(j, 'Opening Serial ' + h.serial); b.click(); await idle(900); return;
+    }
+    if (t.st === 'show') {
+      var got = readShown(); t.waits = (t.waits || 0) + 1;
+      if (!got.items.length && t.waits < 8) { save(j); await sleep(700); return 'wait'; }
+      j.res[t.key] = { found: true, list: t.list, shown: got, multi: t.multi || null, extra: !!t.extra };
+      j.idx++; save(j); log(j, 'Serial ' + t.serial + ': ' + got.items.length + ' articles read'); return;
+    }
   }
 
   /* ---------- main steps ---------- */
@@ -666,6 +737,7 @@
         if (j.phase === 'dup') r = await stepDup(j);
         else if (j.phase === 'fill') r = await stepFill(j);
         else if (j.phase === 'capture') r = await stepCapture(j);
+        else if (j.phase === 'verify') r = await stepVerify(j);
         else break;
         if (r !== 'wait') paint();
         if (r === 'stop') break;

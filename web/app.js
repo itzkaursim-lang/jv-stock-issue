@@ -489,6 +489,7 @@ function vReq() {
   let h = reqNavBar() + '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:8px">' + esc(r.store) + '</h1><div class="sub">Request ' + esc(r.req) + ' · ' + fmtLong(r.date) + ' · Receiver ' + (rcv ? 'GA' + esc(rcv) : 'not set') + '</div></div></header><main>';
   h += meta([st.can.length + ' ready', (st.w.length - st.can.length) + ' waiting', st.iss.length + ' issued', (st.w.find(l => l.slip) || {}).slip ? 'next slip ' + esc(st.w.find(l => l.slip).slip) : '<em>no slip set</em>']);
   if (isBaseKitchen(r.store) && r.date > today()) { const A = advLines(r); h += '<div class="advbox"><b>' + esc(r.store) + ' · advance request for ' + fmtLong(r.date) + '</b><span>Only you can issue this early, by tapping below. It uses any stock in hand (' + A.length + ' of ' + r.lines.filter(l => l.status === 'waiting').length + ' articles available). It is never picked by queue or auto submit.</span><button class="btn adv full" data-a="advIssue" data-v="' + esc(r.req) + '"' + (A.length ? '' : ' disabled') + '>Issue on CUIMS now</button></div>'; }
+  h += '<div class="grid2"><button class="btn ret" data-a="verReq" data-v="' + esc(r.req) + '">Verify on CUIMS</button>' + ((S.verified || {})[r.req] ? '<button class="btn" data-a="vrOpen" data-v="' + esc(S.verified[r.req].rep) + '">' + (S.verified[r.req].issues ? S.verified[r.req].issues + ' to check' : 'Verified ✓') + '</button>' : '<span></span>') + '</div>';
   h += paperCard(r);
   h += '<div class="card">';
   const ordr = { issue: 0, short: 1, hold: 2, missing: 3 };
@@ -697,6 +698,7 @@ function vReg() {
     const list = G.filter(g => (r.st || 'all') === 'all' || (r.st === 'pending' ? isPend(g) : !isPend(g)));
     h += '<div class="shead"><div><h2>' + list.length + ' requests</h2><span>' + list.reduce((n, g) => n + g.slips.length, 0) + ' slips</span></div>' + sortPick('reg') + '</div>';
     h += '<div class="grid2"><button class="btn main" data-a="pdfIssue"' + (list.length ? '' : ' disabled') + '>Make PDF</button><button class="btn" data-a="newManual">+ Manual entry</button></div>';
+    { const vd = fltGet('reg').id || today(); h += '<button class="btn ret full" data-a="verDay" data-v="' + vd + '">Verify all of ' + fmtShort(vd) + ' on CUIMS</button>'; }
     if (!list.length) h += '<div class="card pad note">Nothing for these dates.</div>';
     list.forEach(g => {
       if (g.man) { h += rqCard({ where: 'reg', req: g.req, store: g.store, tap: false, status: g.manStatus === 'done' ? ['Completed', 'c-ok'] : ['Pending · ' + g.issued + ' of ' + (g.total || '?') + ' issued', 'c-gd'],
@@ -704,7 +706,7 @@ function vReg() {
         btns: '<button class="btn sm" data-a="manReqEdit" data-v="' + esc(g.req) + '">Edit slips & status</button><button class="btn sm ghost" data-a="manReqToggle" data-v="' + esc(g.req) + '">' + (g.manStatus === 'done' ? 'Mark pending' : 'Mark completed') + '</button>' }); return; }
       h += rqCard({ where: 'reg', req: g.req, store: g.store, status: g.left.length ? ['Pending · ' + g.left.length + ' of ' + g.total + ' left', 'c-gd'] : g.total ? ['Completed', 'c-ok'] : ['No articles', 'c-gy'],
         meta: ['requested ' + (g.date ? fmtShort(g.date) : '–'), g.issued + ' of ' + g.total + ' issued', g.closed ? g.closed + ' closed' : ''], slips: g.slips, left: g.left,
-        btns: '<button class="btn sm" data-a="mslips" data-v="' + esc(g.req) + '">+ Add slips & serials</button><button class="btn sm ghost" data-a="reqStatus" data-v="' + esc(g.req) + '">Pending / completed</button>' });
+        chips: verifyBadge(g.req), btns: '<button class="btn sm" data-a="mslips" data-v="' + esc(g.req) + '">+ Add slips & serials</button><button class="btn sm ghost" data-a="reqStatus" data-v="' + esc(g.req) + '">Pending / completed</button><button class="btn sm ret" data-a="verReq" data-v="' + esc(g.req) + '">Verify on CUIMS</button>' });
     });
   } else {
     const fr = fltGet('ret'), st = r.rst || 'all';
@@ -725,7 +727,7 @@ function vReg() {
         meta: ['came ' + fmtShort(x.recvDate || x.date), 'GA' + esc(x.by) + (nm ? ' ' + esc(nm) : ''), x.items.length + (x.items.length === 1 ? ' article' : ' articles')],
         chips: x.serial ? '<div class="scrow"><span class="stag ret" style="position:static">Serial</span>' + serFmt(x.serial) + '</div>' : '',
         left: x.items.map(i => ({ code: i.code, qty: i.qty })), leftWord: x.serial ? 'returned article' : 'article to return', leftWords: x.serial ? 'returned articles' : 'articles to return', leftCls: x.serial ? 'okl' : 'retl',
-        cta: x.serial ? '' : '<button class="btn ret full" data-a="retCuims" data-v="' + x.id + '">Return on CUIMS · ' + x.items.length + ' articles</button>' });
+        cta: x.serial ? '<button class="btn sm ret full" data-a="verRet" data-v="' + x.id + '">' + (x.verified ? (x.verified.issues ? 'Verify again · ' + x.verified.issues + ' to check' : 'Verified ✓ · check again') : 'Verify on CUIMS') + '</button>' : '<button class="btn ret full" data-a="retCuims" data-v="' + x.id + '">Return on CUIMS · ' + x.items.length + ' articles</button>' });
     });
   }
   return h + '</main>';
@@ -1378,6 +1380,7 @@ function renderDrawer() {
     item('batchReq', 'Batch add requests', 'Many stores at once, or paste from Excel', '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/>') +
     item('stockOpen', 'Live stock search', 'Find any item, see needed and free qty', '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>') +
     item('consOpen', 'Store-wise consumption', 'What each store took, by week or month', '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>') +
+    item('vrList', 'Verify on CUIMS', 'Check requests, returns or a whole day', '<path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/><path d="M8.5 12l2.5 2.5 4.5-5"/>') +
     item('mgOpen', 'Manage data', 'Filter, select many, delete or complete', '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M7 9l2 2 4-4M7 15h10"/>') +
     item('artsOpen', 'Pending articles', 'Edit qty, hold or remove, one or many', '<path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6l1 1 2-2M3 12l1 1 2-2M3 18l1 1 2-2"/>') +
     item('dcOpen', 'Data check', 'Find clashes and errors, fix on the spot', '<path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/><path d="M9 12l2 2 4-4"/>') +
@@ -1401,7 +1404,7 @@ const REPORTS = {
   ret: { name: 'Daily Return Register', pdf: true, landscape: false, dated: 'reg', details: true, sorts: true },
   pending: { name: 'Pending Report', pdf: true, landscape: true, sorts: true },
   requests: { name: 'Requests Register' }, entries: { name: 'Entries Log' }, items: { name: 'Entry Items' },
-  stock: { name: 'Stock Now' }, returns: { name: 'Returns (all)' }, search: { name: 'Search Results' }, counts: { name: 'Daily Count Cycle', pdf: true, landscape: true }, expiry: { name: 'Expiry Tracker', pdf: true, landscape: false }, done: { name: 'Done List', pdf: true, landscape: false }, cons: { name: 'Store-wise Consumption', pdf: true, landscape: false }, arts: { name: 'Pending Articles', pdf: true, landscape: false }
+  stock: { name: 'Stock Now' }, returns: { name: 'Returns (all)' }, search: { name: 'Search Results' }, counts: { name: 'Daily Count Cycle', pdf: true, landscape: true }, expiry: { name: 'Expiry Tracker', pdf: true, landscape: false }, done: { name: 'Done List', pdf: true, landscape: false }, cons: { name: 'Store-wise Consumption', pdf: true, landscape: false }, verify: { name: 'CUIMS Verification', pdf: true, landscape: false }, arts: { name: 'Pending Articles', pdf: true, landscape: false }
 };
 function rptPref(type) {
   S.rp = S.rp || {};
@@ -1433,7 +1436,7 @@ function reportDef(type) {
       detail: list.map(r => ({ head: r.no + '   ·   ' + r.store + '   ·   Returned by GA' + r.by + '   ·   Serial ' + (r.serial || '____'), cols: ['S.No', 'Item code', 'Item', 'UOM', 'Qty', 'Item remarks'], rows: r.items.map((x, i) => [i + 1, x.code, x.name || itemName(x.code), x.uom || itemUom(x.code), num(x.qty), x.remark || '–']) })),
       file: 'Return-Register-' + d, sub2: 'Return · Department · Against Issue No 1111' };
   }
-  const objRows = type === 'pending' ? sortBy(rowsPending(), ['custom', 'az', 'time'].includes(p.sort) ? 'reqdate' : p.sort, r => ({ req: r['Request No'], store: r.Store, date: r['_date'] || '' })) : type === 'requests' ? rowsRequests() : type === 'entries' ? rowsEntries() : type === 'items' ? rowsItems() : type === 'stock' ? rowsStock() : type === 'returns' ? rowsReturns() : type === 'search' ? searchRows() : type === 'arts' ? artsList().sort((a, b) => byStore(a.l.store, b.l.store) || String(a.l.req).localeCompare(String(b.l.req), undefined, { numeric: true })).map(({ l, k }) => ({ Store: l.store, 'Request No': l.req, 'Requested on': fmtLong(l.date), Item: itemName(l.code), 'Item code': l.code, Qty: l.qty, UOM: itemUom(l.code), Status: k === 'issue' ? 'Ready' : k === 'later' ? 'Scheduled' : k === 'hold' ? 'On hold' : k === 'missing' ? 'Not in stock' : 'Short' })) : type === 'cons' ? consRows() : type === 'done' ? doneRows() : type === 'expiry' ? expiryRows().filter(r => r.left <= expDays()).map(r => ({ Item: r.name, Code: r.code, Qty: r.qty, UOM: r.uom, MFD: r.mfd ? fmtLong(r.mfd) : '', Expiry: fmtLong(r.exp), 'Days left': r.left, Status: r.left < 0 ? 'Expired' : r.left <= 15 ? 'Within 15 days' : 'Within ' + expDays() + ' days', 'Counted on': fmtLong(r.countDate) })) : type === 'counts' ? countRows((S.counts || []).filter(c => !ui.countExportId || String(c.id) === String(ui.countExportId))) : [];
+  const objRows = type === 'pending' ? sortBy(rowsPending(), ['custom', 'az', 'time'].includes(p.sort) ? 'reqdate' : p.sort, r => ({ req: r['Request No'], store: r.Store, date: r['_date'] || '' })) : type === 'requests' ? rowsRequests() : type === 'entries' ? rowsEntries() : type === 'items' ? rowsItems() : type === 'stock' ? rowsStock() : type === 'returns' ? rowsReturns() : type === 'search' ? searchRows() : type === 'arts' ? artsList().sort((a, b) => byStore(a.l.store, b.l.store) || String(a.l.req).localeCompare(String(b.l.req), undefined, { numeric: true })).map(({ l, k }) => ({ Store: l.store, 'Request No': l.req, 'Requested on': fmtLong(l.date), Item: itemName(l.code), 'Item code': l.code, Qty: l.qty, UOM: itemUom(l.code), Status: k === 'issue' ? 'Ready' : k === 'later' ? 'Scheduled' : k === 'hold' ? 'On hold' : k === 'missing' ? 'Not in stock' : 'Short' })) : type === 'verify' ? (((S.verifyReports || []).find(r => r.id === ui.vrep) || (S.verifyReports || [])[0] || { findings: [] }).findings.map(f => ({ Entry: f.label || (f.serial ? 'Serial ' + f.serial : ''), Result: { ok: 'All good', notFound: 'Not found on CUIMS', serial: 'Serial missing in app', multi: 'Slip used more than once', store: 'Store differs', rcv: 'Receiver differs', type: 'Not a return', missing: 'Missing on CUIMS', qty: 'Qty differs', remark: 'Remark differs', extra: 'Extra on CUIMS', notInApp: 'On CUIMS, not in app' }[f.kind] || f.kind, Item: f.code ? itemName(f.code) + ' (' + f.code + ')' : '', App: f.app != null ? String(f.app) : (f.qty != null ? String(f.qty) : ''), CUIMS: f.cuims != null ? String(f.cuims) : (f.val || f.serial || ''), Status: f.fixed ? 'Fixed in app' : (f.kind === 'ok' ? '' : 'Open') }))) : type === 'cons' ? consRows() : type === 'done' ? doneRows() : type === 'expiry' ? expiryRows().filter(r => r.left <= expDays()).map(r => ({ Item: r.name, Code: r.code, Qty: r.qty, UOM: r.uom, MFD: r.mfd ? fmtLong(r.mfd) : '', Expiry: fmtLong(r.exp), 'Days left': r.left, Status: r.left < 0 ? 'Expired' : r.left <= 15 ? 'Within 15 days' : 'Within ' + expDays() + ' days', 'Counted on': fmtLong(r.countDate) })) : type === 'counts' ? countRows((S.counts || []).filter(c => !ui.countExportId || String(c.id) === String(ui.countExportId))) : [];
   const keys = objRows.length ? Object.keys(objRows[0]) : [];
   const chips = type === 'pending' ? [['Date', fmtLong(today())], ['Stores', new Set(objRows.map(r => r.Store)).size], ['Articles', objRows.length]] : [['Date', fmtLong(today())], ['Rows', objRows.length]];
   return { cols: keys.map(k => [k, k]), rows: objRows, chips, file: REPORTS[type].name.replace(/[^A-Za-z]+/g, '-') + '-' + today(), sub2: '' };
@@ -1799,6 +1802,7 @@ window.onSiteEvent = function (raw) {
   else if (e.type === 'progress' && e.code && isFinite(e.stock)) {
     if (S.stock[e.code] && Math.abs(S.stock[e.code].qty - e.stock) > 1e-6) { S.stock[e.code].qty = e.stock; save(true); }
   } else if (e.type === 'submitted') { recordSubmit(e); }
+  else if (e.type === 'verified') { buildVerifyReport(e); toast('Verification finished.'); }
   else if (e.type === 'cancelled') { toast('Entry cancelled. Nothing was submitted.'); if (N) N.showApp(); }
 };
 function recordSubmit(e) {
@@ -1848,7 +1852,7 @@ window.jvBack = () => {
 function render() {
   const app = document.getElementById('app');
   const y = window.scrollY;
-  app.innerHTML = appBar() + (S.testMode ? '<div class="testbar"><span><b>TEST MODE</b> · your real data is safe and hidden. Cloud backup is paused. Entries submitted on CUIMS are still real.</span><button class="btn sm" data-a="testToggle">Exit</button></div>' : '') + (ui.view === 'countList' ? vCountList() : ui.view === 'manage' ? vManage() : ui.view === 'stock' ? vStock() : ui.view === 'cons' ? vCons() : ui.view === 'arts' ? vArts() : ui.view === 'check' ? vCheck() : ui.view === 'done' ? vDone() : ui.view === 'expiry' ? vExpiry() : ui.view === 'count' ? vCount() : ui.view === 'countLog' ? vCountLog() : ui.view === 'taskLog' ? vTaskLog() : ui.view === 'req' ? vReq() : ({ home: vHome, pend: vPend, reg: vReg, find: vFind, set: vSet })[ui.tab]());
+  app.innerHTML = appBar() + (S.testMode ? '<div class="testbar"><span><b>TEST MODE</b> · your real data is safe and hidden. Cloud backup is paused. Entries submitted on CUIMS are still real.</span><button class="btn sm" data-a="testToggle">Exit</button></div>' : '') + (ui.view === 'vreport' ? vReport() : ui.view === 'vreports' ? vReportList() : ui.view === 'countList' ? vCountList() : ui.view === 'manage' ? vManage() : ui.view === 'stock' ? vStock() : ui.view === 'cons' ? vCons() : ui.view === 'arts' ? vArts() : ui.view === 'check' ? vCheck() : ui.view === 'done' ? vDone() : ui.view === 'expiry' ? vExpiry() : ui.view === 'count' ? vCount() : ui.view === 'countLog' ? vCountLog() : ui.view === 'taskLog' ? vTaskLog() : ui.view === 'req' ? vReq() : ({ home: vHome, pend: vPend, reg: vReg, find: vFind, set: vSet })[ui.tab]());
   document.querySelector('#tabs .in').innerHTML = TABS.map(([k, l]) => '<button data-a="tab" data-v="' + k + '" class="' + (ui.tab === k && !ui.view ? 'on' : '') + '" aria-label="' + l + '"><span class="nic">' + ICON[k] + '</span><span class="nl">' + l + '</span></button>').join('');
   renderDrawer();
   paintSync();
@@ -2169,6 +2173,118 @@ function vManage() {
   if (selN) h += '<div class="selbar"><b>' + selN + ' selected</b>' + (M.type === 'req' ? '<button class="btn sm" data-a="mgDone">Complete</button><button class="btn sm" data-a="mgPend">Clear pending</button>' : M.type === 'slip' ? '<button class="btn sm" data-a="mgDelSlipPend">Undo issue</button>' : '') + '<button class="btn sm" data-a="mgExport">Export</button><button class="btn sm danger" data-a="mgDel">Delete</button><button class="xbtn" data-a="mgClear" aria-label="Clear selection">' + ico('x', 16) + '</button></div>';
   return h;
 }
+/* ---------------- Verify on CUIMS (read only) ---------------- */
+function usOf(iso, add) { const d = new Date((iso || today()) + 'T12:00'); d.setDate(d.getDate() + (add || 0)); return (d.getMonth() + 1) + '/' + d.getDate() + '/' + d.getFullYear(); }
+function vTargetsFor(scope) {
+  const T = [], seen = new Set(); let entries = [], rets = [];
+  if (scope.type === 'req') entries = reqSlips(scope.id);
+  if (scope.type === 'ret') rets = S.returns.filter(r => String(r.id) === String(scope.id));
+  if (scope.type === 'day') { entries = S.entries.filter(e => entryDate(e) === scope.id); rets = S.returns.filter(r => r.serial && (r.date === scope.id)); }
+  entries.forEach(e => { const k = 'e' + e.id; if (seen.has(k) || (!e.serial && !e.slip)) return; seen.add(k); const d = entryDate(e); T.push({ key: k, serial: String(e.serial || '').trim(), slip: e.slip, from: usOf(d, -3), to: usOf(d, 2) }); });
+  rets.forEach(r => { if (!r.serial) return; const d = r.date; T.push({ key: 'r' + r.id, serial: String(r.serial).trim(), slip: '', from: usOf(d, -3), to: usOf(d, 2) }); });
+  return T;
+}
+async function startVerify(scope) {
+  if (!N) { toast('Open this inside the JV Stock Issue app.'); return; }
+  const T = vTargetsFor(scope), noSer = scope.type === 'ret' && !T.length;
+  if (noSer) { toast('This return has no Serial yet, so there is nothing to check on CUIMS.'); return; }
+  const title = scope.type === 'req' ? 'Request ' + scope.id : scope.type === 'ret' ? 'Return ' + ((S.returns.find(r => String(r.id) === String(scope.id)) || {}).no || '') : 'All of ' + fmtLong(scope.id);
+  if (scope.type !== 'day' && !T.length) { toast('No slip or serial saved for this request yet.'); return; }
+  if (!(await uiConfirm('Verify ' + title + ' on CUIMS? It only reads Show Transactions and opens each serial with SHOW. Nothing is changed or submitted. ' + T.length + ' serial' + (T.length === 1 ? '' : 's') + (scope.type === 'day' ? ' + every other transaction of that day' : '') + ' will be checked.', 'Start checking'))) return;
+  const job = { id: 'V' + Date.now(), kind: 'verify', phase: 'verify', slip: 'VERIFY', store: title, title, scope, targets: T, idx: 0, res: {}, log: [], tries: {}, queue: false, autoSubmit: false, items: [] };
+  if (scope.type === 'day') job.day = { us: usOf(scope.id), label: fmtLong(scope.id) };
+  { const I = ignList(); job.ignore = { serials: Object.keys(I.serials), people: Object.keys(I.people) }; }
+  N.startJob(JSON.stringify(job));
+}
+function ignList() { S.cuimsIgnore = S.cuimsIgnore || { serials: {}, people: {} }; return S.cuimsIgnore; }
+function personCode(txt) { const m = String(txt || '').match(/GA\d{6}/i); return m ? m[0].toUpperCase() : ''; }
+function isIgnored(serial, entryBy) { const I = ignList(); return !!I.serials[String(serial)] || (!!personCode(entryBy) && !!I.people[personCode(entryBy)]); }
+function vNorm(x) { return String(x || '').trim().toUpperCase().replace(/\s+/g, ' '); }
+function buildVerifyReport(e) {
+  const scope = e.scope || {}, res = e.res || {}, F = [];
+  const add = o => F.push(Object.assign({ id: 'f' + F.length + Date.now() }, o));
+  Object.entries(res).forEach(([key, r]) => {
+    const ent = key[0] === 'e' ? S.entries.find(x => 'e' + x.id === key) : null, ret = key[0] === 'r' ? S.returns.find(x => 'r' + x.id === key) : null;
+    if (key[0] === 'x') { if (r.list && isIgnored(r.list.serial, r.list.entryBy)) return; if (r.found && r.shown) { const known = S.entries.some(z => String(z.serial) === String(r.list.serial)) || S.returns.some(z => String(z.serial) === String(r.list.serial)); if (!known) add({ key, kind: 'notInApp', serial: r.list.serial, slip: r.list.slip || r.shown.slip, store: r.shown.pa, rcv: r.list.rcv || r.shown.rcv, isReturn: r.list.isReturn, items: r.shown.items, entryBy: r.list.entryBy, date: r.list.entryDate }); } return; }
+    const label = ent ? ent.slip + (ent.serial ? ' · #' + ent.serial : '') : ret ? ret.no + ' · #' + ret.serial : key;
+    const exp = ent ? ent.items.map(i => ({ code: vNorm(i.code), qty: Number(i.qty), remark: i.remark || '', lineId: i.lineId, req: i.req })) : ret ? ret.items.map(i => ({ code: vNorm(i.code), qty: Number(i.qty), remark: retRemark(ret) })) : [];
+    if (!r.found) { add({ key, label, kind: 'notFound', serial: r.serial, slip: r.slip }); return; }
+    const sh = r.shown || { items: [] };
+    if (ent && !String(ent.serial || '').trim() && r.list && r.list.serial) add({ key, label, kind: 'serial', val: r.list.serial });
+    if (r.multi && r.multi.length > 1) add({ key, label, kind: 'multi', serials: r.multi });
+    if (ent && sh.pa && vNorm(sh.pa) !== vNorm(ent.store)) add({ key, label, kind: 'store', app: ent.store, cuims: sh.pa });
+    const appR = ent ? ent.rcv : ret ? ret.by : ''; const cuR = (r.list && r.list.rcv) || sh.rcv;
+    if (appR && cuR && String(appR) !== String(cuR)) add({ key, label, kind: 'rcv', app: appR, cuims: cuR });
+    if (ret && sh.type && !/return/i.test(sh.type)) add({ key, label, kind: 'type', cuims: sh.type });
+    const cu = {}; (sh.items || []).forEach(i => { cu[vNorm(i.code)] = i; });
+    exp.forEach(x => { const c = cu[x.code];
+      if (!c) add({ key, label, kind: 'missing', code: x.code, qty: x.qty, lineId: x.lineId });
+      else { if (Math.abs(Number(c.qty) - x.qty) > 1e-6) add({ key, label, kind: 'qty', code: x.code, app: x.qty, cuims: Number(c.qty), lineId: x.lineId });
+        if (x.remark && vNorm(c.remark) !== vNorm(x.remark)) add({ key, label, kind: 'remark', code: x.code, app: x.remark, cuims: c.remark || '(blank)' }); } });
+    const ex = new Set(exp.map(x => x.code)); (sh.items || []).forEach(c => { if (!ex.has(vNorm(c.code))) add({ key, label, kind: 'extra', code: vNorm(c.code), qty: Number(c.qty), name: c.name }); });
+    if (!F.some(f => f.key === key)) add({ key, label, kind: 'ok', n: exp.length });
+  });
+  const rep = { id: 'VR' + Date.now(), at: new Date().toISOString(), scope, title: e.title || (scope.type === 'day' ? 'All of ' + fmtLong(scope.id) : scope.id), findings: F, checked: Object.keys(res).filter(k => k[0] !== 'x').length, dayCount: (e.dayRows || []).length };
+  S.verifyReports = [rep].concat(S.verifyReports || []).slice(0, 40);
+  S.verified = S.verified || {};
+  const reqOf = k => { const en = S.entries.find(x => 'e' + x.id === k); return en ? [...new Set(en.items.map(i => i.req).filter(Boolean).concat(en.reqs ? String(en.reqs).split(/\s*,\s*/) : []))] : []; };
+  const per = {}; F.forEach(f => reqOf(f.key).forEach(q => { per[q] = per[q] || 0; if (f.kind !== 'ok') per[q]++; }));
+  Object.entries(per).forEach(([q, n]) => { S.verified[q] = { at: rep.at, issues: n, rep: rep.id }; });
+  F.filter(f => f.key[0] === 'r').forEach(f => { const r = S.returns.find(x => 'r' + x.id === f.key); if (r) r.verified = { at: rep.at, issues: F.filter(g => g.key === f.key && g.kind !== 'ok').length }; });
+  save(); ui.vrep = rep.id; ui.view = 'vreport'; render(); window.scrollTo(0, 0);
+}
+function vFinding(f, rep) {
+  const nm = c => esc(itemName(c));
+  const T = { ok: ['All good', 'c-ok', f.n + ' article' + (f.n === 1 ? '' : 's') + ' match CUIMS exactly'],
+    notFound: ['Not found on CUIMS', 'c-no', (f.serial ? 'Serial ' + f.serial : 'Slip ' + f.slip) + ' is not in Show Transactions'],
+    serial: ['Serial missing in app', 'c-gd', 'CUIMS has Serial ' + f.val],
+    multi: ['Slip used more than once', 'c-no', 'Serials ' + (f.serials || []).join(', ')],
+    store: ['Store differs', 'c-no', 'App: ' + esc(f.app) + ' · CUIMS Project Area: ' + esc(f.cuims)],
+    rcv: ['Receiver differs', 'c-no', 'App: GA' + esc(f.app) + ' · CUIMS: GA' + esc(f.cuims)],
+    type: ['Not a return on CUIMS', 'c-no', 'CUIMS type: ' + esc(f.cuims)],
+    missing: ['Missing on CUIMS', 'c-no', nm(f.code) + ' (' + esc(f.code) + ') ' + num(f.qty) + ' is in the app but not in this serial'],
+    qty: ['Qty differs', 'c-gd', nm(f.code) + ' · app ' + num(f.app) + ' · CUIMS ' + num(f.cuims)],
+    remark: ['Remark differs', 'c-gd', nm(f.code) + ' · CUIMS: ' + esc(f.cuims)],
+    extra: ['Extra on CUIMS', 'c-no', esc(f.name || itemName(f.code)) + ' (' + esc(f.code) + ') ' + num(f.qty) + ' is on CUIMS but not in the app'],
+    notInApp: ['On CUIMS, not in app', 'c-no', (f.isReturn ? 'Return' : 'Issue') + ' Serial ' + esc(f.serial) + ' · Slip ' + esc(f.slip || '–') + ' · ' + esc(f.store || '') + ' · GA' + esc(f.rcv || '–') + ' · ' + (f.items || []).length + ' articles · by ' + esc(f.entryBy || '')] }[f.kind] || ['Note', 'c-gy', ''];
+  const fix = f.fixed ? '<span class="sc ok">fixed</span>' : ({ serial: 'Save Serial ' + f.val + ' in app', qty: 'Use CUIMS qty in app', missing: 'Make it pending again', extra: 'Add to app as issued', store: 'Use CUIMS store in app', rcv: 'Use CUIMS receiver in app', notInApp: 'Add as manual slip' }[f.kind]);
+  if (f.kind === 'notInApp' && (f.ignored || isIgnored(f.serial, f.entryBy))) return '<div class="vf"><div class="row">' + pill('Ignored', 'c-gy') + '</div><div class="vft">Serial ' + esc(f.serial) + ' is on your ignore list. It will not be checked again.</div></div>';
+  const ign = f.kind === 'notInApp' && !f.fixed ? '<div class="grid2" style="margin-top:2px"><button class="btn sm ghost" data-a="vfIgn" data-v="' + rep.id + '|' + f.id + '">Ignore this serial</button>' + (personCode(f.entryBy) ? '<button class="btn sm ghost" data-a="vfIgnP" data-v="' + rep.id + '|' + f.id + '">Ignore all by ' + esc(personCode(f.entryBy)) + '</button>' : '<span></span>') + '</div>' : '';
+  return '<div class="vf"><div class="row">' + pill(T[0], T[1]) + (f.label ? '<span class="note mono">' + esc(f.label) + '</span>' : '') + '</div><div class="vft">' + T[2] + '</div>' + (fix && !f.fixed ? '<button class="btn sm" data-a="vfFix" data-v="' + rep.id + '|' + f.id + '">' + esc(fix) + '</button>' : (f.fixed ? '<span class="sc ok">Fixed in app</span>' : '')) + ign + '</div>';
+}
+function vReport() {
+  const R = (S.verifyReports || []).find(r => r.id === ui.vrep) || (S.verifyReports || [])[0];
+  let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Verification</h1><div class="sub">' + (R ? esc(R.title) + ' · checked ' + esc(fmtDT(R.at)) : 'No checks yet') + '</div></div></header><main>';
+  if (!R) return h + '<div class="card pad note">Use "Verify on CUIMS" on a request, a return, or a whole day.</div></main>';
+  const bad = R.findings.filter(f => f.kind !== 'ok' && !f.fixed && !(f.kind === 'notInApp' && isIgnored(f.serial, f.entryBy))), ok = R.findings.filter(f => f.kind === 'ok');
+  h += '<div class="grid3"><div class="tile t-ok"><b>' + ok.length + '</b><span>All good</span></div><div class="tile t-pt"><b>' + bad.length + '</b><span>To check</span></div><div class="tile t-in"><b>' + R.checked + '</b><span>Serials read</span></div></div>';
+  if (R.dayCount) h += '<div class="note">' + R.dayCount + ' transactions listed on CUIMS for that day.</div>';
+  if (!bad.length) h += '<div class="okbox"><span>Everything matches CUIMS.</span></div>';
+  const G = {}; R.findings.forEach(f => (G[f.key] = G[f.key] || []).push(f));
+  Object.values(G).sort((a, b) => (b.some(f => f.kind !== 'ok' && !f.fixed) ? 1 : 0) - (a.some(f => f.kind !== 'ok' && !f.fixed) ? 1 : 0)).forEach(L => {
+    const en = S.entries.find(x => 'e' + x.id === L[0].key), rt = S.returns.find(x => 'r' + x.id === L[0].key);
+    const head = en ? '<span class="reqno sm" data-req="' + esc((en.items[0] || {}).req || en.reqs || '') + '">' + esc((en.items[0] || {}).req || en.reqs || '–') + '</span> <b>' + esc(en.store) + '</b>' : rt ? '<span class="stag ret" style="position:static">' + esc(rt.no) + '</span> <b>' + esc(rt.store) + '</b>' : '<b>Not in the app</b>';
+    h += '<div class="card pad col" style="gap:10px"><div>' + head + '</div>' + L.map(f => vFinding(f, R)).join('') + '</div>';
+  });
+  h += '<div class="grid2"><button class="btn" data-a="vrExport">Download report</button><button class="btn" data-a="vrList">All reports</button></div>';
+  return h + '</main>';
+}
+function vReportList() {
+  let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Verification reports</h1><div class="sub">Last 40 checks against CUIMS.</div></div></header><main>';
+  h += '<button class="btn ret full" data-a="vfDayPick">Verify a whole day on CUIMS</button>';
+  { const I = ignList(), sk = Object.entries(I.serials), pk = Object.entries(I.people);
+    h += '<div class="card" style="overflow:hidden"><button class="mgfh" data-a="ignTog"><b>Ignore list</b>' + pill((sk.length + pk.length) + ' rules', 'c-gy') + ico(ui.ignOpen ? 'up' : 'down', 18) + '</button>';
+    if (ui.ignOpen) { h += '<div class="pad col" style="gap:8px;padding-top:0"><div class="note">CUIMS entries on this list are never checked, reported or added to your data.</div>';
+      h += sk.map(([k, v]) => '<div class="line" style="flex-direction:row;align-items:center;gap:10px;padding:10px 0"><span style="flex:1;min-width:0"><b>Serial ' + esc(k) + '</b><div class="meta"><span>' + esc([v.slip ? 'Slip ' + v.slip : '', v.store, v.by].filter(Boolean).join(' · ')) + '</span></div></span><button class="btn sm ghost" data-a="ignDel" data-v="s|' + esc(k) + '">Remove</button></div>').join('');
+      h += pk.map(([k, v]) => '<div class="line" style="flex-direction:row;align-items:center;gap:10px;padding:10px 0"><span style="flex:1;min-width:0"><b>Everything entered by ' + esc(k) + '</b><div class="meta"><span>' + esc(v.name || '') + '</span></div></span><button class="btn sm ghost" data-a="ignDel" data-v="p|' + esc(k) + '">Remove</button></div>').join('');
+      h += '<div class="grid2"><button class="btn sm" data-a="ignAddS">+ Serial No</button><button class="btn sm" data-a="ignAddP">+ Person (GA code)</button></div></div>'; }
+    h += '</div>'; }
+  (S.verifyReports || []).forEach(r => { const bad = r.findings.filter(f => f.kind !== 'ok' && !f.fixed && !(f.kind === 'notInApp' && isIgnored(f.serial, f.entryBy))).length;
+    h += '<button class="card pad tap col" style="gap:4px" data-a="vrOpen" data-v="' + r.id + '"><div class="row"><b>' + esc(r.title) + '</b>' + (bad ? pill(bad + ' to check', 'c-no') : pill('All good', 'c-ok')) + '</div><div class="note">' + esc(fmtDT(r.at)) + ' · ' + r.checked + ' serials</div></button>'; });
+  if (!(S.verifyReports || []).length) h += '<div class="card pad note">No checks yet.</div>';
+  return h + '</main>';
+}
+function verifyBadge(req) { const v = (S.verified || {})[req]; if (!v) return ''; return v.issues ? '<span class="vbadge bad">' + v.issues + ' to check</span>' : '<span class="vbadge">Verified ' + esc(fmtShort(isoOf(new Date(v.at)))) + '</span>'; }
 function vCheck() {
   const I = dataIssues();
   let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Data check</h1><div class="sub">Finds clashes and errors in your data, with a button to fix each one.</div></div></header><main>';
@@ -2195,11 +2311,11 @@ function renumberReq(from, to) {
   if (ui.lastReq === from) ui.lastReq = to;
   return true;
 }
-const UNDO_KEYS = ['lines', 'entries', 'returns', 'hold', 'corrections', 'audit', 'manReqs', 'paper'];
+const UNDO_KEYS = ['lines', 'entries', 'returns', 'hold', 'corrections', 'audit', 'manReqs', 'paper', 'verifyReports'];
 const UNDOABLE = { artQty: 'Quantity changed', artHold: 'Hold changed', artDel: 'Article removed', artsBHold: 'Articles put on hold', artsBRel: 'Articles released', artsBDel: 'Articles removed', dropReq: 'Request removed', dropStore: 'Store pending removed',
   renumReq: 'Request renumbered', dcRenum: 'Request renumbered', impRenum: 'Request renumbered', impDrop: "App's request removed", corrSave: 'Correction saved', markSave: 'Slip added', dcMerge: 'Items merged', dcKeepFirst: 'Duplicate removed', dcDate: 'Date changed', dcBad: 'Incomplete removed',
-  bulkSave: 'Requests edited', dcRetFmt: 'Returns renumbered', dcRetFix: 'Return renumbered', clAdd: 'Count list changed', clDel: 'Count list changed', retBatchSave: 'Returns saved', stkEdit: 'Stock changed', stkRen: 'Item renamed', stkDel: 'Item deleted', stkAdd: 'Item added', mgDone: 'Requests completed', mgPend: 'Pending cleared', mgDel: 'Deleted', mgDelSlipPend: 'Slips deleted, articles pending again', delEntry: 'Entry deleted', delReturn: 'Return deleted', rsClose: 'Article closed', rsOpen: 'Article made pending', rsAll: 'Request completed', rsAdd: 'Article added', saveReq: 'Request edited', saveEntry: 'Entry saved', uploadOk: 'Import done', btSave: 'Batch saved', nrSave: 'Request added', hold: 'Hold changed' };
-const UNDO_STOCK = new Set(['stkEdit', 'markSave', 'delEntry', 'saveEntry', 'uploadOk', 'mgDelSlipPend']);
+  bulkSave: 'Requests edited', vfFix: 'Fixed in app', dcRetFmt: 'Returns renumbered', dcRetFix: 'Return renumbered', clAdd: 'Count list changed', clDel: 'Count list changed', retBatchSave: 'Returns saved', stkEdit: 'Stock changed', stkRen: 'Item renamed', stkDel: 'Item deleted', stkAdd: 'Item added', mgDone: 'Requests completed', mgPend: 'Pending cleared', mgDel: 'Deleted', mgDelSlipPend: 'Slips deleted, articles pending again', delEntry: 'Entry deleted', delReturn: 'Return deleted', rsClose: 'Article closed', rsOpen: 'Article made pending', rsAll: 'Request completed', rsAdd: 'Article added', saveReq: 'Request edited', saveEntry: 'Entry saved', uploadOk: 'Import done', btSave: 'Batch saved', nrSave: 'Request added', hold: 'Hold changed' };
+const UNDO_STOCK = new Set(['vfFix', 'stkEdit', 'markSave', 'delEntry', 'saveEntry', 'uploadOk', 'mgDelSlipPend']);
 let undoTimer = null;
 function undoArm(a) { const snap = {}; UNDO_KEYS.concat(UNDO_STOCK.has(a) ? ['stock', 'stockAt', 'stockSrc'] : []).forEach(k => snap[k] = JSON.stringify(S[k] == null ? null : S[k])); ui.pendUndo = { a, label: UNDOABLE[a], snap, at: Date.now() }; }
 function undoFire() { const u = ui.pendUndo; ui.pendUndo = null; if (!u || Date.now() - u.at > 120000) return; ui.undo = u; showUndo(); }
@@ -2359,7 +2475,7 @@ function shEditReq() {
 }
 
 /* ---------------- lock ---------------- */
-const GUARDED = new Set(['retStartAll', 'dcRetFmt', 'dcRetFix', 'clClear', 'retCuims', 'saveReturnCuims', 'rbSave', 'stkEdit', 'stkRen', 'stkDel', 'stkAdd', 'mgDone', 'mgPend', 'mgDel', 'mgDelSlipPend', 'paperAddFrom', 'advIssue', 'paperAdd', 'mrSave', 'mrRemove', 'manReqToggle', 'msSave', 'artQty', 'artHold', 'artDel', 'artsBHold', 'artsBRel', 'artsBDel', 'testToggle', 'testClear', 'dcRenum', 'dcMerge', 'dcKeepFirst', 'dcDate', 'dcBad', 'renumReq', 'impRenum', 'impDrop', 'credSave', 'credDel', 'corrOpen', 'corrSave', 'bulkEdit', 'bulkSave', 'dropReq', 'dropStore', 'editReq', 'saveReq', 'markDone', 'markSave', 'newManual', 'saveEntry', 'delEntry', 'newReturn', 'saveReturn', 'delReturn',
+const GUARDED = new Set(['vfIgn', 'vfIgnP', 'ignDel', 'ignAddS', 'ignAddP', 'vfFix', 'retStartAll', 'dcRetFmt', 'dcRetFix', 'clClear', 'retCuims', 'saveReturnCuims', 'rbSave', 'stkEdit', 'stkRen', 'stkDel', 'stkAdd', 'mgDone', 'mgPend', 'mgDel', 'mgDelSlipPend', 'paperAddFrom', 'advIssue', 'paperAdd', 'mrSave', 'mrRemove', 'manReqToggle', 'msSave', 'artQty', 'artHold', 'artDel', 'artsBHold', 'artsBRel', 'artsBDel', 'testToggle', 'testClear', 'dcRenum', 'dcMerge', 'dcKeepFirst', 'dcDate', 'dcBad', 'renumReq', 'impRenum', 'impDrop', 'credSave', 'credDel', 'corrOpen', 'corrSave', 'bulkEdit', 'bulkSave', 'dropReq', 'dropStore', 'editReq', 'saveReq', 'markDone', 'markSave', 'newManual', 'saveEntry', 'delEntry', 'newReturn', 'saveReturn', 'delReturn',
   'rmStore', 'addStore', 'wipe', 'restore', 'bkRestore', 'bkDel', 'bkKeep', 'bkSave', 'bkNoteSave', 'photo', 'photoDel', 'mode', 'lockToggle', 'syncAuto', 'mgrToggle', 'moveStore', 'saveUrls', 'resetZoom', 'hold', 'cropSave']);
 let pendingAuth = null;
 function askUnlock(after) {
@@ -2409,6 +2525,38 @@ document.addEventListener('click', async ev => {
     case 'openReq': { if (ui.view !== 'req') { const ids = []; document.querySelectorAll('[data-a="openReq"][data-v]').forEach(x => { if (!ids.includes(x.dataset.v)) ids.push(x.dataset.v); }); ui.reqList = ids.length > 1 ? ids : null; }
       ui.lastReq = v; ui.view = 'req'; ui.req = v; render(); window.scrollTo(0, 0); break; }
     case 'reqGo': goReq(+v); break;
+    case 'verReq': startVerify({ type: 'req', id: v }); break;
+    case 'verRet': startVerify({ type: 'ret', id: v }); break;
+    case 'verDay': startVerify({ type: 'day', id: v || today() }); break;
+    case 'vfDayPick': { const d = await uiPrompt('Which day? (YYYY-MM-DD)', today(), 'Verify'); if (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) startVerify({ type: 'day', id: d }); break; }
+    case 'vrOpen': ui.vrep = v; ui.view = 'vreport'; render(); window.scrollTo(0, 0); break;
+    case 'vrList': ui.drawer = false; ui.view = 'vreports'; render(); window.scrollTo(0, 0); break;
+    case 'vrExport': openExport('verify'); break;
+    case 'vfFix': { const [rid, fid] = v.split('|'); const R = (S.verifyReports || []).find(r => r.id === rid); const f = R && R.findings.find(x => x.id === fid); if (!f || f.fixed) break;
+      const en = S.entries.find(x => 'e' + x.id === f.key);
+      const q = { serial: 'Save Serial ' + f.val + ' on slip ' + (en ? en.slip : '') + '?', qty: 'Change ' + itemName(f.code) + ' from ' + num(f.app) + ' to ' + num(f.cuims) + ' in the app?', missing: 'Remove ' + itemName(f.code) + ' from this slip in the app and make it pending again?', extra: 'Add ' + itemName(f.code) + ' ' + num(f.qty) + ' to this slip in the app as issued?', store: 'Change the store in the app to ' + f.cuims + '?', rcv: 'Change the receiver in the app to GA' + f.cuims + '?', notInApp: 'Add Serial ' + f.serial + ' to the app as a manual ' + (f.isReturn ? 'return' : 'slip') + '?' }[f.kind];
+      if (!q || !(await uiConfirm(q, 'Fix in app'))) break;
+      undoArm('vfFix');
+      if (f.kind === 'serial' && en) { en.serial = f.val; S.lines.forEach(l => (l.issued || []).forEach(z => { if (z.slip === en.slip && !z.serial) z.serial = f.val; })); }
+      if (f.kind === 'qty' && en) { en.items.forEach(i => { if (vNorm(i.code) === f.code) i.qty = f.cuims; }); const l = S.lines.find(x => x.id === f.lineId); if (l) l.qty = f.cuims; }
+      if (f.kind === 'missing' && en) { en.items = en.items.filter(i => vNorm(i.code) !== f.code); const l = S.lines.find(x => x.id === f.lineId); if (l) { l.issued = (l.issued || []).filter(z => z.slip !== en.slip); if (!l.issued.length) l.status = 'waiting'; } }
+      if (f.kind === 'extra' && en) { const req = (en.items[0] || {}).req || ''; const l = S.lines.find(x => x.req === req && vNorm(x.code) === f.code && x.status === 'waiting');
+        if (l) { l.status = 'issued'; l.issued.push({ slip: en.slip, serial: en.serial || '', at: en.at }); }
+        en.items.push({ lineId: l ? l.id : 0, req, code: f.code, name: itemName(f.code), uom: itemUom(f.code), qty: f.qty, remark: '' }); }
+      if (f.kind === 'store' && en) en.store = f.cuims;
+      if (f.kind === 'rcv' && en) en.rcv = f.cuims;
+      if (f.kind === 'notInApp') { const d = (String(f.date || '').match(/(\d+)\/(\d+)\/(\d{4})/) || []); const iso = d.length ? d[3] + '-' + String(d[1]).padStart(2, '0') + '-' + String(d[2]).padStart(2, '0') : today();
+        if (f.isReturn) S.returns.push({ id: nid(), no: nextReturnNo(iso), against: '1111', store: String(f.store || '').toUpperCase(), by: f.rcv || '', byName: rcvName(f.rcv), date: iso, recvDate: iso, time: '', serial: f.serial, remarks: 'added from CUIMS check', enteredBy: { name: f.entryBy || '' }, items: (f.items || []).map(i => ({ code: i.code, name: itemName(i.code), uom: itemUom(i.code), qty: Number(i.qty), remark: i.remark || '' })) });
+        else S.entries.push({ id: nid(), slip: f.slip || ('CUIMS-' + f.serial), serial: f.serial, store: String(f.store || '').toUpperCase(), rcv: f.rcv || '', rname: rcvName(f.rcv), at: new Date(iso + 'T12:00').toISOString(), date: iso, time: '', by: { name: f.entryBy || '' }, kind: 'manual', remarks: 'added from CUIMS check', items: (f.items || []).map(i => ({ lineId: 0, req: '', code: i.code, name: itemName(i.code), uom: itemUom(i.code), qty: Number(i.qty), remark: i.remark || '' })) }); }
+      f.fixed = true; save(); render(); break; }
+    case 'ignTog': ui.ignOpen = !ui.ignOpen; render(); break;
+    case 'vfIgn': case 'vfIgnP': { const [rid, fid] = v.split('|'); const R = (S.verifyReports || []).find(r => r.id === rid); const f = R && R.findings.find(x => x.id === fid); if (!f) break; const I = ignList();
+      if (a === 'vfIgn') { if (!(await uiConfirm('Ignore CUIMS Serial ' + f.serial + ' forever? It will never be checked or added to your data.', 'Ignore'))) break; I.serials[f.serial] = { at: new Date().toISOString(), slip: f.slip || '', store: f.store || '', by: f.entryBy || '' }; }
+      else { const pc = personCode(f.entryBy); if (!(await uiConfirm('Ignore every CUIMS entry made by ' + pc + ' (' + String(f.entryBy).split('(')[0].trim() + ')? Their entries will never be checked or added.', 'Ignore person'))) break; I.people[pc] = { at: new Date().toISOString(), name: String(f.entryBy).split('(')[0].trim() }; }
+      f.ignored = true; save(); render(); break; }
+    case 'ignDel': { const [t2, k] = v.split('|'); const I = ignList(); if (!(await uiConfirm('Remove this rule from the ignore list?', 'Remove'))) break; if (t2 === 's') delete I.serials[k]; else delete I.people[k]; save(); render(); break; }
+    case 'ignAddS': { const k = await uiPrompt('CUIMS Serial No to ignore', '', 'Ignore'); if (!k || !/^\d{3,9}$/.test(k.trim())) break; ignList().serials[k.trim()] = { at: new Date().toISOString(), slip: '', store: '', by: 'added by hand' }; save(); render(); break; }
+    case 'ignAddP': { const k = await uiPrompt('Employee code to ignore (e.g. GA600301)', 'GA', 'Ignore'); const pc = personCode(k); if (!pc) { toast('Enter GA + 6 digits.'); break; } ignList().people[pc] = { at: new Date().toISOString(), name: '' }; save(); render(); break; }
     case 'retSt': ui.reg.rst = v; render(); break;
     case 'retStartAll': { const Q = retQueue(); if (Q[0]) startReturnJob(Q[0]); break; }
     case 'retCuims': { const r = S.returns.find(x => String(x.id) === v); if (r) startReturnJob(r); break; }
