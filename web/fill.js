@@ -59,7 +59,8 @@
     var sc = vv ? vv.scale : 1, vw = vv ? vv.width : window.innerWidth, vh = vv ? vv.height : window.innerHeight;
     var pl = vv ? vv.pageLeft : window.scrollX, pt = vv ? vv.pageTop : window.scrollY;
     var inv = 1 / sc, gap = 8;
-    var full = !mini && (portal || !!AUTO); if (full) gap = 0;
+    var jv0 = job(), isV = !!(jv0 && jv0.kind === 'verify' && active(jv0));
+    var full = !mini && (portal || !!AUTO || isV); if (full) gap = 0;
     var w = mini ? 0 : Math.round(vw * sc - gap * 2);
     var W = mini ? 'auto' : w + 'px', T = 'scale(' + inv + ')';
     if (bar.style.width !== W) bar.style.width = W;
@@ -114,6 +115,7 @@
     var h = '<div style="padding:18px 18px 16px;background:' + (j && j.kind === 'return' ? 'radial-gradient(120% 140% at 0% 0%,#BFD7FF 0%,#E3EEFF 45%,#fff 100%)' : 'radial-gradient(120% 140% at 0% 0%,#D9CEFF 0%,#EDE8FF 45%,#fff 100%)') + '">' +
       '<div style="display:flex;align-items:center;gap:12px"><img src="' + LOGO + '" alt="JV Stock Issue" style="width:46px;height:46px;border-radius:15px;box-shadow:0 8px 18px rgba(60,40,140,.28);flex-shrink:0">' +
       '<div style="flex:1;min-width:0"><div style="font:800 11.5px ' + F + ';letter-spacing:.09em;color:' + C.over + ';text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(over) + '</div><div style="font:800 19px ' + F + ';letter-spacing:-.01em;color:' + C.ink + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(title) + '</div></div>' + collapse + '</div>';
+    if (j && j.kind === 'verify') { var vn = (j.targets || []).length, vd = Math.min(j.idx || 0, vn), nf = Object.values(j.res || {}).filter(function (r) { return !r.found; }).length; h += '<div style="display:flex;gap:8px;margin-top:14px;align-items:center">' + idTile('Checked', vd + ' of ' + vn, C.lavInk) + idTile('Not found', String(nf), nf ? C.noInk : C.ink) + ring(vd, vn, ringCol) + '</div>'; return h + '</div>'; }
     if (j) h += '<div style="display:flex;gap:8px;margin-top:14px;align-items:center">' + (j.kind === 'return' ? idTile('Return from', j.store, C.lavInk) + idTile('Return No', j.slip, C.ink) : idTile('Request', reqOf(j), C.lavInk) + idTile('Slip', j.slip, C.ink)) + ring(k.done, k.total, ringCol || C.ink) + '</div>';
     return h + '</div>';
   }
@@ -162,6 +164,15 @@
     try {
       if (!j || !j.phase) return;
       if (j.phase === 'cancelled') { if (lastNote) { B.progressClear && B.progressClear(); lastNote = ''; } if (B.keepAwake) B.keepAwake(false); return; }
+      if (j.kind === 'verify') {
+        var vn = (j.targets || []).length, vd = Math.min(j.idx || 0, vn), vt = (j.targets || [])[vd], vbad = Object.values(j.res || {}).filter(function (r) { return !r.found; }).length, von = active(j);
+        var dv = { title: j.title, reqL: 'CHECKED', req: vd + ' of ' + vn, slipL: 'NOT FOUND', slip: String(vbad), done: vd, total: vn, metaL: vd + ' of ' + vn + ' serials read', metaR: 'Read only · nothing changes on CUIMS', tag: 'verify' };
+        if (j.phase === 'done') { dv.kind = 'saved'; dv.over = 'Verification finished'; dv.bigOver = 'FINISHED'; dv.sub = 'Opening the report'; dv.now = 'Finished'; dv.nowSub = vn + ' serials read · report opens in the app'; dv.b1 = 'Open|open'; von = false; }
+        else if (j.paused) { dv.kind = 'paused'; dv.over = 'Verify · paused'; dv.bigOver = 'PAUSED'; dv.sub = 'Paused · ' + (j.pauseMsg || ''); dv.now = 'Paused'; dv.nowSub = j.pauseMsg === 'by you' ? 'Tap Resume to continue' : (j.pauseMsg || 'Tap Resume to continue'); dv.b1 = 'Resume|resume'; dv.b2 = 'Open|open'; dv.b3 = 'Stop|cancel'; }
+        else { dv.kind = 'verify'; dv.over = 'Verifying · read only'; dv.bigOver = 'VERIFY ON CUIMS'; dv.sub = 'Checking ' + vd + ' of ' + vn; dv.now = vt ? 'Checking ' + (vt.serial ? 'Serial ' + vt.serial : 'Slip ' + vt.slip) : (j.day && !j.dayDone ? 'Listing ' + j.day.label : 'Working'); dv.nowSub = 'Show Transactions · nothing is changed'; dv.b1 = 'Pause|pause'; dv.b2 = 'Open|open'; dv.b3 = 'Stop|cancel'; }
+        var vkey = JSON.stringify(dv) + von; if (vkey !== lastNote) { lastNote = vkey; if (B.progress2) B.progress2(JSON.stringify(dv), von); }
+        if (B.keepAwake) B.keepAwake(von); return;
+      }
       var k = cnt(j), on = active(j), req = reqOf(j), cur = curItem(j);
       var d = { req: req, slip: j.slip, title: j.store, done: k.done, total: k.total, tag: j.queue ? 'queue on' : '' };
       d.metaL = k.done + ' of ' + k.total + ' added'; d.metaR = (j.queue ? 'Queue on' : 'Queue off') + ' · Auto submit ' + (j.autoSubmit ? 'on' : 'off');
@@ -260,11 +271,16 @@
   J.autoMsg = function (k, m) { if (!AUTO) return; if (k === 'download') { AS.step = 'download'; AS.note = 'Bringing the Excel file to the app'; } else if (k === 'fail') { AS.err = 'Download failed: ' + (m || ''); } asSave(); paint(); };
   function verifyPanel(j) {
     var n = (j.targets || []).length, d = Math.min(j.idx || 0, n), cur = (j.targets || [])[d];
-    var h = hero('Verify on CUIMS · read only', j.title || 'Checking entries', j, C.ink);
-    var msg = j.phase === 'done' ? statusCard('ok', 'Finished', 'Opening the report in the app') : statusCard('run', cur ? 'Checking ' + (cur.serial ? 'Serial ' + cur.serial : 'Slip ' + cur.slip) : (j.day && !j.dayDone ? 'Listing ' + j.day.label : 'Working…'), d + ' of ' + n + ' done · nothing is changed on CUIMS');
-    var rows = (j.targets || []).slice(Math.max(0, d - 3), d + 4).map(function (t, i) { var r = (j.res || {})[t.key]; var st = r ? (r.found ? ['Read', C.okInk, '#D6F5E5'] : ['Not found', C.noInk, '#FFE4EA']) : t === cur ? ['Now', '#fff', C.ink] : ['Next', C.mute, '#EEECF3'];
-      return '<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid ' + C.line + '"><b style="flex:1;font:700 14px ' + F + '">' + esc(t.serial ? 'Serial ' + t.serial : 'Slip ' + t.slip) + '</b><span style="font:700 12px ' + F + ';color:' + st[1] + ';background:' + st[2] + ';border-radius:99px;padding:3px 10px">' + st[0] + '</span></div>'; }).join('');
-    return h + wrap(msg + '<div style="background:' + C.soft + ';border-radius:20px;padding:4px 14px">' + rows + '</div>' + row2('', btn('cancel', 'Stop', 'link')) + credit());
+    var h = hero(j.paused ? 'Verify · paused' : 'Verify on CUIMS · read only', j.title || 'Checking entries', j, j.paused ? '#FFB648' : C.ink);
+    var msg = j.phase === 'done' ? statusCard('ok', 'Finished', 'Opening the report in the app')
+      : j.paused ? statusCard('warn', 'Paused', j.pauseMsg && j.pauseMsg !== 'by you' ? j.pauseMsg : 'Tap Resume to continue')
+      : statusCard('run', cur ? 'Checking ' + (cur.serial ? 'Serial ' + cur.serial : 'Slip ' + cur.slip) : (j.day && !j.dayDone ? 'Listing all of ' + j.day.label : 'Working'), 'Nothing is changed on CUIMS');
+    var from = Math.max(0, Math.min(d - 2, n - 6)), L = (j.targets || []).slice(from, from + 6);
+    var rows = L.map(function (t) { var r = (j.res || {})[t.key]; var st = r ? (r.found ? ['Read', C.okInk, C.okBg] : ['Not found', C.noInk, C.noBg]) : t === cur ? (j.paused ? ['Paused', '#7A4B00', '#FFE7C2'] : ['Now', '#fff', C.ink]) : ['Waiting', C.mute, '#EEECF3'];
+      return '<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid ' + C.line + '"><span style="flex:1;min-width:0"><b style="display:block;font:700 14.5px ' + F + ';color:' + C.ink + '">' + esc(t.serial ? 'Serial ' + t.serial : 'Slip ' + t.slip) + '</b>' + (t.slip && t.serial ? '<span style="font:500 12px ' + F + ';color:' + C.mute + '">Slip ' + esc(t.slip) + (t.extra ? ' · not in app' : '') + '</span>' : (t.extra ? '<span style="font:500 12px ' + F + ';color:' + C.mute + '">not in app</span>' : '')) + '</span><span style="font:700 12px ' + F + ';color:' + st[1] + ';background:' + st[2] + ';border-radius:99px;padding:4px 11px;flex-shrink:0">' + st[0] + '</span></div>'; }).join('');
+    var head = '<div style="display:flex;justify-content:space-between;align-items:center;margin:2px 2px 0"><b style="font:800 12px ' + F + ';letter-spacing:.06em;color:' + C.mute + ';text-transform:uppercase">Serials</b><span style="font:700 12px ' + F + ';color:' + C.mute + '">' + d + ' of ' + n + ' read</span></div>';
+    var btns = j.phase === 'done' ? '' : row2(j.paused ? btn('resume', 'Resume', 'main') : btn('pause', 'Pause', ''), btn('cancel', 'Stop', 'link'));
+    return h + wrap(msg + head + '<div style="background:' + C.soft + ';border-radius:20px;padding:2px 16px">' + rows + '</div>' + btns + credit());
   }
   function paintInner2() {
     var jv = job(); if (jv && jv.kind === 'verify' && active(jv)) { bar.innerHTML = verifyPanel(jv); return; }
@@ -737,7 +753,9 @@
         if (j.phase === 'dup') r = await stepDup(j);
         else if (j.phase === 'fill') r = await stepFill(j);
         else if (j.phase === 'capture') r = await stepCapture(j);
-        else if (j.phase === 'verify') r = await stepVerify(j);
+        else if (j.phase === 'verify') { try { r = await stepVerify(j); } catch (ve) { var jv = job(); var tv = (jv.targets || [])[jv.idx || 0]; tv = tv || {}; tv.errs = (tv.errs || 0) + 1;
+            if (tv.errs >= 3) { jv.res = jv.res || {}; jv.res[tv.key] = { found: false, serial: tv.serial, slip: tv.slip, err: String(ve && ve.message || ve) }; jv.idx = (jv.idx || 0) + 1; } else { tv.st = ''; }
+            jv.paused = false; save(jv); log(jv, 'Retrying: ' + String(ve && ve.message || ve)); await sleep(1200); r = 'wait'; } }
         else break;
         if (r !== 'wait') paint();
         if (r === 'stop') break;

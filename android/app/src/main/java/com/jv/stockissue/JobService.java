@@ -77,6 +77,8 @@ public class JobService extends Service {
         RemoteViews bg = new RemoteViews(c.getPackageName(), R.layout.notif_big);
         bg.setTextViewText(R.id.b_over, d.optString("bigOver", d.optString("over")));
         bg.setTextViewText(R.id.b_title, d.optString("title"));
+        bg.setTextViewText(R.id.b_reqL, d.optString("reqL", "REQUEST"));
+        bg.setTextViewText(R.id.b_slipL, d.optString("slipL", "SLIP"));
         bg.setTextViewText(R.id.b_req, d.optString("req", "–"));
         bg.setTextViewText(R.id.b_slip, d.optString("slip", "–"));
         bg.setViewVisibility(R.id.b_ringbox, total == 0 ? View.GONE : View.VISIBLE);
@@ -91,7 +93,7 @@ public class JobService extends Service {
         if ("ready".equals(kind)) { card = d.optBoolean("allOk", true) ? R.drawable.n_ok : R.drawable.n_warn; ic = R.drawable.ic_n_check; icBg = R.drawable.n_ic_green; nowCol = 0xFF141414; subCol = 0xFF4E5A55; }
         else if ("paused".equals(kind)) { card = R.drawable.n_warn; ic = R.drawable.ic_n_pause; icBg = R.drawable.n_ic_amber; nowCol = 0xFF141414; subCol = 0xFF6E5A2A; }
         else if ("saved".equals(kind)) { card = R.drawable.n_ok; ic = R.drawable.ic_n_check; icBg = R.drawable.n_ic_green; nowCol = 0xFF141414; subCol = 0xFF4E5A55; }
-        else if ("capture".equals(kind)) { ic = R.drawable.ic_n_search; }
+        else if ("capture".equals(kind) || "verify".equals(kind)) { ic = R.drawable.ic_n_search; }
         bg.setInt(R.id.b_card, "setBackgroundResource", card);
         bg.setImageViewResource(R.id.b_cardic, ic);
         bg.setInt(R.id.b_cardic, "setBackgroundResource", icBg);

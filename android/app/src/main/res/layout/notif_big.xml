@@ -23,12 +23,12 @@
         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="8dp">
             <LinearLayout android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:orientation="vertical"
                 android:background="@drawable/n_tile" android:paddingStart="10dp" android:paddingEnd="10dp" android:paddingTop="5dp" android:paddingBottom="5dp" android:layout_marginEnd="6dp">
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="REQUEST" android:textSize="9.5sp" android:textStyle="bold" android:textColor="#8A87A0" />
+                <TextView android:id="@+id/b_reqL" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="REQUEST" android:textSize="9.5sp" android:textStyle="bold" android:textColor="#8A87A0" />
                 <TextView android:id="@+id/b_req" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textSize="15sp" android:textStyle="bold" android:textColor="#4B3BA8" android:singleLine="true" />
             </LinearLayout>
             <LinearLayout android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:orientation="vertical"
                 android:background="@drawable/n_tile" android:paddingStart="10dp" android:paddingEnd="10dp" android:paddingTop="5dp" android:paddingBottom="5dp">
-                <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="SLIP" android:textSize="9.5sp" android:textStyle="bold" android:textColor="#8A87A0" />
+                <TextView android:id="@+id/b_slipL" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="SLIP" android:textSize="9.5sp" android:textStyle="bold" android:textColor="#8A87A0" />
                 <TextView android:id="@+id/b_slip" android:layout_width="wrap_content" android:layout_height="wrap_content" android:textSize="15sp" android:textStyle="bold" android:textColor="#141414" android:singleLine="true" />
             </LinearLayout>
         </LinearLayout>
