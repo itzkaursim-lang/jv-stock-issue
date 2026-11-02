@@ -283,7 +283,10 @@
     return h + wrap(msg + head + '<div style="background:' + C.soft + ';border-radius:20px;padding:2px 16px">' + rows + '</div>' + btns + chips(j) + credit());
   }
   function paintInner2() {
-    var jv = job(); if (jv && jv.kind === 'verify' && active(jv) && !mini) { bar.style.borderRadius = ''; bar.style.boxShadow = ''; bar.style.background = ''; bar.innerHTML = verifyPanel(jv); return; }
+    var jv = job(); if (jv && jv.kind === 'verify' && active(jv) && !mini) {
+      bar.style.borderRadius = '30px'; bar.style.boxShadow = '0 24px 60px rgba(30,20,70,.28),0 0 0 1px rgba(20,20,20,.04)'; bar.style.background = '#fff';
+      if (ui.confirmCancel) { bar.innerHTML = hero('Stop verifying?', jv.title || '', jv, C.ink) + wrap(statusCard('no', 'Stop the check now?', 'Serials read so far are not saved as a report. Nothing on CUIMS was changed.') + '<div style="display:flex;flex-direction:column;gap:8px">' + btn('cancelKeep', 'Yes, stop', 'warn') + btn('noCancel', 'Keep checking', 'main') + '</div>'); return; }
+      bar.innerHTML = verifyPanel(jv); return; }
     var j = job();
     if (mini) {
       var k0 = j && j.items ? cnt(j) : { done: 0, total: 0 };

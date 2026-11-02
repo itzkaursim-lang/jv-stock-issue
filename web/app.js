@@ -1803,7 +1803,7 @@ window.onSiteEvent = function (raw) {
     if (S.stock[e.code] && Math.abs(S.stock[e.code].qty - e.stock) > 1e-6) { S.stock[e.code].qty = e.stock; save(true); }
   } else if (e.type === 'submitted') { recordSubmit(e); }
   else if (e.type === 'verified') { buildVerifyReport(e); toast('Verification finished.'); }
-  else if (e.type === 'cancelled') { toast('Entry cancelled. Nothing was submitted.'); if (N) N.showApp(); }
+  else if (e.type === 'cancelled') { let jk = ''; try { jk = (JSON.parse(N.jobGet() || '{}') || {}).kind || ''; } catch (x) {} toast(jk === 'verify' ? 'Verification stopped. Nothing on CUIMS was changed.' : 'Entry cancelled. Nothing was submitted.'); if (N) N.showApp(); }
 };
 function recordSubmit(e) {
   let job = null; try { job = JSON.parse(N.jobGet() || 'null'); } catch (x) {}
