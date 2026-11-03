@@ -2218,8 +2218,12 @@ function buildVerifyReport(e) {
     const ms = [...new Set(r.multi || [])]; if (ms.length > 1) add({ key, label, kind: 'multi', serials: ms });
     if (ent && sh.pa && vNorm(sh.pa) !== vNorm(ent.store)) add({ key, label, kind: 'store', app: ent.store, cuims: sh.pa });
     const appR = String(ent ? ent.rcv : ret ? ret.by : '');
-    const cand = [...new Set([].concat(ret ? [sh.emp] : [], (r.list && r.list.rcv) || [], sh.rcv || [], ret ? ((r.list && r.list.codes) || []) : []).filter(x => /^\d{6}$/.test(String(x))).map(String))];
-    if (appR && cand.length && !cand.includes(appR)) add({ key, label, kind: 'rcv', ret: !!ret, app: appR, cuims: (ret ? (sh.emp || cand[0]) : cand[0]) });
+    const okCode = x => /^\d{6}$/.test(String(x || ''));
+    const storeSide = ret ? new Set([String(sh.rcv || ''), String((r.list && r.list.rcv) || '')].filter(okCode)) : new Set();
+    const cand = ret ? [...new Set([sh.emp].concat((r.list && r.list.codes) || [], sh.allCodes || []).filter(okCode).map(String))].filter(c => !storeSide.has(c) || c === String(sh.emp))
+      : [...new Set([].concat((r.list && r.list.rcv) || [], sh.rcv || []).filter(okCode).map(String))];
+    const best = ret ? (okCode(sh.emp) ? sh.emp : cand[0]) : cand[0];
+    if (appR && cand.length && !cand.includes(appR)) add({ key, label, kind: 'rcv', ret: !!ret, app: appR, cuims: best, all: cand });
     if (ret && sh.type && !/return/i.test(sh.type)) add({ key, label, kind: 'type', cuims: sh.type });
     const cu = {}; (sh.items || []).forEach(i => { cu[vNorm(i.code)] = i; });
     exp.forEach(x => { const c = cu[x.code];
@@ -2248,14 +2252,14 @@ function vFinding(f, rep) {
     serial: ['Serial missing in app', 'c-gd', 'CUIMS has Serial ' + f.val],
     multi: ['Slip used more than once', 'c-no', 'Serials ' + (f.serials || []).join(', ')],
     store: ['Store differs', 'c-no', 'App: ' + esc(f.app) + ' · CUIMS Project Area: ' + esc(f.cuims)],
-    rcv: [f.ret ? 'By employee differs' : 'Receiver differs', 'c-no', 'App: GA' + esc(f.app) + (rcvName(f.app) ? ' ' + esc(rcvName(f.app)) : '') + ' · CUIMS: GA' + esc(f.cuims) + (rcvName(f.cuims) ? ' ' + esc(rcvName(f.cuims)) : '')],
+    rcv: [f.ret ? 'By employee differs' : 'Receiver differs', 'c-no', 'App: GA' + esc(f.app) + (rcvName(f.app) ? ' ' + esc(rcvName(f.app)) : '') + ' · CUIMS: ' + (/^\d{6}$/.test(String(f.cuims || '')) ? 'GA' + esc(f.cuims) + (rcvName(f.cuims) ? ' ' + esc(rcvName(f.cuims)) : '') : 'not readable') + ((f.all || []).length > 1 ? ' · codes on CUIMS: ' + f.all.map(c => 'GA' + c).join(', ') : '')],
     type: ['Not a return on CUIMS', 'c-no', 'CUIMS type: ' + esc(f.cuims)],
     missing: ['Missing on CUIMS', 'c-no', nm(f.code) + ' (' + esc(f.code) + ') ' + num(f.qty) + ' is in the app but not in this serial'],
     qty: ['Qty differs', 'c-gd', nm(f.code) + ' · app ' + num(f.app) + ' · CUIMS ' + num(f.cuims)],
     remark: ['Remark differs', 'c-gd', nm(f.code) + ' · CUIMS: ' + esc(f.cuims)],
     extra: ['Extra on CUIMS', 'c-no', esc(f.name || itemName(f.code)) + ' (' + esc(f.code) + ') ' + num(f.qty) + ' is on CUIMS but not in the app'],
     notInApp: ['On CUIMS, not in app', 'c-no', (f.isReturn ? 'Return' : 'Issue') + ' Serial ' + esc(f.serial) + ' · Slip ' + esc(f.slip || '–') + ' · ' + esc(f.store || '') + ' · GA' + esc(f.rcv || '–') + ' · ' + (f.items || []).length + ' articles · by ' + esc(f.entryBy || '')] }[f.kind] || ['Note', 'c-gy', ''];
-  const fix = f.fixed ? '<span class="sc ok">fixed</span>' : ({ serial: 'Save Serial ' + f.val + ' in app', qty: 'Use CUIMS qty in app', missing: 'Make it pending again', extra: 'Add to app as issued', store: 'Use CUIMS store in app', rcv: 'Use CUIMS receiver in app', notInApp: 'Add as manual slip' }[f.kind]);
+  const fix = f.fixed ? '<span class="sc ok">fixed</span>' : ({ serial: 'Save Serial ' + f.val + ' in app', qty: 'Use CUIMS qty in app', missing: 'Make it pending again', extra: 'Add to app as issued', store: 'Use CUIMS store in app', rcv: f.ret ? 'Use CUIMS employee in app' : 'Use CUIMS receiver in app', notInApp: 'Add as manual slip' }[f.kind]);
   if (f.kind === 'notInApp' && (f.ignored || isIgnored(f.serial, f.entryBy))) return '<div class="vf"><div class="row">' + pill('Ignored', 'c-gy') + '</div><div class="vft">Serial ' + esc(f.serial) + ' is on your ignore list. It will not be checked again.</div></div>';
   const ign = f.kind === 'notInApp' && !f.fixed ? '<div class="grid2" style="margin-top:2px"><button class="btn sm ghost" data-a="vfIgn" data-v="' + rep.id + '|' + f.id + '">Ignore this serial</button>' + (personCode(f.entryBy) ? '<button class="btn sm ghost" data-a="vfIgnP" data-v="' + rep.id + '|' + f.id + '">Ignore all by ' + esc(personCode(f.entryBy)) + '</button>' : '<span></span>') + '</div>' : '';
   const igb = f.kind === 'ok' || f.fixed ? '' : fIgnored(f) ? '<div class="row" style="gap:8px"><span class="sc gd">Ignored' + ((S.verifyIgnore[fSig(f)] || {}).note ? ': ' + esc(S.verifyIgnore[fSig(f)].note) : '') + '</span><button class="btn sm ghost" data-a="vfUnIgn" data-v="' + rep.id + '|' + f.id + '">Un-ignore</button></div>' : '<button class="btn sm ghost" data-a="vfIgnF" data-v="' + rep.id + '|' + f.id + '">Ignore this error</button>';
@@ -2263,7 +2267,7 @@ function vFinding(f, rep) {
 }
 function vReport() {
   const R = (S.verifyReports || []).find(r => r.id === ui.vrep) || (S.verifyReports || [])[0];
-  if (R) R.findings = R.findings.filter(f => !(f.kind === 'multi' && new Set(f.serials || []).size < 2));
+  if (R) R.findings = R.findings.filter(f => !(f.kind === 'multi' && new Set(f.serials || []).size < 2) && !(f.kind === 'rcv' && !/^\d{6}$/.test(String(f.cuims || ''))));
   let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Verification</h1><div class="sub">' + (R ? esc(R.title) + ' · checked ' + esc(fmtDT(R.at)) : 'No checks yet') + '</div></div></header><main>';
   if (!R) return h + '<div class="card pad note">Use "Verify on CUIMS" on a request, a return, or a whole day.</div></main>';
   const bad = R.findings.filter(f => f.kind !== 'ok' && !f.fixed && !fIgnored(f) && !(f.kind === 'notInApp' && isIgnored(f.serial, f.entryBy))), ok = R.findings.filter(f => f.kind === 'ok'), nIgn = R.findings.filter(fIgnored).length;
@@ -2564,6 +2568,7 @@ document.addEventListener('click', async ev => {
         if (l) { l.status = 'issued'; l.issued.push({ slip: en.slip, serial: en.serial || '', at: en.at }); }
         en.items.push({ lineId: l ? l.id : 0, req, code: f.code, name: itemName(f.code), uom: itemUom(f.code), qty: f.qty, remark: '' }); }
       if (f.kind === 'store' && en) en.store = f.cuims;
+      if (f.kind === 'rcv' && !/^\d{6}$/.test(String(f.cuims || ''))) { toast('CUIMS code is not readable, nothing changed.'); break; }
       if (f.kind === 'rcv' && en) en.rcv = f.cuims;
       if (f.kind === 'rcv' && f.ret) { const rt = S.returns.find(x => 'r' + x.id === f.key); if (rt) { rt.by = f.cuims; rt.byName = rcvName(f.cuims); } }
       if (f.kind === 'notInApp') { const d = (String(f.date || '').match(/(\d+)\/(\d+)\/(\d{4})/) || []); const iso = d.length ? d[3] + '-' + String(d[1]).padStart(2, '0') + '-' + String(d[2]).padStart(2, '0') : today();

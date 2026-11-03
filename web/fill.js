@@ -477,8 +477,9 @@
     var slip = ''; var td = it ? it.closest('td') : null; if (td) [].slice.call(td.querySelectorAll('input')).forEach(function (x) { if (x.value && x.value.trim()) slip = x.value.trim(); });
     if (!slip) { var sb = $('ContentPlaceHolder1_txtSlipNo'); if (sb) slip = sb.value.trim(); }
     var items = [].slice.call(document.querySelectorAll('[id^="ContentPlaceHolder1_grdselecteditems_lblFinalCode_"]')).map(function (sp) { var r = gridRow(sp.textContent.trim()); return r ? { code: r.code.toUpperCase(), qty: r.qty, remark: r.remark, name: r.name } : null; }).filter(Boolean);
-    var empF = rowFor(/^(By\s*)?Employee\s*:?$/i);
-    return { emp: val(empF).replace(/^GA/i, '').slice(0, 6), type: val($('ContentPlaceHolder1_ddldoctype')), pa: val($('ContentPlaceHolder1_ddlProjectArea') || rowFor(/^Project\s*Area/i)), rcv: val(rowFor(/^Rec\w*\s*By/i) || empBox()).replace(/^GA/i, '').slice(0, 6), slip: slip, issueType: val(it), dept: val($('ContentPlaceHolder1_ddldepartment')), date: val(rowFor(/^Date\*?:?$/i)), items: items };
+    var empF = rowFor(/^(By\s*)?Employee\s*:?$/i), em = (val(empF).match(/\d{6}/) || [''])[0];
+    var all = {}; [].slice.call(document.querySelectorAll('input,select,textarea')).forEach(function (x) { var t = x.tagName === 'SELECT' ? (x.selectedIndex >= 0 ? x.options[x.selectedIndex].text : '') : (x.value || ''); (String(t).match(/GA\s*\d{6}/gi) || []).forEach(function (c) { all[c.replace(/\D/g, '')] = 1; }); });
+    return { allCodes: Object.keys(all), emp: em, type: val($('ContentPlaceHolder1_ddldoctype')), pa: val($('ContentPlaceHolder1_ddlProjectArea') || rowFor(/^Project\s*Area/i)), rcv: val(rowFor(/^Rec\w*\s*By/i) || empBox()).replace(/^GA/i, '').slice(0, 6), slip: slip, issueType: val(it), dept: val($('ContentPlaceHolder1_ddldepartment')), date: val(rowFor(/^Date\*?:?$/i)), items: items };
   }
   async function stepVerify(j) {
     j.res = j.res || {}; j.idx = j.idx || 0;
