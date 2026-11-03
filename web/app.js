@@ -2211,14 +2211,15 @@ function buildVerifyReport(e) {
     if (!r.found) { add({ key, label, kind: 'notFound', serial: r.serial, slip: r.slip }); return; }
     const sh = r.shown || { items: [] };
     { const ap = {}; exp.forEach(x => { ap[x.code] = x; });
-      DT[key] = { serial: (r.list || {}).serial || r.serial || '', slip: sh.slip || (r.list || {}).slip || '', date: (r.list || {}).entryDate || sh.date || '', entryBy: (r.list || {}).entryBy || '', rcv: (r.list || {}).rcv || sh.rcv || '', pa: sh.pa || '', type: sh.type || '', issueType: sh.issueType || '', dept: sh.dept || '', desc: (r.list || {}).desc || '',
+      DT[key] = { isRet: !!ret, emp: sh.emp || '', codes: (r.list || {}).codes || [], serial: (r.list || {}).serial || r.serial || '', slip: sh.slip || (r.list || {}).slip || '', date: (r.list || {}).entryDate || sh.date || '', entryBy: (r.list || {}).entryBy || '', rcv: (r.list || {}).rcv || sh.rcv || '', pa: sh.pa || '', type: sh.type || '', issueType: sh.issueType || '', dept: sh.dept || '', desc: (r.list || {}).desc || '',
         items: (sh.items || []).map(c => { const a2 = ap[vNorm(c.code)]; return { code: vNorm(c.code), name: c.name || itemName(c.code), qty: Number(c.qty), remark: c.remark || '', app: a2 ? a2.qty : null }; }),
         missing: exp.filter(x => !(sh.items || []).some(c => vNorm(c.code) === x.code)).map(x => ({ code: x.code, qty: x.qty })) }; }
     if (ent && !String(ent.serial || '').trim() && r.list && r.list.serial) add({ key, label, kind: 'serial', val: r.list.serial });
     const ms = [...new Set(r.multi || [])]; if (ms.length > 1) add({ key, label, kind: 'multi', serials: ms });
     if (ent && sh.pa && vNorm(sh.pa) !== vNorm(ent.store)) add({ key, label, kind: 'store', app: ent.store, cuims: sh.pa });
-    const appR = ent ? ent.rcv : ret ? ret.by : ''; const cuR = (r.list && r.list.rcv) || sh.rcv;
-    if (appR && cuR && String(appR) !== String(cuR)) add({ key, label, kind: 'rcv', app: appR, cuims: cuR });
+    const appR = String(ent ? ent.rcv : ret ? ret.by : '');
+    const cand = [...new Set([].concat(ret ? [sh.emp] : [], (r.list && r.list.rcv) || [], sh.rcv || [], ret ? ((r.list && r.list.codes) || []) : []).filter(x => /^\d{6}$/.test(String(x))).map(String))];
+    if (appR && cand.length && !cand.includes(appR)) add({ key, label, kind: 'rcv', ret: !!ret, app: appR, cuims: (ret ? (sh.emp || cand[0]) : cand[0]) });
     if (ret && sh.type && !/return/i.test(sh.type)) add({ key, label, kind: 'type', cuims: sh.type });
     const cu = {}; (sh.items || []).forEach(i => { cu[vNorm(i.code)] = i; });
     exp.forEach(x => { const c = cu[x.code];
@@ -2232,19 +2233,22 @@ function buildVerifyReport(e) {
   S.verifyReports = [rep].concat(S.verifyReports || []).slice(0, 40);
   S.verified = S.verified || {};
   const reqOf = k => { const en = S.entries.find(x => 'e' + x.id === k); return en ? [...new Set(en.items.map(i => i.req).filter(Boolean).concat(en.reqs ? String(en.reqs).split(/\s*,\s*/) : []))] : []; };
-  const per = {}; F.forEach(f => reqOf(f.key).forEach(q => { per[q] = per[q] || 0; if (f.kind !== 'ok') per[q]++; }));
+  const per = {}; F.forEach(f => reqOf(f.key).forEach(q => { per[q] = per[q] || 0; if (f.kind !== 'ok' && !fIgnored(f)) per[q]++; }));
   Object.entries(per).forEach(([q, n]) => { S.verified[q] = { at: rep.at, issues: n, rep: rep.id }; });
-  F.filter(f => f.key[0] === 'r').forEach(f => { const r = S.returns.find(x => 'r' + x.id === f.key); if (r) r.verified = { at: rep.at, issues: F.filter(g => g.key === f.key && g.kind !== 'ok').length }; });
+  F.filter(f => f.key[0] === 'r').forEach(f => { const r = S.returns.find(x => 'r' + x.id === f.key); if (r) r.verified = { at: rep.at, issues: F.filter(g => g.key === f.key && g.kind !== 'ok' && !fIgnored(g)).length }; });
   save(); ui.vrep = rep.id; ui.view = 'vreport'; render(); window.scrollTo(0, 0);
 }
+function fSig(f) { return [f.kind, f.label || f.serial || f.slip || f.key, f.code || ''].join('|'); }
+function fIgnored(f) { return f.kind !== 'ok' && !!(S.verifyIgnore || {})[fSig(f)]; }
 function vFinding(f, rep) {
+  if (fIgnored(f) && !ui.showIgn) return '';
   const nm = c => esc(itemName(c));
   const T = { ok: ['All good', 'c-ok', f.n + ' article' + (f.n === 1 ? '' : 's') + ' match CUIMS exactly'],
     notFound: ['Not found on CUIMS', 'c-no', (f.serial ? 'Serial ' + f.serial : 'Slip ' + f.slip) + ' is not in Show Transactions'],
     serial: ['Serial missing in app', 'c-gd', 'CUIMS has Serial ' + f.val],
     multi: ['Slip used more than once', 'c-no', 'Serials ' + (f.serials || []).join(', ')],
     store: ['Store differs', 'c-no', 'App: ' + esc(f.app) + ' · CUIMS Project Area: ' + esc(f.cuims)],
-    rcv: ['Receiver differs', 'c-no', 'App: GA' + esc(f.app) + ' · CUIMS: GA' + esc(f.cuims)],
+    rcv: [f.ret ? 'By employee differs' : 'Receiver differs', 'c-no', 'App: GA' + esc(f.app) + (rcvName(f.app) ? ' ' + esc(rcvName(f.app)) : '') + ' · CUIMS: GA' + esc(f.cuims) + (rcvName(f.cuims) ? ' ' + esc(rcvName(f.cuims)) : '')],
     type: ['Not a return on CUIMS', 'c-no', 'CUIMS type: ' + esc(f.cuims)],
     missing: ['Missing on CUIMS', 'c-no', nm(f.code) + ' (' + esc(f.code) + ') ' + num(f.qty) + ' is in the app but not in this serial'],
     qty: ['Qty differs', 'c-gd', nm(f.code) + ' · app ' + num(f.app) + ' · CUIMS ' + num(f.cuims)],
@@ -2254,25 +2258,27 @@ function vFinding(f, rep) {
   const fix = f.fixed ? '<span class="sc ok">fixed</span>' : ({ serial: 'Save Serial ' + f.val + ' in app', qty: 'Use CUIMS qty in app', missing: 'Make it pending again', extra: 'Add to app as issued', store: 'Use CUIMS store in app', rcv: 'Use CUIMS receiver in app', notInApp: 'Add as manual slip' }[f.kind]);
   if (f.kind === 'notInApp' && (f.ignored || isIgnored(f.serial, f.entryBy))) return '<div class="vf"><div class="row">' + pill('Ignored', 'c-gy') + '</div><div class="vft">Serial ' + esc(f.serial) + ' is on your ignore list. It will not be checked again.</div></div>';
   const ign = f.kind === 'notInApp' && !f.fixed ? '<div class="grid2" style="margin-top:2px"><button class="btn sm ghost" data-a="vfIgn" data-v="' + rep.id + '|' + f.id + '">Ignore this serial</button>' + (personCode(f.entryBy) ? '<button class="btn sm ghost" data-a="vfIgnP" data-v="' + rep.id + '|' + f.id + '">Ignore all by ' + esc(personCode(f.entryBy)) + '</button>' : '<span></span>') + '</div>' : '';
-  return '<div class="vf"><div class="row">' + pill(T[0], T[1]) + (f.label ? '<span class="note mono">' + esc(f.label) + '</span>' : '') + '</div><div class="vft">' + T[2] + '</div>' + (fix && !f.fixed ? '<button class="btn sm" data-a="vfFix" data-v="' + rep.id + '|' + f.id + '">' + esc(fix) + '</button>' : (f.fixed ? '<span class="sc ok">Fixed in app</span>' : '')) + ign + '</div>';
+  const igb = f.kind === 'ok' || f.fixed ? '' : fIgnored(f) ? '<div class="row" style="gap:8px"><span class="sc gd">Ignored' + ((S.verifyIgnore[fSig(f)] || {}).note ? ': ' + esc(S.verifyIgnore[fSig(f)].note) : '') + '</span><button class="btn sm ghost" data-a="vfUnIgn" data-v="' + rep.id + '|' + f.id + '">Un-ignore</button></div>' : '<button class="btn sm ghost" data-a="vfIgnF" data-v="' + rep.id + '|' + f.id + '">Ignore this error</button>';
+  return '<div class="vf' + (fIgnored(f) ? ' ign' : '') + '"><div class="row">' + pill(T[0], T[1]) + (f.label ? '<span class="note mono">' + esc(f.label) + '</span>' : '') + '</div><div class="vft">' + T[2] + '</div>' + (fix && !f.fixed && !fIgnored(f) ? '<button class="btn sm" data-a="vfFix" data-v="' + rep.id + '|' + f.id + '">' + esc(fix) + '</button>' : (f.fixed ? '<span class="sc ok">Fixed in app</span>' : '')) + (fIgnored(f) ? '' : ign) + igb + '</div>';
 }
 function vReport() {
   const R = (S.verifyReports || []).find(r => r.id === ui.vrep) || (S.verifyReports || [])[0];
   if (R) R.findings = R.findings.filter(f => !(f.kind === 'multi' && new Set(f.serials || []).size < 2));
   let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Verification</h1><div class="sub">' + (R ? esc(R.title) + ' · checked ' + esc(fmtDT(R.at)) : 'No checks yet') + '</div></div></header><main>';
   if (!R) return h + '<div class="card pad note">Use "Verify on CUIMS" on a request, a return, or a whole day.</div></main>';
-  const bad = R.findings.filter(f => f.kind !== 'ok' && !f.fixed && !(f.kind === 'notInApp' && isIgnored(f.serial, f.entryBy))), ok = R.findings.filter(f => f.kind === 'ok');
+  const bad = R.findings.filter(f => f.kind !== 'ok' && !f.fixed && !fIgnored(f) && !(f.kind === 'notInApp' && isIgnored(f.serial, f.entryBy))), ok = R.findings.filter(f => f.kind === 'ok'), nIgn = R.findings.filter(fIgnored).length;
   h += '<div class="grid3"><div class="tile t-ok"><b>' + ok.length + '</b><span>All good</span></div><div class="tile t-pt"><b>' + bad.length + '</b><span>To check</span></div><div class="tile t-in"><b>' + R.checked + '</b><span>Serials read</span></div></div>';
   if (R.dayCount) h += '<div class="note">' + R.dayCount + ' transactions listed on CUIMS for that day.</div>';
-  if (!bad.length) h += '<div class="okbox"><span>Everything matches CUIMS.</span></div>';
+  if (nIgn) h += '<button class="btn sm ghost" data-a="vfShowIgn">' + (ui.showIgn ? 'Hide' : 'Show') + ' ' + nIgn + ' ignored error' + (nIgn > 1 ? 's' : '') + '</button>';
+  if (!bad.length) h += '<div class="okbox"><span>' + (nIgn ? 'Everything else matches CUIMS.' : 'Everything matches CUIMS.') + '</span></div>';
   const G = {}; R.findings.forEach(f => (G[f.key] = G[f.key] || []).push(f));
-  Object.values(G).sort((a, b) => (b.some(f => f.kind !== 'ok' && !f.fixed) ? 1 : 0) - (a.some(f => f.kind !== 'ok' && !f.fixed) ? 1 : 0)).forEach(L => {
+  Object.values(G).filter(L => ui.showIgn || !L.every(f => fIgnored(f) || (f.kind === 'notInApp' && isIgnored(f.serial, f.entryBy)))).sort((a, b) => (b.some(f => f.kind !== 'ok' && !f.fixed) ? 1 : 0) - (a.some(f => f.kind !== 'ok' && !f.fixed) ? 1 : 0)).forEach(L => {
     const en = S.entries.find(x => 'e' + x.id === L[0].key), rt = S.returns.find(x => 'r' + x.id === L[0].key);
     const head = en ? '<span class="reqno sm" data-req="' + esc((en.items[0] || {}).req || en.reqs || '') + '">' + esc((en.items[0] || {}).req || en.reqs || '–') + '</span> <b>' + esc(en.store) + '</b>' : rt ? '<span class="stag ret" style="position:static">' + esc(rt.no) + '</span> <b>' + esc(rt.store) + '</b>' : '<b>Not in the app</b>';
     const D = (R.details || {})[L[0].key], dk = R.id + ':' + L[0].key, op = !!(ui.vdOpen || {})[dk];
     let det = '';
     if (D) { det = '<button class="leftbtn retl" data-a="vdTog" data-v="' + esc(dk) + '" style="border-radius:16px"><span>' + (op ? 'Hide' : 'Show') + ' CUIMS details · ' + D.items.length + ' articles</span>' + ico(op ? 'up' : 'down', 18) + '</button>';
-      if (op) det += '<div class="vdet"><div class="vdgrid">' + [['Serial', D.serial], ['Slip No', D.slip], ['Entry date', D.date], ['Entered by', D.entryBy], ['Received by', D.rcv ? 'GA' + D.rcv + (rcvName(D.rcv) ? ' ' + rcvName(D.rcv) : '') : ''], ['Project Area', D.pa], ['Transaction', [D.type, D.issueType].filter(Boolean).join(' · ')], ['Department', D.dept]].filter(x => x[1]).map(x => '<div><span>' + x[0] + '</span><b>' + esc(x[1]) + '</b></div>').join('') + '</div>' +
+      if (op) det += '<div class="vdet"><div class="vdgrid">' + [['Serial', D.serial], ['Slip No', D.slip], ['Entry date', D.date], ['Entered by', D.entryBy], [D.isRet ? 'By employee (CUIMS)' : 'Received by', (D.isRet ? (D.emp || (D.codes || [])[0]) : D.rcv) ? 'GA' + (D.isRet ? (D.emp || D.codes[0]) : D.rcv) + (rcvName(D.isRet ? (D.emp || D.codes[0]) : D.rcv) ? ' ' + rcvName(D.isRet ? (D.emp || D.codes[0]) : D.rcv) : '') : ''], [D.isRet ? 'Other codes on CUIMS' : '', D.isRet ? (D.codes || []).filter(c => c !== (D.emp || D.codes[0])).map(c => 'GA' + c).join(', ') : ''], ['Project Area', D.pa], ['Transaction', [D.type, D.issueType].filter(Boolean).join(' · ')], ['Department', D.dept]].filter(x => x[1]).map(x => '<div><span>' + x[0] + '</span><b>' + esc(x[1]) + '</b></div>').join('') + '</div>' +
         '<div class="tblwrap"><table><tr><th>Code</th><th>Item</th><th>CUIMS qty</th><th>App qty</th><th>Remarks</th></tr>' +
         D.items.map(i => '<tr><td class="mono">' + esc(i.code) + '</td><td>' + esc(i.name) + '</td><td><b>' + num(i.qty) + '</b> ' + esc(itemUom(i.code)) + '</td><td' + (i.app == null ? ' style="color:var(--noInk);font-weight:700">not in app' : Math.abs(i.app - i.qty) > 1e-6 ? ' style="color:#B45309;font-weight:700">' + num(i.app) : ' style="color:#0B5E3D;font-weight:700">' + num(i.app) + ' ✓') + '</td><td>' + esc(i.remark || '–') + '</td></tr>').join('') +
         D.missing.map(m => '<tr style="background:#FFF0F3"><td class="mono">' + esc(m.code) + '</td><td>' + esc(itemName(m.code)) + '</td><td style="color:var(--noInk);font-weight:700">missing</td><td><b>' + num(m.qty) + '</b></td><td>–</td></tr>').join('') + '</table></div></div>'; }
@@ -2285,13 +2291,14 @@ function vReportList() {
   let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Verification reports</h1><div class="sub">Last 40 checks against CUIMS.</div></div></header><main>';
   h += '<button class="btn ret full" data-a="vfDayPick">Verify a whole day on CUIMS</button>';
   { const I = ignList(), sk = Object.entries(I.serials), pk = Object.entries(I.people);
-    h += '<div class="card" style="overflow:hidden"><button class="mgfh" data-a="ignTog"><b>Ignore list</b>' + pill((sk.length + pk.length) + ' rules', 'c-gy') + ico(ui.ignOpen ? 'up' : 'down', 18) + '</button>';
+    h += '<div class="card" style="overflow:hidden"><button class="mgfh" data-a="ignTog"><b>Ignore list</b>' + pill((sk.length + pk.length + Object.keys(S.verifyIgnore || {}).length) + ' rules', 'c-gy') + ico(ui.ignOpen ? 'up' : 'down', 18) + '</button>';
     if (ui.ignOpen) { h += '<div class="pad col" style="gap:8px;padding-top:0"><div class="note">CUIMS entries on this list are never checked, reported or added to your data.</div>';
       h += sk.map(([k, v]) => '<div class="line" style="flex-direction:row;align-items:center;gap:10px;padding:10px 0"><span style="flex:1;min-width:0"><b>Serial ' + esc(k) + '</b><div class="meta"><span>' + esc([v.slip ? 'Slip ' + v.slip : '', v.store, v.by].filter(Boolean).join(' · ')) + '</span></div></span><button class="btn sm ghost" data-a="ignDel" data-v="s|' + esc(k) + '">Remove</button></div>').join('');
       h += pk.map(([k, v]) => '<div class="line" style="flex-direction:row;align-items:center;gap:10px;padding:10px 0"><span style="flex:1;min-width:0"><b>Everything entered by ' + esc(k) + '</b><div class="meta"><span>' + esc(v.name || '') + '</span></div></span><button class="btn sm ghost" data-a="ignDel" data-v="p|' + esc(k) + '">Remove</button></div>').join('');
+      h += Object.entries(S.verifyIgnore || {}).map(([k, v]) => '<div class="line" style="flex-direction:row;align-items:center;gap:10px;padding:10px 0"><span style="flex:1;min-width:0"><b>Error ignored · ' + esc(v.label || '') + '</b><div class="meta"><span>' + esc(v.kind + (v.code ? ' · ' + v.code : '') + (v.note ? ' · ' + v.note : '')) + '</span></div></span><button class="btn sm ghost" data-a="ignDelE" data-v="' + esc(k) + '">Remove</button></div>').join('');
       h += '<div class="grid2"><button class="btn sm" data-a="ignAddS">+ Serial No</button><button class="btn sm" data-a="ignAddP">+ Person (GA code)</button></div></div>'; }
     h += '</div>'; }
-  (S.verifyReports || []).forEach(r => { const bad = r.findings.filter(f => f.kind !== 'ok' && !f.fixed && !(f.kind === 'notInApp' && isIgnored(f.serial, f.entryBy))).length;
+  (S.verifyReports || []).forEach(r => { const bad = r.findings.filter(f => f.kind !== 'ok' && !f.fixed && !fIgnored(f) && !(f.kind === 'notInApp' && isIgnored(f.serial, f.entryBy))).length;
     h += '<button class="card pad tap col" style="gap:4px" data-a="vrOpen" data-v="' + r.id + '"><div class="row"><b>' + esc(r.title) + '</b>' + (bad ? pill(bad + ' to check', 'c-no') : pill('All good', 'c-ok')) + '</div><div class="note">' + esc(fmtDT(r.at)) + ' · ' + r.checked + ' serials</div></button>'; });
   if (!(S.verifyReports || []).length) h += '<div class="card pad note">No checks yet.</div>';
   return h + '</main>';
@@ -2487,7 +2494,7 @@ function shEditReq() {
 }
 
 /* ---------------- lock ---------------- */
-const GUARDED = new Set(['vfIgn', 'vfIgnP', 'ignDel', 'ignAddS', 'ignAddP', 'vfFix', 'retStartAll', 'dcRetFmt', 'dcRetFix', 'clClear', 'retCuims', 'saveReturnCuims', 'rbSave', 'stkEdit', 'stkRen', 'stkDel', 'stkAdd', 'mgDone', 'mgPend', 'mgDel', 'mgDelSlipPend', 'paperAddFrom', 'advIssue', 'paperAdd', 'mrSave', 'mrRemove', 'manReqToggle', 'msSave', 'artQty', 'artHold', 'artDel', 'artsBHold', 'artsBRel', 'artsBDel', 'testToggle', 'testClear', 'dcRenum', 'dcMerge', 'dcKeepFirst', 'dcDate', 'dcBad', 'renumReq', 'impRenum', 'impDrop', 'credSave', 'credDel', 'corrOpen', 'corrSave', 'bulkEdit', 'bulkSave', 'dropReq', 'dropStore', 'editReq', 'saveReq', 'markDone', 'markSave', 'newManual', 'saveEntry', 'delEntry', 'newReturn', 'saveReturn', 'delReturn',
+const GUARDED = new Set(['vfIgnF', 'vfUnIgn', 'ignDelE', 'vfIgn', 'vfIgnP', 'ignDel', 'ignAddS', 'ignAddP', 'vfFix', 'retStartAll', 'dcRetFmt', 'dcRetFix', 'clClear', 'retCuims', 'saveReturnCuims', 'rbSave', 'stkEdit', 'stkRen', 'stkDel', 'stkAdd', 'mgDone', 'mgPend', 'mgDel', 'mgDelSlipPend', 'paperAddFrom', 'advIssue', 'paperAdd', 'mrSave', 'mrRemove', 'manReqToggle', 'msSave', 'artQty', 'artHold', 'artDel', 'artsBHold', 'artsBRel', 'artsBDel', 'testToggle', 'testClear', 'dcRenum', 'dcMerge', 'dcKeepFirst', 'dcDate', 'dcBad', 'renumReq', 'impRenum', 'impDrop', 'credSave', 'credDel', 'corrOpen', 'corrSave', 'bulkEdit', 'bulkSave', 'dropReq', 'dropStore', 'editReq', 'saveReq', 'markDone', 'markSave', 'newManual', 'saveEntry', 'delEntry', 'newReturn', 'saveReturn', 'delReturn',
   'rmStore', 'addStore', 'wipe', 'restore', 'bkRestore', 'bkDel', 'bkKeep', 'bkSave', 'bkNoteSave', 'photo', 'photoDel', 'mode', 'lockToggle', 'syncAuto', 'mgrToggle', 'moveStore', 'saveUrls', 'resetZoom', 'hold', 'cropSave']);
 let pendingAuth = null;
 function askUnlock(after) {
@@ -2558,11 +2565,18 @@ document.addEventListener('click', async ev => {
         en.items.push({ lineId: l ? l.id : 0, req, code: f.code, name: itemName(f.code), uom: itemUom(f.code), qty: f.qty, remark: '' }); }
       if (f.kind === 'store' && en) en.store = f.cuims;
       if (f.kind === 'rcv' && en) en.rcv = f.cuims;
+      if (f.kind === 'rcv' && f.ret) { const rt = S.returns.find(x => 'r' + x.id === f.key); if (rt) { rt.by = f.cuims; rt.byName = rcvName(f.cuims); } }
       if (f.kind === 'notInApp') { const d = (String(f.date || '').match(/(\d+)\/(\d+)\/(\d{4})/) || []); const iso = d.length ? d[3] + '-' + String(d[1]).padStart(2, '0') + '-' + String(d[2]).padStart(2, '0') : today();
         if (f.isReturn) S.returns.push({ id: nid(), no: nextReturnNo(iso), against: '1111', store: String(f.store || '').toUpperCase(), by: f.rcv || '', byName: rcvName(f.rcv), date: iso, recvDate: iso, time: '', serial: f.serial, remarks: 'added from CUIMS check', enteredBy: { name: f.entryBy || '' }, items: (f.items || []).map(i => ({ code: i.code, name: itemName(i.code), uom: itemUom(i.code), qty: Number(i.qty), remark: i.remark || '' })) });
         else S.entries.push({ id: nid(), slip: f.slip || ('CUIMS-' + f.serial), serial: f.serial, store: String(f.store || '').toUpperCase(), rcv: f.rcv || '', rname: rcvName(f.rcv), at: new Date(iso + 'T12:00').toISOString(), date: iso, time: '', by: { name: f.entryBy || '' }, kind: 'manual', remarks: 'added from CUIMS check', items: (f.items || []).map(i => ({ lineId: 0, req: '', code: i.code, name: itemName(i.code), uom: itemUom(i.code), qty: Number(i.qty), remark: i.remark || '' })) }); }
       f.fixed = true; save(); render(); break; }
+    case 'vfIgnF': { const [rid, fid] = v.split('|'); const R = (S.verifyReports || []).find(r => r.id === rid); const f = R && R.findings.find(x => x.id === fid); if (!f) break;
+      const note = await uiPrompt('Ignore this error in all future checks? Add a short reason (optional).', '', 'Ignore'); if (note == null) break;
+      S.verifyIgnore = S.verifyIgnore || {}; S.verifyIgnore[fSig(f)] = { at: new Date().toISOString(), note: note.trim(), kind: f.kind, label: f.label || f.serial || '', code: f.code || '' }; save(); render(); break; }
+    case 'vfUnIgn': { const [rid, fid] = v.split('|'); const R = (S.verifyReports || []).find(r => r.id === rid); const f = R && R.findings.find(x => x.id === fid); if (!f) break; delete (S.verifyIgnore || {})[fSig(f)]; save(); render(); break; }
+    case 'vfShowIgn': ui.showIgn = !ui.showIgn; render(); break;
     case 'vdTog': ui.vdOpen = ui.vdOpen || {}; ui.vdOpen[v] = !ui.vdOpen[v]; render(); break;
+    case 'ignDelE': delete (S.verifyIgnore || {})[v]; save(); render(); break;
     case 'ignTog': ui.ignOpen = !ui.ignOpen; render(); break;
     case 'vfIgn': case 'vfIgnP': { const [rid, fid] = v.split('|'); const R = (S.verifyReports || []).find(r => r.id === rid); const f = R && R.findings.find(x => x.id === fid); if (!f) break; const I = ignList();
       if (a === 'vfIgn') { if (!(await uiConfirm('Ignore CUIMS Serial ' + f.serial + ' forever? It will never be checked or added to your data.', 'Ignore'))) break; I.serials[f.serial] = { at: new Date().toISOString(), slip: f.slip || '', store: f.store || '', by: f.entryBy || '' }; }

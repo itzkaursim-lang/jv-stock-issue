@@ -455,7 +455,8 @@
       var desc = (tds[idx + 2] || {}).textContent || '', by = (tds[idx + 3] || {}).textContent || '', dt = (tds[idx + 4] || {}).textContent || '';
       var sm = desc.match(/Slip\s*No\s*:\s*([^\s)]+)/i), rm = desc.match(/(?:Received|Returned)?\s*By\s*(GA\d{6})/i) || desc.match(/(GA\d{6})/i);
       var btn = tr.querySelector('input[type=submit],input[type=button],a,button');
-      out.push({ serial: serial, mode: ((tds[idx + 1] || {}).textContent || '').trim(), desc: desc.replace(/\s+/g, ' ').trim(), slip: sm ? sm[1].trim() : '', rcv: rm ? rm[1].replace(/^GA/i, '') : '', entryBy: by.replace(/\s+/g, ' ').trim(), entryDate: dt.replace(/\s+/g, ' ').trim(), isReturn: /return/i.test(desc), btnId: btn ? btn.id : '' });
+      var codes = (desc.match(/GA\d{6}/gi) || []).map(function (x) { return x.toUpperCase().replace(/^GA/, ''); });
+      out.push({ codes: codes, serial: serial, mode: ((tds[idx + 1] || {}).textContent || '').trim(), desc: desc.replace(/\s+/g, ' ').trim(), slip: sm ? sm[1].trim() : '', rcv: rm ? rm[1].replace(/^GA/i, '') : '', entryBy: by.replace(/\s+/g, ' ').trim(), entryDate: dt.replace(/\s+/g, ' ').trim(), isReturn: /return/i.test(desc), btnId: btn ? btn.id : '' });
     });
     var seen = {}; out = out.filter(function (r) { if (seen[r.serial]) return false; seen[r.serial] = 1; return true; });
     return out;
@@ -476,7 +477,8 @@
     var slip = ''; var td = it ? it.closest('td') : null; if (td) [].slice.call(td.querySelectorAll('input')).forEach(function (x) { if (x.value && x.value.trim()) slip = x.value.trim(); });
     if (!slip) { var sb = $('ContentPlaceHolder1_txtSlipNo'); if (sb) slip = sb.value.trim(); }
     var items = [].slice.call(document.querySelectorAll('[id^="ContentPlaceHolder1_grdselecteditems_lblFinalCode_"]')).map(function (sp) { var r = gridRow(sp.textContent.trim()); return r ? { code: r.code.toUpperCase(), qty: r.qty, remark: r.remark, name: r.name } : null; }).filter(Boolean);
-    return { type: val($('ContentPlaceHolder1_ddldoctype')), pa: val($('ContentPlaceHolder1_ddlProjectArea') || rowFor(/^Project\s*Area/i)), rcv: val(rowFor(/^Rec\w*\s*By/i) || empBox()).replace(/^GA/i, '').slice(0, 6), slip: slip, issueType: val(it), dept: val($('ContentPlaceHolder1_ddldepartment')), date: val(rowFor(/^Date\*?:?$/i)), items: items };
+    var empF = rowFor(/^(By\s*)?Employee\s*:?$/i);
+    return { emp: val(empF).replace(/^GA/i, '').slice(0, 6), type: val($('ContentPlaceHolder1_ddldoctype')), pa: val($('ContentPlaceHolder1_ddlProjectArea') || rowFor(/^Project\s*Area/i)), rcv: val(rowFor(/^Rec\w*\s*By/i) || empBox()).replace(/^GA/i, '').slice(0, 6), slip: slip, issueType: val(it), dept: val($('ContentPlaceHolder1_ddldepartment')), date: val(rowFor(/^Date\*?:?$/i)), items: items };
   }
   async function stepVerify(j) {
     j.res = j.res || {}; j.idx = j.idx || 0;
