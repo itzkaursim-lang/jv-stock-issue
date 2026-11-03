@@ -484,7 +484,7 @@
   async function stepVerify(j) {
     j.res = j.res || {}; j.idx = j.idx || 0;
     if (j.day && !j.dayDone) {
-      if (!j.daySearched) { j.daySearched = true; save(j); log(j, 'Listing all transactions of ' + j.day.label); await txSearch({ from: j.day.us, to: j.day.us }); return; }
+      if (!j.daySearched) { j.daySearched = true; save(j); log(j, 'Listing all transactions of ' + j.day.label); await txSearch({ from: j.day.us, to: j.day.to || j.day.us }); return; }
       j.dayRows = txRows(); j.dayDone = true;
       var have = {}, hs = {}; j.targets.forEach(function (t) { if (t.serial) have[t.serial] = 1; if (t.slip) hs[String(t.slip).toUpperCase()] = 1; });
       var ig = j.ignore || { serials: [], people: [] }; var pc = function (t) { var m = String(t || '').match(/GA\d{6}/i); return m ? m[0].toUpperCase() : ''; };

@@ -278,7 +278,8 @@ const ICON = {
 const TABS = [['home', 'Home'], ['pend', 'Pending'], ['find', 'Search'], ['reg', 'Registers'], ['set', 'Settings']];
 
 function slipRow(e, req) {
-  const man = e.kind === 'manual';
+  const man = e.kind === 'manual', cu = e.kind === 'cuims';
+  if (cu) return '<button class="slipline tap cu" data-a="editEntry" data-v="' + e.id + '"><span class="stag cu">CUIMS</span><span class="sl">' + esc(e.slip) + '</span>' + serFmt(e.serial) + '<span class="st">' + esc(fmtShort(entryDate(e))) + ' · ' + esc(entryTime(e)) + ' · ' + entryCount(e, req) + ' art.' + ((e.by || {}).name ? ' · ' + esc(e.by.name.split(' ')[0]) : '') + '</span></button>';
   return '<button class="slipline tap ' + (man ? 'man' : 'app') + '" data-a="editEntry" data-v="' + e.id + '"><span class="stag">' + (man ? '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg>Manual' : '<svg viewBox="0 0 24 24" width="13" height="13" fill="currentColor"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg>App') + '</span><span class="sl">' + esc(e.slip) + '</span>' + serFmt(e.serial) +
     '<span class="st">' + esc(fmtShort(entryDate(e))) + ' · ' + esc(entryTime(e)) + ' · ' + entryCount(e, req) + ' art.' + ((e.by || {}).name ? ' · ' + esc(e.by.name.split(' ')[0]) : '') + '</span></button>';
 }
@@ -488,6 +489,7 @@ function vReq() {
   const rcv = (r.lines.find(l => l.rcv) || {}).rcv || (S.stores[r.store] || {}).rcv || '';
   let h = reqNavBar() + '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:8px">' + esc(r.store) + '</h1><div class="sub">Request ' + esc(r.req) + ' · ' + fmtLong(r.date) + ' · Receiver ' + (rcv ? 'GA' + esc(rcv) : 'not set') + '</div></div></header><main>';
   h += meta([st.can.length + ' ready', (st.w.length - st.can.length) + ' waiting', st.iss.length + ' issued', (st.w.find(l => l.slip) || {}).slip ? 'next slip ' + esc(st.w.find(l => l.slip).slip) : '<em>no slip set</em>']);
+  if (r.lines.some(l => l.status === 'waiting')) h += '<button class="btn full" data-a="lkOpen" data-v="' + r.date + '">Already issued on CUIMS? Link serials</button>';
   if (isBaseKitchen(r.store) && r.date > today()) { const A = advLines(r); h += '<div class="advbox"><b>' + esc(r.store) + ' · advance request for ' + fmtLong(r.date) + '</b><span>Only you can issue this early, by tapping below. It uses any stock in hand (' + A.length + ' of ' + r.lines.filter(l => l.status === 'waiting').length + ' articles available). It is never picked by queue or auto submit.</span><button class="btn adv full" data-a="advIssue" data-v="' + esc(r.req) + '"' + (A.length ? '' : ' disabled') + '>Issue on CUIMS now</button></div>'; }
   h += '<div class="grid2"><button class="btn ret" data-a="verReq" data-v="' + esc(r.req) + '">Verify on CUIMS</button>' + ((S.verified || {})[r.req] ? '<button class="btn" data-a="vrOpen" data-v="' + esc(S.verified[r.req].rep) + '">' + (S.verified[r.req].issues ? S.verified[r.req].issues + ' to check' : 'Verified ✓') + '</button>' : '<span></span>') + '</div>';
   h += paperCard(r);
@@ -1380,6 +1382,7 @@ function renderDrawer() {
     item('batchReq', 'Batch add requests', 'Many stores at once, or paste from Excel', '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/>') +
     item('stockOpen', 'Live stock search', 'Find any item, see needed and free qty', '<circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/>') +
     item('consOpen', 'Store-wise consumption', 'What each store took, by week or month', '<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>') +
+    item('lkOpen', 'Link CUIMS serials', 'Requests issued on CUIMS outside the app', '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>') +
     item('vrList', 'Verify on CUIMS', 'Check requests, returns or a whole day', '<path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/><path d="M8.5 12l2.5 2.5 4.5-5"/>') +
     item('mgOpen', 'Manage data', 'Filter, select many, delete or complete', '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M7 9l2 2 4-4M7 15h10"/>') +
     item('artsOpen', 'Pending articles', 'Edit qty, hold or remove, one or many', '<path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6l1 1 2-2M3 12l1 1 2-2M3 18l1 1 2-2"/>') +
@@ -1802,7 +1805,7 @@ window.onSiteEvent = function (raw) {
   else if (e.type === 'progress' && e.code && isFinite(e.stock)) {
     if (S.stock[e.code] && Math.abs(S.stock[e.code].qty - e.stock) > 1e-6) { S.stock[e.code].qty = e.stock; save(true); }
   } else if (e.type === 'submitted') { recordSubmit(e); }
-  else if (e.type === 'verified') { buildVerifyReport(e); toast('Verification finished.'); }
+  else if (e.type === 'verified') { if (e.scope && /^link/.test(e.scope.type)) { buildLinkProposal(e); toast('CUIMS serials read. Check and save.'); } else { buildVerifyReport(e); toast('Verification finished.'); } }
   else if (e.type === 'cancelled') { let jk = ''; try { jk = (JSON.parse(N.jobGet() || '{}') || {}).kind || ''; } catch (x) {} toast(jk === 'verify' ? 'Verification stopped. Nothing on CUIMS was changed.' : 'Entry cancelled. Nothing was submitted.'); if (N) N.showApp(); }
 };
 function recordSubmit(e) {
@@ -1852,7 +1855,7 @@ window.jvBack = () => {
 function render() {
   const app = document.getElementById('app');
   const y = window.scrollY;
-  app.innerHTML = appBar() + (S.testMode ? '<div class="testbar"><span><b>TEST MODE</b> · your real data is safe and hidden. Cloud backup is paused. Entries submitted on CUIMS are still real.</span><button class="btn sm" data-a="testToggle">Exit</button></div>' : '') + (ui.view === 'vreport' ? vReport() : ui.view === 'vreports' ? vReportList() : ui.view === 'countList' ? vCountList() : ui.view === 'manage' ? vManage() : ui.view === 'stock' ? vStock() : ui.view === 'cons' ? vCons() : ui.view === 'arts' ? vArts() : ui.view === 'check' ? vCheck() : ui.view === 'done' ? vDone() : ui.view === 'expiry' ? vExpiry() : ui.view === 'count' ? vCount() : ui.view === 'countLog' ? vCountLog() : ui.view === 'taskLog' ? vTaskLog() : ui.view === 'req' ? vReq() : ({ home: vHome, pend: vPend, reg: vReg, find: vFind, set: vSet })[ui.tab]());
+  app.innerHTML = appBar() + (S.testMode ? '<div class="testbar"><span><b>TEST MODE</b> · your real data is safe and hidden. Cloud backup is paused. Entries submitted on CUIMS are still real.</span><button class="btn sm" data-a="testToggle">Exit</button></div>' : '') + (ui.view === 'linkReview' ? vLinkReview() : ui.view === 'vreport' ? vReport() : ui.view === 'vreports' ? vReportList() : ui.view === 'countList' ? vCountList() : ui.view === 'manage' ? vManage() : ui.view === 'stock' ? vStock() : ui.view === 'cons' ? vCons() : ui.view === 'arts' ? vArts() : ui.view === 'check' ? vCheck() : ui.view === 'done' ? vDone() : ui.view === 'expiry' ? vExpiry() : ui.view === 'count' ? vCount() : ui.view === 'countLog' ? vCountLog() : ui.view === 'taskLog' ? vTaskLog() : ui.view === 'req' ? vReq() : ({ home: vHome, pend: vPend, reg: vReg, find: vFind, set: vSet })[ui.tab]());
   document.querySelector('#tabs .in').innerHTML = TABS.map(([k, l]) => '<button data-a="tab" data-v="' + k + '" class="' + (ui.tab === k && !ui.view ? 'on' : '') + '" aria-label="' + l + '"><span class="nic">' + ICON[k] + '</span><span class="nl">' + l + '</span></button>').join('');
   renderDrawer();
   paintSync();
@@ -1865,7 +1868,7 @@ function renderSheet() {
   const el = document.getElementById('sheet');
   if (!ui.sheet) { el.innerHTML = ''; return; }
   const k = ui.sheet.kind;
-  const body = k === 'retBatch' ? shRetBatch() : k === 'paperDay' ? shPaperDay() : k === 'manReq' ? shManReq() : k === 'mslips' ? shMslips() : k === 'reqStatus' ? shReqStatus() : k === 'corr' ? shCorr() : k === 'batch' ? shBatch() : k === 'newReq' ? shNewReq() : k === 'export' ? shExport() : k === 'crop' ? shCrop() : k === 'backups' ? shBackups() : k === 'start' ? shStart() : k === 'upload' ? shUpload() : k === 'entry' ? shEntry() : k === 'return' ? shReturn() : k === 'editReq' ? shEditReq() : k === 'bulk' ? shBulk() : k === 'mark' ? shMark() : '';
+  const body = k === 'link' ? shLink() : k === 'retBatch' ? shRetBatch() : k === 'paperDay' ? shPaperDay() : k === 'manReq' ? shManReq() : k === 'mslips' ? shMslips() : k === 'reqStatus' ? shReqStatus() : k === 'corr' ? shCorr() : k === 'batch' ? shBatch() : k === 'newReq' ? shNewReq() : k === 'export' ? shExport() : k === 'crop' ? shCrop() : k === 'backups' ? shBackups() : k === 'start' ? shStart() : k === 'upload' ? shUpload() : k === 'entry' ? shEntry() : k === 'return' ? shReturn() : k === 'editReq' ? shEditReq() : k === 'bulk' ? shBulk() : k === 'mark' ? shMark() : '';
   const sc = el.querySelector('.sheet') ? el.querySelector('.sheet').scrollTop : 0;
   el.innerHTML = '<div class="sheetbg" data-a="bgClose"><div class="sheet" role="dialog" aria-modal="true">' + body + '</div></div>';
   el.querySelector('.sheet').scrollTop = sc;
@@ -2291,9 +2294,83 @@ function vReport() {
   h += '<div class="grid2"><button class="btn" data-a="vrExport">Download findings</button><button class="btn" data-a="vrExportItems">Download all articles</button></div><button class="btn ghost" data-a="vrList">All reports</button>';
   return h + '</main>';
 }
+/* ---------------- Link CUIMS serials to requests (entries done outside the app) ---------------- */
+function cuDate(t) { const m = String(t || '').match(/(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?)?/i); if (!m) return { iso: today(), time: '' };
+  let hh = +(m[4] || 0); if (m[6]) { if (/PM/i.test(m[6]) && hh < 12) hh += 12; if (/AM/i.test(m[6]) && hh === 12) hh = 0; }
+  return { iso: m[3] + '-' + String(m[1]).padStart(2, '0') + '-' + String(m[2]).padStart(2, '0'), time: m[4] ? String(hh).padStart(2, '0') + ':' + m[5] : '' }; }
+function linkReqs(d) { return requests().filter(r => r.date === d && r.lines.some(l => l.status === 'waiting')).sort((a, b) => String(a.req).localeCompare(String(b.req), undefined, { numeric: true })); }
+function shLink() {
+  const f = ui.form, R = linkReqs(f.date);
+  let h = '<div class="row"><h2>Link CUIMS serials</h2><button class="btn sm ghost" data-a="closeSheet">Close</button></div>';
+  h += '<div class="note">For issues already done on CUIMS outside the app. Type the Serial No(s) for each request (comma separated), or let the app find them for the whole day. Nothing is saved until you confirm.</div>';
+  h += '<label class="f">Request date<input type="date" data-lk="date" value="' + esc(f.date) + '"></label>';
+  h += '<button class="btn ret full" data-a="lkAuto">Find serials automatically for ' + fmtShort(f.date) + '</button>';
+  if (!R.length) return h + '<div class="card pad note">No open requests on this date.</div>';
+  h += '<div class="card" style="overflow:hidden">' + R.map(r => '<div class="line" style="gap:6px"><div class="row"><span><span class="reqno sm" data-req="' + esc(r.req) + '">' + esc(r.req) + '</span> <b>' + esc(r.store) + '</b></span><span class="note">' + r.lines.filter(l => l.status === 'waiting').length + ' pending</span></div><input type="text" inputmode="numeric" data-lks="' + esc(r.req) + '" value="' + esc((f.map || {})[r.req] || '') + '" placeholder="Serial No(s), e.g. 21910, 21911" class="mono"></div>').join('') + '</div>';
+  const n = Object.values(f.map || {}).join(',').split(/[^\d]+/).filter(x => /^\d{3,9}$/.test(x)).length;
+  h += '<button class="btn main full" data-a="lkRead"' + (n ? '' : ' disabled') + '>Read ' + n + ' serial' + (n === 1 ? '' : 's') + ' on CUIMS</button>';
+  return h;
+}
+async function startLink(auto) {
+  const f = ui.form; if (!N) { toast('Open this inside the JV Stock Issue app.'); return; }
+  const map = {}, T = [], seen = new Set();
+  if (!auto) Object.entries(f.map || {}).forEach(([req, txt]) => String(txt).split(/[^\d]+/).filter(x => /^\d{3,9}$/.test(x)).forEach(sn => { (map[req] = map[req] || []).push(sn); if (!seen.has(sn)) { seen.add(sn); T.push({ key: 's' + sn, serial: sn, slip: '', from: usOf(f.date, -2), to: usOf(f.date, 4) }); } }));
+  if (!auto && !T.length) { toast('Type at least one Serial No.'); return; }
+  if (!(await uiConfirm(auto ? 'Find every CUIMS issue of ' + fmtLong(f.date) + ' and match it to your requests by store and articles? It only reads CUIMS.' : 'Read ' + T.length + ' serial' + (T.length > 1 ? 's' : '') + ' on CUIMS and match them to your requests? It only reads CUIMS.', 'Start'))) return;
+  const known = S.entries.map(e => String(e.serial || '')).filter(Boolean);
+  const job = { id: 'V' + Date.now(), kind: 'verify', phase: 'verify', slip: 'LINK', store: 'Link ' + fmtShort(f.date), title: (auto ? 'Find serials · ' : 'Link serials · ') + fmtLong(f.date), scope: { type: auto ? 'linkday' : 'link', id: f.date, map }, targets: T, idx: 0, res: {}, log: [], tries: {}, queue: false, autoSubmit: false, items: [] };
+  if (auto) { const ds = []; for (let k = 0; k <= 2; k++) ds.push(usOf(f.date, k)); job.day = { us: usOf(f.date), to: usOf(f.date, 2), label: fmtShort(f.date) + ' – ' + fmtShort(isoOf(new Date(new Date(f.date + 'T12:00').getTime() + 2 * 864e5))) }; }
+  { const I = ignList(); job.ignore = { serials: Object.keys(I.serials).concat(known), people: Object.keys(I.people) }; }
+  ui.sheet = null; renderSheet(); N.startJob(JSON.stringify(job));
+}
+function buildLinkProposal(e) {
+  const scope = e.scope || {}, res = e.res || {}, map = scope.map || {}, d = scope.id;
+  const reqs = requests().filter(r => (scope.type === 'link' ? Object.keys(map).includes(r.req) : r.date === d) && r.lines.some(l => l.status === 'waiting'));
+  const txs = Object.entries(res).filter(([k, r]) => r.found && r.shown).map(([k, r]) => { const dt = cuDate((r.list || {}).entryDate);
+    return { serial: (r.list || {}).serial || k.slice(1), slip: (r.shown.slip || (r.list || {}).slip || '').trim(), pa: r.shown.pa || '', rcv: (r.list || {}).rcv || r.shown.rcv || '', by: (r.list || {}).entryBy || '', iso: dt.iso, time: dt.time, isRet: !!(r.list || {}).isReturn || /return/i.test(r.shown.type || ''), items: (r.shown.items || []).map(i => ({ code: vNorm(i.code), qty: Number(i.qty), remark: i.remark || '', name: i.name || itemName(i.code) })) }; })
+    .filter(t => !t.isRet && !S.entries.some(x => String(x.serial) === String(t.serial)));
+  const notFound = Object.entries(res).filter(([k, r]) => !r.found).map(([k, r]) => r.serial || k.slice(1));
+  const P = {}; reqs.forEach(r => { P[r.req] = { req: r.req, store: r.store, date: r.date, txs: [], on: true }; });
+  txs.forEach(t => {
+    let to = Object.keys(map).find(q => (map[q] || []).includes(String(t.serial)));
+    if (!to) { let bestN = 0; reqs.forEach(r => { if (vNorm(r.store) !== vNorm(t.pa)) return; const w = new Set(r.lines.filter(l => l.status === 'waiting').map(l => vNorm(l.code))); const n = t.items.filter(i => w.has(i.code)).length; if (n > bestN) { bestN = n; to = r.req; } }); }
+    if (to && P[to]) P[to].txs.push(t); else (P.__none = P.__none || { req: '', store: 'Not matched to a request', txs: [], on: false }).txs.push(t);
+  });
+  Object.values(P).forEach(p => { if (!p.req) return; const r = reqs.find(x => x.req === p.req); const W = r.lines.filter(l => l.status === 'waiting'); const used = {};
+    p.rows = W.map(l => ({ lineId: l.id, code: vNorm(l.code), want: l.qty, got: 0, serials: [] }));
+    p.extra = [];
+    p.txs.sort((a, b) => (a.iso + a.time).localeCompare(b.iso + b.time)).forEach(t => t.items.forEach(i => { const row = p.rows.find(x => x.code === i.code && x.got < x.want + 1e-9 && !used[x.lineId + '|' + t.serial]);
+      if (row) { row.got += i.qty; row.serials.push(t.serial); used[row.lineId + '|' + t.serial] = 1; } else p.extra.push(Object.assign({ serial: t.serial }, i)); }));
+    if (!p.txs.length) p.on = false; });
+  ui.link = { id: 'L' + Date.now(), date: d, props: Object.values(P), notFound };
+  ui.view = 'linkReview'; render(); window.scrollTo(0, 0);
+}
+function vLinkReview() {
+  const L = ui.link; if (!L) return '<main><div class="card pad note">Nothing to review.</div></main>';
+  const props = L.props.filter(p => p.req), none = L.props.find(p => !p.req);
+  let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">CUIMS serials found</h1><div class="sub">Check what was issued with which serial, then save. Nothing is saved until you tap Save.</div></div></header><main>';
+  const nOn = props.filter(p => p.on && p.txs.length).length;
+  h += '<div class="grid3"><div class="tile t-in"><b>' + props.filter(p => p.txs.length).length + '</b><span>Requests matched</span></div><div class="tile t-ok"><b>' + props.reduce((n, p) => n + p.txs.length, 0) + '</b><span>Serials</span></div><div class="tile t-pt"><b>' + props.filter(p => !p.txs.length).length + '</b><span>No serial found</span></div></div>';
+  if (L.notFound.length) h += '<div class="banner" style="border:0;background:#FFE4EA;color:#8E1B3A">Not found on CUIMS: ' + esc(L.notFound.join(', ')) + '</div>';
+  props.forEach((p, pi) => {
+    const issued = (p.rows || []).filter(r => r.got > 0 && Math.abs(r.got - r.want) < 1e-6).length, part = (p.rows || []).filter(r => r.got > 0 && r.got < r.want - 1e-6).length, over = (p.rows || []).filter(r => r.got > r.want + 1e-6).length, left = (p.rows || []).filter(r => !r.got).length;
+    h += '<div class="card pad col" style="gap:10px' + (p.on && p.txs.length ? ';box-shadow:inset 4px 0 0 #2F6FE0' : '') + '"><div class="row"><span><span class="reqno sm" data-req="' + esc(p.req) + '">' + esc(p.req) + '</span> <b>' + esc(p.store) + '</b></span>' + (p.txs.length ? '<label class="chk" style="min-height:0"><input type="checkbox" data-a="lkOn" data-v="' + pi + '"' + (p.on ? ' checked' : '') + '> Save</label>' : pill('No serial found', 'c-gd')) + '</div>';
+    if (p.txs.length) {
+      h += '<div class="slips" style="padding:0">' + p.txs.map(t => '<div class="slipline cu"><span class="stag cu">CUIMS</span><span class="sl">' + esc(t.slip || '–') + '</span>' + serFmt(t.serial) + '<span class="st">' + esc(fmtShort(t.iso)) + (t.time ? ' · ' + esc(t.time) : '') + ' · GA' + esc(t.rcv || '–') + ' · ' + esc(String(t.by).split('(')[0].trim()) + (vNorm(t.pa) !== vNorm(p.store) ? ' · <b style="color:#B4123B">Project Area ' + esc(t.pa) + '</b>' : '') + '</span></div>').join('') + '</div>';
+      h += '<div class="scrow">' + (issued ? '<span class="sc ok">' + issued + ' issued</span>' : '') + (part ? '<span class="sc gd">' + part + ' partly</span>' : '') + (over ? '<span class="sc no">' + over + ' more than asked</span>' : '') + (left ? '<span class="sc no">' + left + ' still pending</span>' : '') + (p.extra.length ? '<span class="sc no">' + p.extra.length + ' not in request</span>' : '') + '</div>';
+      h += '<div class="tblwrap"><table><tr><th>Item</th><th>Asked</th><th>CUIMS</th><th>Serial</th><th>Result</th></tr>' + p.rows.map(r => '<tr><td><b>' + esc(itemName(r.code)) + '</b><div class="note mono">' + esc(r.code) + '</div></td><td>' + num(r.want) + '</td><td><b>' + (r.got ? num(r.got) : '–') + '</b></td><td class="mono">' + esc(r.serials.join(', ') || '–') + '</td><td>' + (!r.got ? '<span class="sc no">pending</span>' : r.got < r.want - 1e-6 ? '<span class="sc gd">' + num(r.want - r.got) + ' stays pending</span>' : r.got > r.want + 1e-6 ? '<span class="sc no">over by ' + num(r.got - r.want) + '</span>' : '<span class="sc ok">issued</span>') + '</td></tr>').join('') +
+        p.extra.map(x => '<tr style="background:#FFF0F3"><td><b>' + esc(x.name || itemName(x.code)) + '</b><div class="note mono">' + esc(x.code) + '</div></td><td>–</td><td><b>' + num(x.qty) + '</b></td><td class="mono">' + esc(x.serial) + '</td><td><span class="sc no">not in request</span></td></tr>').join('') + '</table></div>';
+    } else h += '<div class="note">Nothing on CUIMS was matched to this request. It stays pending.</div>';
+    h += '</div>';
+  });
+  if (none && none.txs.length) h += '<div class="card pad col" style="gap:8px"><b>On CUIMS, not matched to a request (' + none.txs.length + ')</b>' + none.txs.map(t => '<div class="slipline cu"><span class="stag cu">CUIMS</span><span class="sl">' + esc(t.slip || '–') + '</span>' + serFmt(t.serial) + '<span class="st">' + esc(t.pa) + ' · ' + t.items.length + ' art. · ' + esc(String(t.by).split('(')[0].trim()) + '</span></div>').join('') + '<div class="note">Type these serials against the right request in Link CUIMS serials, or ignore them.</div></div>';
+  h += '<button class="btn main full" data-a="lkSave"' + (nOn ? '' : ' disabled') + '>Save ' + nOn + ' request' + (nOn === 1 ? '' : 's') + ' with their serials</button>';
+  return h + '</main>';
+}
 function vReportList() {
   let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Verification reports</h1><div class="sub">Last 40 checks against CUIMS.</div></div></header><main>';
   h += '<button class="btn ret full" data-a="vfDayPick">Verify a whole day on CUIMS</button>';
+  h += '<button class="btn full" data-a="lkOpen">Link CUIMS serials to requests</button>';
   { const I = ignList(), sk = Object.entries(I.serials), pk = Object.entries(I.people);
     h += '<div class="card" style="overflow:hidden"><button class="mgfh" data-a="ignTog"><b>Ignore list</b>' + pill((sk.length + pk.length + Object.keys(S.verifyIgnore || {}).length) + ' rules', 'c-gy') + ico(ui.ignOpen ? 'up' : 'down', 18) + '</button>';
     if (ui.ignOpen) { h += '<div class="pad col" style="gap:8px;padding-top:0"><div class="note">CUIMS entries on this list are never checked, reported or added to your data.</div>';
@@ -2337,8 +2414,8 @@ function renumberReq(from, to) {
 const UNDO_KEYS = ['lines', 'entries', 'returns', 'hold', 'corrections', 'audit', 'manReqs', 'paper', 'verifyReports'];
 const UNDOABLE = { artQty: 'Quantity changed', artHold: 'Hold changed', artDel: 'Article removed', artsBHold: 'Articles put on hold', artsBRel: 'Articles released', artsBDel: 'Articles removed', dropReq: 'Request removed', dropStore: 'Store pending removed',
   renumReq: 'Request renumbered', dcRenum: 'Request renumbered', impRenum: 'Request renumbered', impDrop: "App's request removed", corrSave: 'Correction saved', markSave: 'Slip added', dcMerge: 'Items merged', dcKeepFirst: 'Duplicate removed', dcDate: 'Date changed', dcBad: 'Incomplete removed',
-  bulkSave: 'Requests edited', vfFix: 'Fixed in app', dcRetFmt: 'Returns renumbered', dcRetFix: 'Return renumbered', clAdd: 'Count list changed', clDel: 'Count list changed', retBatchSave: 'Returns saved', stkEdit: 'Stock changed', stkRen: 'Item renamed', stkDel: 'Item deleted', stkAdd: 'Item added', mgDone: 'Requests completed', mgPend: 'Pending cleared', mgDel: 'Deleted', mgDelSlipPend: 'Slips deleted, articles pending again', delEntry: 'Entry deleted', delReturn: 'Return deleted', rsClose: 'Article closed', rsOpen: 'Article made pending', rsAll: 'Request completed', rsAdd: 'Article added', saveReq: 'Request edited', saveEntry: 'Entry saved', uploadOk: 'Import done', btSave: 'Batch saved', nrSave: 'Request added', hold: 'Hold changed' };
-const UNDO_STOCK = new Set(['vfFix', 'stkEdit', 'markSave', 'delEntry', 'saveEntry', 'uploadOk', 'mgDelSlipPend']);
+  bulkSave: 'Requests edited', lkSave: 'CUIMS serials saved', vfFix: 'Fixed in app', dcRetFmt: 'Returns renumbered', dcRetFix: 'Return renumbered', clAdd: 'Count list changed', clDel: 'Count list changed', retBatchSave: 'Returns saved', stkEdit: 'Stock changed', stkRen: 'Item renamed', stkDel: 'Item deleted', stkAdd: 'Item added', mgDone: 'Requests completed', mgPend: 'Pending cleared', mgDel: 'Deleted', mgDelSlipPend: 'Slips deleted, articles pending again', delEntry: 'Entry deleted', delReturn: 'Return deleted', rsClose: 'Article closed', rsOpen: 'Article made pending', rsAll: 'Request completed', rsAdd: 'Article added', saveReq: 'Request edited', saveEntry: 'Entry saved', uploadOk: 'Import done', btSave: 'Batch saved', nrSave: 'Request added', hold: 'Hold changed' };
+const UNDO_STOCK = new Set(['lkSave', 'vfFix', 'stkEdit', 'markSave', 'delEntry', 'saveEntry', 'uploadOk', 'mgDelSlipPend']);
 let undoTimer = null;
 function undoArm(a) { const snap = {}; UNDO_KEYS.concat(UNDO_STOCK.has(a) ? ['stock', 'stockAt', 'stockSrc'] : []).forEach(k => snap[k] = JSON.stringify(S[k] == null ? null : S[k])); ui.pendUndo = { a, label: UNDOABLE[a], snap, at: Date.now() }; }
 function undoFire() { const u = ui.pendUndo; ui.pendUndo = null; if (!u || Date.now() - u.at > 120000) return; ui.undo = u; showUndo(); }
@@ -2498,7 +2575,7 @@ function shEditReq() {
 }
 
 /* ---------------- lock ---------------- */
-const GUARDED = new Set(['vfIgnF', 'vfUnIgn', 'ignDelE', 'vfIgn', 'vfIgnP', 'ignDel', 'ignAddS', 'ignAddP', 'vfFix', 'retStartAll', 'dcRetFmt', 'dcRetFix', 'clClear', 'retCuims', 'saveReturnCuims', 'rbSave', 'stkEdit', 'stkRen', 'stkDel', 'stkAdd', 'mgDone', 'mgPend', 'mgDel', 'mgDelSlipPend', 'paperAddFrom', 'advIssue', 'paperAdd', 'mrSave', 'mrRemove', 'manReqToggle', 'msSave', 'artQty', 'artHold', 'artDel', 'artsBHold', 'artsBRel', 'artsBDel', 'testToggle', 'testClear', 'dcRenum', 'dcMerge', 'dcKeepFirst', 'dcDate', 'dcBad', 'renumReq', 'impRenum', 'impDrop', 'credSave', 'credDel', 'corrOpen', 'corrSave', 'bulkEdit', 'bulkSave', 'dropReq', 'dropStore', 'editReq', 'saveReq', 'markDone', 'markSave', 'newManual', 'saveEntry', 'delEntry', 'newReturn', 'saveReturn', 'delReturn',
+const GUARDED = new Set(['lkSave', 'vfIgnF', 'vfUnIgn', 'ignDelE', 'vfIgn', 'vfIgnP', 'ignDel', 'ignAddS', 'ignAddP', 'vfFix', 'retStartAll', 'dcRetFmt', 'dcRetFix', 'clClear', 'retCuims', 'saveReturnCuims', 'rbSave', 'stkEdit', 'stkRen', 'stkDel', 'stkAdd', 'mgDone', 'mgPend', 'mgDel', 'mgDelSlipPend', 'paperAddFrom', 'advIssue', 'paperAdd', 'mrSave', 'mrRemove', 'manReqToggle', 'msSave', 'artQty', 'artHold', 'artDel', 'artsBHold', 'artsBRel', 'artsBDel', 'testToggle', 'testClear', 'dcRenum', 'dcMerge', 'dcKeepFirst', 'dcDate', 'dcBad', 'renumReq', 'impRenum', 'impDrop', 'credSave', 'credDel', 'corrOpen', 'corrSave', 'bulkEdit', 'bulkSave', 'dropReq', 'dropStore', 'editReq', 'saveReq', 'markDone', 'markSave', 'newManual', 'saveEntry', 'delEntry', 'newReturn', 'saveReturn', 'delReturn',
   'rmStore', 'addStore', 'wipe', 'restore', 'bkRestore', 'bkDel', 'bkKeep', 'bkSave', 'bkNoteSave', 'photo', 'photoDel', 'mode', 'lockToggle', 'syncAuto', 'mgrToggle', 'moveStore', 'saveUrls', 'resetZoom', 'hold', 'cropSave']);
 let pendingAuth = null;
 function askUnlock(after) {
@@ -2535,7 +2612,7 @@ document.addEventListener('click', async ev => {
   if (a === 'lockTap') { if (ui.locked) askUnlock(); else { ui.locked = true; render(); renderSheet(); } return; }
   if (ui.locked && GUARDED.has(a)) { ev.preventDefault(); if (t.type === 'checkbox') t.checked = !t.checked; const sel = '[data-a="' + a + '"]' + (v != null ? '[data-v="' + CSS.escape(v) + '"]' : ''); askUnlock(() => { const el = document.querySelector(sel); if (el) el.click(); }); return; }
   if (a === 'bgClose') { if (ev.target === t) { ui.sheet = null; renderSheet(); } return; }
-  if (t.type === 'checkbox' && !['hold', 'queueToggle', 'regItems', 'mgrToggle', 'syncAuto', 'lockToggle', 'markPick', 'stOn', 'rpTog', 'rpCol', 'autoSubToggle', 'queuePend', 'credAuto', 'artsSel', 'artsAll', 'artsGrp', 'autoStockTog', 'mgSel', 'mgAll'].includes(a)) return;
+  if (t.type === 'checkbox' && !['hold', 'queueToggle', 'regItems', 'mgrToggle', 'syncAuto', 'lockToggle', 'markPick', 'stOn', 'rpTog', 'rpCol', 'autoSubToggle', 'queuePend', 'credAuto', 'artsSel', 'artsAll', 'artsGrp', 'autoStockTog', 'mgSel', 'mgAll', 'lkOn'].includes(a)) return;
   const _busy = BUSY[a];
   if (_busy && !(ui.locked && GUARDED.has(a))) { loader(true, _busy); await new Promise(r => setTimeout(r, 40)); }
   try {
@@ -2575,6 +2652,24 @@ document.addEventListener('click', async ev => {
         if (f.isReturn) S.returns.push({ id: nid(), no: nextReturnNo(iso), against: '1111', store: String(f.store || '').toUpperCase(), by: f.rcv || '', byName: rcvName(f.rcv), date: iso, recvDate: iso, time: '', serial: f.serial, remarks: 'added from CUIMS check', enteredBy: { name: f.entryBy || '' }, items: (f.items || []).map(i => ({ code: i.code, name: itemName(i.code), uom: itemUom(i.code), qty: Number(i.qty), remark: i.remark || '' })) });
         else S.entries.push({ id: nid(), slip: f.slip || ('CUIMS-' + f.serial), serial: f.serial, store: String(f.store || '').toUpperCase(), rcv: f.rcv || '', rname: rcvName(f.rcv), at: new Date(iso + 'T12:00').toISOString(), date: iso, time: '', by: { name: f.entryBy || '' }, kind: 'manual', remarks: 'added from CUIMS check', items: (f.items || []).map(i => ({ lineId: 0, req: '', code: i.code, name: itemName(i.code), uom: itemUom(i.code), qty: Number(i.qty), remark: i.remark || '' })) }); }
       f.fixed = true; save(); render(); break; }
+    case 'lkOpen': ui.drawer = false; ui.form = { date: v || ui.homeDate || today(), map: {} }; ui.sheet = { kind: 'link' }; renderSheet(); break;
+    case 'lkAuto': startLink(true); break;
+    case 'lkRead': startLink(false); break;
+    case 'lkOn': ui.link.props.filter(p => p.req)[+v].on = t.checked; render(); break;
+    case 'lkSave': { const L = ui.link, P = L.props.filter(p => p.req && p.on && p.txs.length); if (!P.length) break;
+      if (!(await uiConfirm('Save ' + P.length + ' request' + (P.length > 1 ? 's' : '') + ' with ' + P.reduce((n, p) => n + p.txs.length, 0) + ' CUIMS serials? Matched articles become issued, the rest stays pending. Stock is reduced the same way as a normal entry.', 'Save'))) break;
+      undoArm('lkSave');
+      P.forEach(p => {
+        const byT = {}; p.txs.forEach(t => byT[t.serial] = { t, items: [] });
+        p.rows.forEach(r => { if (!r.got) return; const l = S.lines.find(x => x.id === r.lineId); if (!l) return;
+          if (r.got < r.want - 1e-6) { S.lines.push(Object.assign({}, l, { id: nid(), qty: Math.round((r.want - r.got) * 1000) / 1000, status: 'waiting', issued: [], remark: l.remark || '' })); l.qty = r.got; }
+          l.status = 'issued'; r.serials.forEach(sn => { const t = byT[sn].t; l.issued.push({ slip: t.slip, serial: t.serial, at: new Date(t.iso + 'T' + (t.time || '12:00')).toISOString() }); });
+          const t0 = byT[r.serials[0]]; t0.items.push({ lineId: l.id, req: l.req, code: l.code, name: itemName(l.code), uom: itemUom(l.code), qty: r.got, remark: '' });
+          if (S.stock[l.code]) S.stock[l.code].qty = Math.round((S.stock[l.code].qty - r.got) * 1000) / 1000; });
+        p.extra.forEach(x => byT[x.serial] && byT[x.serial].items.push({ lineId: 0, req: p.req, code: x.code, name: x.name || itemName(x.code), uom: itemUom(x.code), qty: x.qty, remark: x.remark || '' }));
+        Object.values(byT).forEach(({ t, items }) => { const by = String(t.by || ''); S.entries.push({ id: nid(), slip: t.slip || ('CUIMS-' + t.serial), serial: t.serial, store: p.store, rcv: t.rcv, rname: rcvName(t.rcv), at: new Date(t.iso + 'T' + (t.time || '12:00')).toISOString(), date: t.iso, time: t.time, by: { name: by.split('(')[0].trim(), emp: (by.match(/GA\d{6}/i) || [''])[0].toUpperCase() }, kind: 'cuims', remarks: 'linked from CUIMS', reqs: p.req, items }); });
+      });
+      save(); ui.view = null; ui.tab = 'reg'; ui.reg.type = 'issue'; render(); toast(P.length + ' requests saved with their CUIMS serials.'); break; }
     case 'vfIgnF': { const [rid, fid] = v.split('|'); const R = (S.verifyReports || []).find(r => r.id === rid); const f = R && R.findings.find(x => x.id === fid); if (!f) break;
       const note = await uiPrompt('Ignore this error in all future checks? Add a short reason (optional).', '', 'Ignore'); if (note == null) break;
       S.verifyIgnore = S.verifyIgnore || {}; S.verifyIgnore[fSig(f)] = { at: new Date().toISOString(), note: note.trim(), kind: f.kind, label: f.label || f.serial || '', code: f.code || '' }; save(); render(); break; }
@@ -3031,6 +3126,8 @@ document.addEventListener('input', ev => {
   if (el.dataset.f === 'recvDate' && ui.sheet && ui.sheet.kind === 'return') { ui.form.recvDate = el.value; renderSheet(); return; }
   if (el.dataset.clq) { ui.clq = el.value; clearTimeout(ui.clT); ui.clT = setTimeout(() => { const b = document.getElementById('clres'); if (b) b.innerHTML = clResults(); }, 120); return; }
   if (el.dataset.cperday) { S.countPerDay = el.value ? Math.max(1, parseInt(el.value, 10) || 0) : 0; save(true); return; }
+  if (el.dataset.lk) { ui.form[el.dataset.lk] = el.value; ui.form.map = {}; renderSheet(); return; }
+  if (el.dataset.lks) { ui.form.map = ui.form.map || {}; ui.form.map[el.dataset.lks] = el.value; const b = document.querySelector('[data-a="lkRead"]'); if (b) { const n = Object.values(ui.form.map).join(',').split(/[^\d]+/).filter(x => /^\d{3,9}$/.test(x)).length; b.disabled = !n; b.textContent = 'Read ' + n + ' serial' + (n === 1 ? '' : 's') + ' on CUIMS'; } return; }
   if (el.dataset.rbf) { ui.form[el.dataset.rbf] = el.value; if (el.dataset.rbf === 'recvDate') renderSheet(); return; }
   if (el.dataset.rb) { const [g, k] = el.dataset.rb.split('|'); ui.form.groups[+g][k] = k === 'by' ? el.value.replace(/\D/g, '') : el.value; return; }
   if (el.dataset.rbr) { const [g, r, k] = el.dataset.rbr.split('|'); ui.form.groups[+g].rows[+r][k] = k === 'code' ? el.value.toUpperCase() : el.value;
