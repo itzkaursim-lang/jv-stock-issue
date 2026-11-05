@@ -21,7 +21,13 @@ function load() {
 let S = load();
 let syncTimer = null;
 function writeLocal() { DATAVER++; const t = JSON.stringify(S); try { if (N) N.storeSet(t); else localStorage.setItem('jvStockIssue', t); } catch (e) {} }
+function normCodes() {
+  const f = v => { const n = normRcv(v); return n || v; };
+  (S.lines || []).forEach(l => { if (l.rcv) l.rcv = f(l.rcv); }); (S.entries || []).forEach(e => { if (e.rcv) e.rcv = f(e.rcv); }); (S.returns || []).forEach(r => { if (r.by) r.by = f(r.by); });
+  Object.values(S.stores || {}).forEach(x => { if (x.rcv) x.rcv = f(x.rcv); }); Object.values(S.manReqs || {}).forEach(x => { if (x.rcv) x.rcv = f(x.rcv); });
+}
 function save(noSync) {
+  try { normCodes(); } catch (e) {}
   if (!noSync && ui.pendUndo) undoFire();
   S.sync.dirty = true; S.sync.changedAt = new Date().toISOString();
   writeLocal();
@@ -67,6 +73,11 @@ function findItemAnywhere(c) {
   return null;
 }
 function groupBy(a, f) { const m = {}; a.forEach(x => (m[f(x)] = m[f(x)] || []).push(x)); return m; }
+/* Receiver / employee codes: 6 digits = GA code, 1–5 digits = E code. You may also type GA… or E… */
+function normRcv(x) { const s = String(x == null ? '' : x).toUpperCase().replace(/[\s\-]+/g, ''); if (/^GA\d{6}$/.test(s)) return s.slice(2); if (/^\d{6}$/.test(s)) return s; if (/^E\d{1,5}$/.test(s)) return s; if (/^\d{1,5}$/.test(s)) return 'E' + s; return ''; }
+function validRcv(x) { return !!normRcv(x); }
+function rcvLabel(x) { const n = normRcv(x); if (!n) return String(x || ''); return /^E/.test(n) ? n : 'GA' + n; }
+function rcvKind(x) { const n = normRcv(x); return !n ? '' : /^E/.test(n) ? 'E code' : 'GA code'; }
 function toast(m, force) { if (!force && (ui.undoAt && Date.now() - ui.undoAt < 1500)) return; return toast0(m); }
 function toast0(m) { const t = document.getElementById('toast'); t.textContent = m; t.style.display = 'block'; clearTimeout(toast.h); toast.h = setTimeout(() => t.style.display = 'none', 3200); }
 function meTag() { return { name: S.me.name || '', emp: S.me.emp || '' }; }
@@ -237,15 +248,15 @@ function parseReqSheet(ws, kind, sheetName) {
     const store = String(r[ci.store]).trim().toUpperCase();
     if (!store) { skip(i, r, 'Store is empty'); continue; }
     const date = (ci.date >= 0 && toISO(r[ci.date])) || today();
-    const rcv = ci.rcv >= 0 ? String(r[ci.rcv]).replace(/\D/g, '') : '';
+    const rcv = ci.rcv >= 0 ? (normRcv(r[ci.rcv]) || String(r[ci.rcv]).trim()) : '';
     const nb = [];
-    if (rcv && rcv.length !== 6) nb.push('Receiver "' + r[ci.rcv] + '" is not 6 digits, so the store default is used');
+    if (rcv && !validRcv(rcv)) nb.push('Receiver "' + r[ci.rcv] + '" is not a GA or E code, so the store default is used');
     if (Object.keys(S.stock).length && !S.stock[code]) nb.push('Item code is not in the current stock sheet');
     const slip = ci.slip >= 0 ? String(r[ci.slip]).trim().toUpperCase() : '';
     if (slip && !SLIP_RE.test(slip)) nb.push('Slip No ' + slip + ' is not valid, so it is left empty');
     if (ci.date >= 0 && String(r[ci.date]).trim() && !toISO(r[ci.date])) nb.push('Date "' + r[ci.date] + '" not understood, so today is used');
     nb.forEach(w => notes.push({ row: i + 1, req, store, code, qty: String(qty), why: w }));
-    out.push({ req, store, date, code, qty, rcv: rcv.length === 6 ? rcv : '', slip: slip && SLIP_RE.test(slip) ? slip : '', src: kind, earlier: ci.earlier >= 0 ? String(r[ci.earlier]).trim() : '' });
+    out.push({ req, store, date, code, qty, rcv: validRcv(rcv) ? normRcv(rcv) : '', slip: slip && SLIP_RE.test(slip) ? slip : '', src: kind, earlier: ci.earlier >= 0 ? String(r[ci.earlier]).trim() : '' });
   }
   const info = 'Read sheet "' + sheetName + '", headers on row ' + (hm.h + 1) + ', ' + data + ' filled rows' + (ex ? ', ' + ex + ' example rows (EX-…) skipped' : '') + '.';
   return { rows: out, dup, warn: [...warn], info, skipped, notes };
@@ -307,7 +318,7 @@ function reqCard(r, cont) {
   const slip = (r.w.find(l => l.slip) || {}).slip, rcv = (r.lines.find(l => l.rcv) || {}).rcv || (S.stores[r.store] || {}).rcv || '';
   const sl = reqSlips(r.req);
   return rqCard({ where: 'home', req: r.req, store: r.store, status: tag, cont, x: 'dropReq',
-    meta: [fmtShort(r.date), slip ? 'next slip ' + esc(slip) : '<em>No slip</em>', rcv ? 'GA' + esc(rcv) : '<em>No receiver</em>', r.lines.length + ' articles', paperList(r.req).length ? '<span class="pbadge">paper ' + paperList(r.req).length + '</span>' : ''], chips: unavail(r.w, PL),
+    meta: [fmtShort(r.date), slip ? 'next slip ' + esc(slip) : '<em>No slip</em>', rcv ? esc(rcvLabel(rcv)) : '<em>No receiver</em>', r.lines.length + ' articles', paperList(r.req).length ? '<span class="pbadge">paper ' + paperList(r.req).length + '</span>' : ''], chips: unavail(r.w, PL),
     slips: sl.length ? sl : null, cta: later && isBaseKitchen(r.store) ? (advLines(r).length ? '<button class="btn adv full" data-a="advIssue" data-v="' + esc(r.req) + '">Issue on CUIMS now · ' + advLines(r).length + ' in stock</button>' : '<div class="note" style="text-align:center">Nothing in stock yet for this advance request.</div>') : later ? '<div class="note" style="text-align:center">Fills from ' + fmtLong(r.date) + '. No stock is kept for it before then.</div>' : (r.can && r.can.length ? '<button class="btn main full" data-a="fillReq" data-v="' + esc(r.req) + '">Fill on CUIMS · ' + r.can.length + ' available</button>' : '') });
 }
 function appBar() {
@@ -487,7 +498,7 @@ function vReq() {
   if (!r) { ui.view = null; return vHome(); }
   const st = reqState(r, PL);
   const rcv = (r.lines.find(l => l.rcv) || {}).rcv || (S.stores[r.store] || {}).rcv || '';
-  let h = reqNavBar() + '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:8px">' + esc(r.store) + '</h1><div class="sub">Request ' + esc(r.req) + ' · ' + fmtLong(r.date) + ' · Receiver ' + (rcv ? 'GA' + esc(rcv) : 'not set') + '</div></div></header><main>';
+  let h = reqNavBar() + '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:8px">' + esc(r.store) + '</h1><div class="sub">Request ' + esc(r.req) + ' · ' + fmtLong(r.date) + ' · Receiver ' + (rcv ? esc(rcvLabel(rcv)) : 'not set') + '</div></div></header><main>';
   h += meta([st.can.length + ' ready', (st.w.length - st.can.length) + ' waiting', st.iss.length + ' issued', (st.w.find(l => l.slip) || {}).slip ? 'next slip ' + esc(st.w.find(l => l.slip).slip) : '<em>no slip set</em>']);
   if (r.lines.some(l => l.status === 'waiting')) h += '<button class="btn full" data-a="lkOpen" data-v="' + r.date + '">Already issued on CUIMS? Link serials</button>';
   if (isBaseKitchen(r.store) && r.date > today()) { const A = advLines(r); h += '<div class="advbox"><b>' + esc(r.store) + ' · advance request for ' + fmtLong(r.date) + '</b><span>Only you can issue this early, by tapping below. It uses any stock in hand (' + A.length + ' of ' + r.lines.filter(l => l.status === 'waiting').length + ' articles available). It is never picked by queue or auto submit.</span><button class="btn adv full" data-a="advIssue" data-v="' + esc(r.req) + '"' + (A.length ? '' : ' disabled') + '>Issue on CUIMS now</button></div>'; }
@@ -581,13 +592,13 @@ function openStart(store, lineIds, title, adv) {
 function shStart() {
   const s = ui.sheet;
   const ls = S.lines.filter(l => s.lineIds.includes(l.id));
-  const sp = slipProblem(s.slip), rp = /^\d{6}$/.test(s.rcv) ? '' : 'Receiver must be exactly 6 digits.';
+  const sp = slipProblem(s.slip), rp = validRcv(s.rcv) ? '' : 'Receiver must be 6 digits (GA) or up to 5 digits (E code).';
   const areaOk = !S.areas.length || S.areas.some(a => a.toUpperCase() === s.store.toUpperCase());
   const old = S.lastLoginAt && (Date.now() - new Date(S.lastLoginAt)) > 2 * 3600e3;
   let h = '<div class="row"><h2>' + esc(s.title) + '</h2><button class="btn sm ghost" data-a="closeSheet">Close</button></div>';
   if (s.adv) h += '<div class="advbox"><b>Advance issue · ' + esc(s.store) + '</b><span>Requested for ' + fmtLong((ls[0] || {}).date || today()) + '. Uses any stock in hand. Queue and Auto submit stay off: you tap SUBMIT yourself.</span><label class="f" style="margin-top:8px">Remarks (optional)<input type="text" data-adv="1" value="' + esc(s.advRemark || '') + '" placeholder="Leave blank for no remark"></label></div>';
   h += '<label class="f">Slip No for this entry<input type="text" data-in="slip" value="' + esc(s.slip) + '" class="mono' + (sp ? ' bad' : '') + '" autocomplete="off" autocapitalize="characters" placeholder="e.g. JV/915"></label>' + (sp ? '<div class="err">' + esc(sp) + '</div>' : '<div class="okt">Slip No is free to use.</div>');
-  h += '<label class="f">Receiver (6 digits, this entry only)<input type="text" inputmode="numeric" maxlength="6" data-in="rcv" value="' + esc(s.rcv) + '" class="mono' + (rp ? ' bad' : '') + '"></label>' + (rp ? '<div class="err">' + rp + '</div>' : '<div class="note">CUIMS will pick GA' + esc(s.rcv) + ' … (GA) from the list.</div>');
+  h += '<label class="f">Receiver (GA 6 digits or E code, this entry only)<input type="text" inputmode="numeric" maxlength="6" data-in="rcv" value="' + esc(s.rcv) + '" class="mono' + (rp ? ' bad' : '') + '"></label>' + (rp ? '<div class="err">' + rp + '</div>' : '<div class="note">CUIMS will pick ' + esc(rcvLabel(s.rcv)) + ' … (GA) from the list.</div>');
   if (!areaOk) h += '<div class="err">"' + esc(s.store) + '" is not in the CUIMS Project Area list. Fix the store name in Settings or the request.</div>';
   if (old) h += '<div class="banner t-pt">Your CUIMS login is over 2 hours old. It may log out soon; the app will pause and restart the entry if it does.</div>';
   h += '<div class="row"><span class="sect">Articles for this entry</span><span class="note">' + s.lineIds.filter(id => !s.off[id]).length + ' selected</span></div>';
@@ -602,6 +613,7 @@ function shStart() {
   return h;
 }
 function startJob(store, slip, rcv, lineIds, adv) {
+  rcv = normRcv(rcv) || rcv;
   const ls = S.lines.filter(l => lineIds.includes(l.id) && l.status === 'waiting');
   const nq = S.queue && !adv ? nextQueueJob(lineIds) : null;
   const job = { id: 'J' + Date.now(), adv: !!adv, test: !!S.testMode, slip, rcv, store, queue: !!S.queue && !adv, next: nq ? nq.req + ' · ' + nq.store : '', autoSubmit: !!S.autoSubmit && !S.testMode && !adv, phase: 'dup', paused: false, log: [], tries: {},
@@ -616,7 +628,7 @@ function queueList(skipIds) {
     return Object.assign(r, { qcan: can });
   }).filter(r => r.qcan.length);
   sortBy(R, S.queueSort || 'reqdate', r => ({ req: r.req, store: r.store, date: r.date, ready: r.qcan.length, size: r.lines.length }));
-  return R.filter(r => /^\d{6}$/.test((r.lines.find(l => l.rcv) || {}).rcv || (S.stores[r.store] || {}).rcv || ''));
+  return R.filter(r => validRcv((r.lines.find(l => l.rcv) || {}).rcv || (S.stores[r.store] || {}).rcv || ''));
 }
 function nextQueueJob(skipIds) {
   const r = queueList(skipIds)[0]; if (!r) return null;
@@ -704,7 +716,7 @@ function vReg() {
     if (!list.length) h += '<div class="card pad note">Nothing for these dates.</div>';
     list.forEach(g => {
       if (g.man) { h += rqCard({ where: 'reg', req: g.req, store: g.store, tap: false, status: g.manStatus === 'done' ? ['Completed', 'c-ok'] : ['Pending · ' + g.issued + ' of ' + (g.total || '?') + ' issued', 'c-gd'],
-        meta: ['requested ' + (g.date ? fmtShort(g.date) : '–'), 'GA' + esc(g.man.rcv || '–') + (g.man.rname ? ' ' + esc(g.man.rname) : ''), '<span class="stag man" style="position:static">Manual record</span>'], slips: g.slips,
+        meta: ['requested ' + (g.date ? fmtShort(g.date) : '–'), esc(rcvLabel(g.man.rcv || '–')) + (g.man.rname ? ' ' + esc(g.man.rname) : ''), '<span class="stag man" style="position:static">Manual record</span>'], slips: g.slips,
         btns: '<button class="btn sm" data-a="manReqEdit" data-v="' + esc(g.req) + '">Edit slips & status</button><button class="btn sm ghost" data-a="manReqToggle" data-v="' + esc(g.req) + '">' + (g.manStatus === 'done' ? 'Mark pending' : 'Mark completed') + '</button>' }); return; }
       h += rqCard({ where: 'reg', req: g.req, store: g.store, status: g.left.length ? ['Pending · ' + g.left.length + ' of ' + g.total + ' left', 'c-gd'] : g.total ? ['Completed', 'c-ok'] : ['No articles', 'c-gy'],
         meta: ['requested ' + (g.date ? fmtShort(g.date) : '–'), g.issued + ' of ' + g.total + ' issued', g.closed ? g.closed + ' closed' : ''], slips: g.slips, left: g.left,
@@ -726,7 +738,7 @@ function vReg() {
     L.forEach(x => {
       const nm = x.byName || rcvName(x.by), rem = retRemark(x);
       h += rqCard({ where: 'ret', req: x.no, store: x.store, tapA: 'editReturn', tapV: x.id, status: x.serial ? ['On CUIMS', 'c-ok'] : ['Not on CUIMS yet', 'c-gd'],
-        meta: ['came ' + fmtShort(x.recvDate || x.date), 'GA' + esc(x.by) + (nm ? ' ' + esc(nm) : ''), x.items.length + (x.items.length === 1 ? ' article' : ' articles')],
+        meta: ['came ' + fmtShort(x.recvDate || x.date), esc(rcvLabel(x.by)) + (nm ? ' ' + esc(nm) : ''), x.items.length + (x.items.length === 1 ? ' article' : ' articles')],
         chips: x.serial ? '<div class="scrow"><span class="stag ret" style="position:static">Serial</span>' + serFmt(x.serial) + '</div>' : '',
         left: x.items.map(i => ({ code: i.code, qty: i.qty })), leftWord: x.serial ? 'returned article' : 'article to return', leftWords: x.serial ? 'returned articles' : 'articles to return', leftCls: x.serial ? 'okl' : 'retl',
         cta: x.serial ? '<button class="btn sm ret full" data-a="verRet" data-v="' + x.id + '">' + (x.verified ? (x.verified.issues ? 'Verify again · ' + x.verified.issues + ' to check' : 'Verified ✓ · check again') : 'Verify on CUIMS') + '</button>' : '<button class="btn ret full" data-a="retCuims" data-v="' + x.id + '">Return on CUIMS · ' + x.items.length + ' articles</button>' });
@@ -745,7 +757,7 @@ function shEntry() {
   if (f.kind !== 'manual') h += '<div class="note">Editing changes the register record only, not stock or pending.</div>';
   h += '<div class="grid2"><label class="f">Slip No<input type="text" data-f="slip" value="' + esc(f.slip) + '" class="mono"></label><label class="f">Serial No<input type="text" data-f="serial" value="' + esc(f.serial || '') + '" class="mono" inputmode="numeric"></label></div>';
   h += '<label class="f">Store (Project Area)<input type="text" data-f="store" list="areaList" value="' + esc(f.store) + '" autocapitalize="characters"></label>' + areaDatalist();
-  h += '<div class="grid2"><label class="f">Issued to (6 digits)<input type="text" data-f="rcv" value="' + esc(f.rcv) + '" class="mono" inputmode="numeric" maxlength="6"></label><label class="f">Receiver name<input type="text" data-f="rname" value="' + esc(f.rname || '') + '"></label></div>';
+  h += '<div class="grid2"><label class="f">Issued to (GA or E code)<input type="text" data-f="rcv" value="' + esc(f.rcv) + '" class="mono" inputmode="numeric" maxlength="6"></label><label class="f">Receiver name<input type="text" data-f="rname" value="' + esc(f.rname || '') + '"></label></div>';
   h += '<div class="grid2"><label class="f">Date<input type="date" data-f="date" value="' + esc(f.date) + '"></label><label class="f">Time<input type="time" data-f="time" value="' + esc(f.time) + '"></label></div>';
   h += '<label class="f">Request No(s)<input type="text" data-f="reqs" value="' + esc(f.reqs || '') + '"></label>';
   h += '<label class="f">Remarks<input type="text" data-f="remarks" value="' + esc(f.remarks || '') + '"></label>';
@@ -761,7 +773,7 @@ function shReturn() {
   const dupNo = S.returns.some(x => String(x.no).toUpperCase() === String(f.no || '').trim().toUpperCase() && x.id !== f.id);
   h += '<div class="grid2"><label class="f">Return No (yours)<input type="text" data-f="no" data-retno="1" value="' + esc(f.no) + '" class="mono" autocapitalize="characters"><span class="rcvname ' + (dupNo ? 'new' : 'ok') + '">' + (dupNo ? 'Already used. Next free: ' + esc(nextReturnNo(f.recvDate || today())) : RET_RE.test(f.no || '') ? 'Free to use' : 'Format R-DDMM-NN, e.g. ' + esc(nextReturnNo(f.recvDate || today()))) + '</span></label><label class="f">Against Issue No<input type="text" data-f="against" value="' + esc(f.against) + '" class="mono" inputmode="numeric"></label></div>';
   h += '<label class="f">Store (Project Area)<input type="text" data-f="store" list="areaList" value="' + esc(f.store) + '" autocapitalize="characters"></label>' + areaDatalist();
-  h += '<div class="grid2"><label class="f">Returned by (6 digits)<input type="text" data-f="by" value="' + esc(f.by) + '" class="mono" inputmode="numeric" maxlength="6"></label><label class="f">Name<input type="text" data-f="byName" value="' + esc(f.byName || '') + '"></label></div>';
+  h += '<div class="grid2"><label class="f">Returned by (GA or E code)<input type="text" data-f="by" value="' + esc(f.by) + '" class="mono" inputmode="numeric" maxlength="6"></label><label class="f">Name<input type="text" data-f="byName" value="' + esc(f.byName || '') + '"></label></div>';
   h += '<label class="f">Return came on (used in the remark)<input type="date" data-f="recvDate" value="' + esc(f.recvDate || f.date || today()) + '"></label>';
   h += '<div class="advbox" style="background:#E3EEFF;border-color:#5B9BFF"><b style="color:#173A7A">Remark on every article</b><span style="color:#2A4E8F" class="mono">' + esc(retRemark({ store: f.store, recvDate: f.recvDate || f.date })) + '</span></div>';
   h += '<div class="grid2"><label class="f">Entry date<input type="date" data-f="date" value="' + esc(f.date) + '"></label><label class="f">Time<input type="time" data-f="time" value="' + esc(f.time) + '"></label></div>';
@@ -780,12 +792,12 @@ function areaDatalist() {
 const MON3 = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 function cuimsDate(iso) { const p = String(iso || today()).split('-'); return MON3[+p[1] - 1] + ' ' + p[2] + ', ' + p[0]; }
 function retRemark(r) { return 'Returned from ' + String(r.store || '').trim() + ' on ' + cuimsDate(r.recvDate || r.date); }
-function retQueue(skipId) { return S.returns.filter(r => !r.serial && r.id !== skipId && r.store && /^\d{6}$/.test(r.by) && r.items.length).sort((a, b) => String(a.recvDate || a.date).localeCompare(String(b.recvDate || b.date)) || String(a.no).localeCompare(String(b.no), undefined, { numeric: true })); }
+function retQueue(skipId) { return S.returns.filter(r => !r.serial && r.id !== skipId && r.store && validRcv(r.by) && r.items.length).sort((a, b) => String(a.recvDate || a.date).localeCompare(String(b.recvDate || b.date)) || String(a.no).localeCompare(String(b.no), undefined, { numeric: true })); }
 function startReturnJob(r) {
-  if (!r.store || !/^\d{6}$/.test(r.by) || !r.items.length) { toast('Store, a 6-digit By employee and at least one item are needed.'); return; }
+  if (!r.store || !validRcv(r.by) || !r.items.length) { toast('Store, a By employee code (GA or E) and at least one item are needed.'); return; }
   const rem = retRemark(r);
   const nx = S.queue ? retQueue(r.id)[0] : null;
-  const job = { id: 'J' + Date.now(), kind: 'return', retId: r.id, slip: r.no, rcv: r.by, rname: r.byName || rcvName(r.by), store: r.store, retDateText: cuimsDate(r.recvDate || r.date), test: !!S.testMode, queue: !!S.queue, autoSubmit: !!S.autoSubmit && !S.testMode, phase: 'fill', paused: false, log: [], tries: {}, next: nx ? nx.no + ' · ' + nx.store : '',
+  const job = { id: 'J' + Date.now(), kind: 'return', retId: r.id, slip: r.no, rcv: normRcv(r.by) || r.by, rname: r.byName || rcvName(r.by), store: r.store, retDateText: cuimsDate(r.recvDate || r.date), test: !!S.testMode, queue: !!S.queue, autoSubmit: !!S.autoSubmit && !S.testMode, phase: 'fill', paused: false, log: [], tries: {}, next: nx ? nx.no + ' · ' + nx.store : '',
     items: r.items.map((i, k) => ({ lineId: 'r' + r.id + '_' + k, req: '', reqDate: '', code: i.code, name: i.name || itemName(i.code), uom: i.uom || itemUom(i.code), qty: Number(i.qty), remark: rem, skip: false })) };
   if (!N) { toast('Open this inside the JV Stock Issue app to fill CUIMS.'); return; }
   N.startJob(JSON.stringify(job));
@@ -805,8 +817,8 @@ function searchIndex() {
   if (SIDX && SIDX.ver === DATAVER) return SIDX.recs;
   const rd = {}; S.lines.forEach(l => { if (!(l.req in rd)) rd[l.req] = l.date; });
   const out = [];
-  S.entries.forEach(e => out.push({ type: 'Issue', id: 'e' + e.id, date: entryDate(e), time: entryTime(e), store: e.store, who: 'GA' + e.rcv + (e.rname ? ' ' + e.rname : ''), no: e.slip, serial: e.serial || '', reqs: e.reqs || [...new Set(e.items.map(i => i.req).filter(Boolean))].join(', '), by: e.by || {}, remarks: e.remarks || '', items: e.items, kind: e.kind }));
-  S.returns.forEach(r => out.push({ type: 'Return', id: 'r' + r.id, date: r.date, time: r.time, store: r.store, who: 'GA' + r.by + (r.byName ? ' ' + r.byName : ''), no: r.no, serial: r.serial || '', reqs: 'Against ' + r.against, by: r.enteredBy || {}, remarks: r.remarks || '', items: r.items }));
+  S.entries.forEach(e => out.push({ type: 'Issue', id: 'e' + e.id, date: entryDate(e), time: entryTime(e), store: e.store, who: rcvLabel(e.rcv) + (e.rname ? ' ' + e.rname : ''), no: e.slip, serial: e.serial || '', reqs: e.reqs || [...new Set(e.items.map(i => i.req).filter(Boolean))].join(', '), by: e.by || {}, remarks: e.remarks || '', items: e.items, kind: e.kind }));
+  S.returns.forEach(r => out.push({ type: 'Return', id: 'r' + r.id, date: r.date, time: r.time, store: r.store, who: rcvLabel(r.by) + (r.byName ? ' ' + r.byName : ''), no: r.no, serial: r.serial || '', reqs: 'Against ' + r.against, by: r.enteredBy || {}, remarks: r.remarks || '', items: r.items }));
   const R0 = {}; S.lines.forEach(l => { if (l.status === 'dropped') return; (R0[l.req] = R0[l.req] || []).push(l); });
   Object.values(S.manReqs || {}).forEach(m => out.push({ type: 'Request', id: 'm' + m.req, date: m.date, time: '', store: m.store, who: (m.status === 'done' ? 'completed' : 'pending') + ' · manual record', no: m.req, serial: '', reqs: m.req, by: m.by || {}, remarks: 'manual', items: [] }));
   Object.entries(R0).forEach(([req, L]) => { const w = L.filter(l => l.status === 'waiting').length;
@@ -821,8 +833,8 @@ function searchRecords() {
 }
 function searchRecordsOld() {
   const out = [];
-  S.entries.forEach(e => out.push({ type: 'Issue', id: 'e' + e.id, date: entryDate(e), time: entryTime(e), store: e.store, who: 'GA' + e.rcv + (e.rname ? ' ' + e.rname : ''), no: e.slip, serial: e.serial || '', reqs: e.reqs || [...new Set(e.items.map(i => i.req).filter(Boolean))].join(', '), by: e.by || {}, remarks: e.remarks || '', items: e.items, kind: e.kind }));
-  S.returns.forEach(r => out.push({ type: 'Return', id: 'r' + r.id, date: r.date, time: r.time, store: r.store, who: 'GA' + r.by + (r.byName ? ' ' + r.byName : ''), no: r.no, serial: r.serial || '', reqs: 'Against ' + r.against, by: r.enteredBy || {}, remarks: r.remarks || '', items: r.items }));
+  S.entries.forEach(e => out.push({ type: 'Issue', id: 'e' + e.id, date: entryDate(e), time: entryTime(e), store: e.store, who: rcvLabel(e.rcv) + (e.rname ? ' ' + e.rname : ''), no: e.slip, serial: e.serial || '', reqs: e.reqs || [...new Set(e.items.map(i => i.req).filter(Boolean))].join(', '), by: e.by || {}, remarks: e.remarks || '', items: e.items, kind: e.kind }));
+  S.returns.forEach(r => out.push({ type: 'Return', id: 'r' + r.id, date: r.date, time: r.time, store: r.store, who: rcvLabel(r.by) + (r.byName ? ' ' + r.byName : ''), no: r.no, serial: r.serial || '', reqs: 'Against ' + r.against, by: r.enteredBy || {}, remarks: r.remarks || '', items: r.items }));
   const s = ui.search;
   const terms = s.q.toLowerCase().split(/\s+/).filter(Boolean);
   return out.filter(x => {
@@ -883,7 +895,7 @@ try { INFO = N ? JSON.parse(N.info()) : { version: 'browser', mode: 'online' }; 
 const SETPAGES = [
   ['profile', 'Profile', 'Photo, name, emp code, designation', '#E5EDFD', '#1D4ED8', '<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>'],
   ['pdf', 'PDF and signatures', 'Store name, manager signature', '#F7EFD9', '#8A6A1F', '<path d="M6 3h9l3 3v15H6z"/><path d="M9 13h6M9 17h4"/>'],
-  ['stores', 'Stores and receivers', 'Project Areas, 6-digit codes', '#E3F4EC', '#0B5E3D', '<path d="M3 10l9-6 9 6v10H3z"/><path d="M9 20v-6h6v6"/>'],
+  ['stores', 'Stores and receivers', 'Project Areas, GA / E codes', '#E3F4EC', '#0B5E3D', '<path d="M3 10l9-6 9 6v10H3z"/><path d="M9 20v-6h6v6"/>'],
   ['fill', 'Filling and automation', 'Queue mode', '#FCF1DA', '#8A5A00', '<path d="M13 2L4 14h7l-1 8 9-12h-7z"/>'],
   ['cuims', 'CUIMS logins and pages', 'Issue ID, manager ID, desktop zoom', '#E3F4EC', '#0B5E3D', '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/>'],
   ['cloud', 'Cloud backup', 'Google Drive + Sheet, restore', '#E5EDFD', '#1E3A8A', '<path d="M7 18a5 5 0 1 1 1-9.9A6 6 0 0 1 19 10a4 4 0 0 1-1 8z"/>'],
@@ -924,6 +936,7 @@ function vSet() {
     h += '<div class="card pad col"><h3>Test mode</h3><div class="note">Try new features or practise entries without touching your real requests, slips or stock. Your real data is put aside and comes back exactly as it was. Cloud backup pauses while testing.</div><button class="btn ' + (S.testMode ? 'main' : '') + '" data-a="testToggle" type="button">' + (S.testMode ? 'Leave Test mode' : 'Turn on Test mode') + '</button>' + (S.testMode ? '<button class="btn ghost" data-a="testClear" type="button">Delete all test data</button>' : '') + '</div>';
     h += '<div class="card pad col"><h3>Data check</h3><div class="note">Finds Request No clashes, repeated items, mixed dates, incomplete rows and repeated Slip Nos, with fix buttons.</div><button class="btn" data-a="dcOpen" type="button">Run data check</button></div>';
   }
+  if (pg === 'stores') h += '<div class="card pad col" style="gap:8px"><h3>Receiver names from CUIMS</h3><div class="note">6 digits = GA code, 1–5 digits = E code (you can also type GA… or E…). The app can read the exact names from the CUIMS list for every code you use.</div><button class="btn" data-a="nameLookup" data-v="*" type="button">Check all receiver names on CUIMS</button></div>';
   if (pg === 'cuims') {
     h += '<div class="card pad col"><h3>Two CUIMS logins</h3><div class="note">Issue CUIMS uses your emp ID to fill entries. Manager CUIMS has its own separate login for the live stock report.' + (INFO.mgrSeparate === false ? ' <b>Your phone\'s WebView is too old for separate logins; both share one login until Android System WebView is updated.</b>' : '') + '</div>' +
       '<label class="f">Issue page (opens after login)<input type="text" data-url="emp" value="' + esc(ui.urlEmp != null ? ui.urlEmp : INFO.urlEmp || 'https://staff.cuchd.in/frmStoreIssueReceiveLC.aspx') + '"></label>' +
@@ -954,7 +967,7 @@ function vSet() {
   const stores = Object.keys(S.stores).sort();
   h += '<div class="card"><div class="pad col" style="gap:4px"><h3>Stores and receivers</h3><div class="note">Store = exact CUIMS Project Area. Receiver = 6 digits; change anytime. ' + (S.areas.length ? S.areas.length + ' Project Areas known from CUIMS.' : 'Open CUIMS once to load the Project Area list.') + '</div></div>';
   stores.forEach(s => {
-    const v = S.stores[s].rcv || ''; const bad = v && !/^\d{6}$/.test(v);
+    const v = S.stores[s].rcv || ''; const bad = v && !validRcv(v);
     const known = !S.areas.length || S.areas.some(a => a.toUpperCase() === s);
     h += '<div class="line"><div class="row"><b>' + esc(s) + '</b><button class="btn sm ghost" data-a="rmStore" data-v="' + esc(s) + '">Remove</button></div>' + (known ? '' : '<div class="err">Not in the CUIMS Project Area list</div>') +
       '<div class="grid2"><input type="text" inputmode="numeric" maxlength="6" data-store-rcv="' + esc(s) + '" value="' + esc(v) + '" placeholder="6-digit receiver" class="mono' + (bad ? ' bad' : '') + '"><input type="text" data-store-name="' + esc(s) + '" value="' + esc(S.stores[s].rname || rname(v)) + '" placeholder="Receiver name"></div></div>';
@@ -1014,7 +1027,7 @@ function rowsRequests() {
   });
 }
 function rowsEntries(list) {
-  return (list || S.entries).map(e => ({ Date: fmtLong(entryDate(e)), Time: entryTime(e), 'Slip No': e.slip, 'Serial No': e.serial || '', Store: e.store, 'Issued to': 'GA' + e.rcv, 'Receiver name': e.rname || '',
+  return (list || S.entries).map(e => ({ Date: fmtLong(entryDate(e)), Time: entryTime(e), 'Slip No': e.slip, 'Serial No': e.serial || '', Store: e.store, 'Issued to': rcvLabel(e.rcv), 'Receiver name': e.rname || '',
     'Request Nos': e.reqs || [...new Set(e.items.map(i => i.req).filter(Boolean))].join(', '), Items: e.items.length, Remarks: e.remarks || '', 'Entered by': (e.by || {}).name || '', 'Emp code': (e.by || {}).emp || '', Type: e.kind === 'manual' ? 'Manual' : 'App' }));
 }
 function rowsItems() {
@@ -1029,7 +1042,7 @@ function rowsPending() {
 function rowsStock() { return Object.entries(S.stock).map(([c, s]) => ({ 'Item code': c, Item: s.name, UOM: s.uom, 'Stock now': s.qty })); }
 function rowsReturns() {
   const out = [];
-  S.returns.forEach(r => r.items.forEach(i => out.push({ Date: fmtLong(r.date), Time: r.time, 'Return No': r.no, 'Against Issue No': r.against, 'Serial No': r.serial || '', Store: r.store, 'Returned by': 'GA' + r.by, Name: r.byName || '', 'Item code': i.code, Item: i.name || itemName(i.code), Qty: Number(i.qty), UOM: i.uom || itemUom(i.code), 'Item remark': i.remark || '', Remarks: r.remarks || '', 'Entered by': (r.enteredBy || {}).name || '', 'Emp code': (r.enteredBy || {}).emp || '' })));
+  S.returns.forEach(r => r.items.forEach(i => out.push({ Date: fmtLong(r.date), Time: r.time, 'Return No': r.no, 'Against Issue No': r.against, 'Serial No': r.serial || '', Store: r.store, 'Returned by': rcvLabel(r.by), Name: r.byName || '', 'Item code': i.code, Item: i.name || itemName(i.code), Qty: Number(i.qty), UOM: i.uom || itemUom(i.code), 'Item remark': i.remark || '', Remarks: r.remarks || '', 'Entered by': (r.enteredBy || {}).name || '', 'Emp code': (r.enteredBy || {}).emp || '' })));
   return out;
 }
 function rowsAllLines() { return S.lines.map(l => ({ 'Request No': l.req, Store: l.store, 'Request date': fmtLong(l.date), 'Item code': l.code, Item: itemName(l.code), Qty: l.qty, Status: l.status, Source: l.src, Receiver: l.rcv || '', 'Issued in': l.issued.map(x => x.slip + (x.serial ? ' #' + x.serial : '')).join(', '), 'Earlier slips': l.earlier || '' })); }
@@ -1103,7 +1116,7 @@ function issueGroups(list) {
     keys.forEach(k => {
       if (!G.has(k)) G.set(k, { req: k.startsWith('—') ? '' : k, store: e.store, to: new Set(), slips: [], items: [], remarks: new Set(), by: new Set(), date: entryDate(e) });
       const g = G.get(k);
-      g.to.add('GA' + e.rcv + (e.rname ? ' ' + e.rname : ''));
+      g.to.add(rcvLabel(e.rcv) + (e.rname ? ' ' + e.rname : ''));
       g.slips.push({ slip: e.slip, serial: e.serial || '', time: entryTime(e) });
       e.items.filter(i => !reqs.length || i.req === k).forEach(i => g.items.push(Object.assign({ slip: e.slip }, i)));
       g.count = (g.count || 0) + (e.items.length ? e.items.filter(i => !reqs.length || i.req === k).length : (Number(e.count) || 0));
@@ -1137,11 +1150,11 @@ function pdfReturn() {
   const y0 = pdfHead(doc, 'Daily Return Register', (S.me.storeName || 'Store') + ' · Return · Department · Against Issue No 1111', [['Date', fmtLong(d)], ['Returns', list.length], ['Items', items]]);
   doc.autoTable(Object.assign({}, TSTYLE, { startY: y0,
     head: [['#', 'Return No', 'Store', 'Returned by', 'Date & time', 'Against', 'Serial No', 'Items', 'Entered by']],
-    body: list.map((r, i) => [i + 1, r.no, r.store, 'GA' + r.by + (r.byName ? '\n' + r.byName : ''), fmtShort(r.date) + ' ' + (r.time || ''), r.against, r.serial || '______', r.items.length, ((r.enteredBy || {}).name || '') + ((r.enteredBy || {}).emp ? '\n' + r.enteredBy.emp : '')]),
+    body: list.map((r, i) => [i + 1, r.no, r.store, rcvLabel(r.by) + (r.byName ? '\n' + r.byName : ''), fmtShort(r.date) + ' ' + (r.time || ''), r.against, r.serial || '______', r.items.length, ((r.enteredBy || {}).name || '') + ((r.enteredBy || {}).emp ? '\n' + r.enteredBy.emp : '')]),
     columnStyles: { 0: { cellWidth: 8, halign: 'center' }, 1: { fontStyle: 'bold' }, 2: { fontStyle: 'bold' }, 6: { textColor: [11, 94, 61], fontStyle: 'bold' }, 7: { halign: 'center' } } }));
   list.forEach(r => {
     doc.autoTable(Object.assign({}, TSTYLE, { startY: doc.lastAutoTable.finalY + 6, headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: 'bold', fontSize: 8.5 },
-      head: [[{ content: r.no + '   ·   ' + r.store + '   ·   Returned by GA' + r.by + '   ·   Serial ' + (r.serial || '____') + (r.remarks ? '   ·   ' + r.remarks : ''), colSpan: 6 }], ['S.No', 'Item code', 'Item', 'UOM', 'Qty', 'Item remarks']],
+      head: [[{ content: r.no + '   ·   ' + r.store + '   ·   Returned by ' + rcvLabel(r.by) + '   ·   Serial ' + (r.serial || '____') + (r.remarks ? '   ·   ' + r.remarks : ''), colSpan: 6 }], ['S.No', 'Item code', 'Item', 'UOM', 'Qty', 'Item remarks']],
       body: r.items.map((x, i) => [i + 1, x.code, x.name || itemName(x.code), x.uom || itemUom(x.code), num(x.qty), x.remark || '–']) }));
   });
   pdfSign(doc); pdfFoot(doc, 'Return Register'); pdfSave(doc, 'Return-Register-' + d + '.pdf');
@@ -1434,12 +1447,12 @@ function reportDef(type) {
     let list = S.returns.filter(x => x.date === d);
     list = sortBy(list, ['custom', 'az', 'time'].includes(p.sort) ? 'reqdate' : p.sort, r => ({ req: r.no, store: r.store, date: r.date + ' ' + (r.time || ''), size: r.items.length }));
     return { cols: [['no', '#'], ['rno', 'Return No'], ['store', 'Store'], ['by', 'Returned by'], ['dt', 'Date & time'], ['against', 'Against'], ['serial', 'Serial No'], ['items', 'Items'], ['remarks', 'Remarks'], ['ent', 'Entered by']],
-      rows: list.map((r, i) => ({ no: i + 1, rno: r.no, store: r.store, by: ['GA' + r.by].concat(r.byName ? [r.byName] : []), dt: fmtShort(r.date) + ' ' + (r.time || ''), against: r.against, serial: r.serial || '______', items: r.items.length, remarks: r.remarks || '–', ent: [(r.enteredBy || {}).name || ''].concat((r.enteredBy || {}).emp ? [r.enteredBy.emp] : []) })),
+      rows: list.map((r, i) => ({ no: i + 1, rno: r.no, store: r.store, by: [rcvLabel(r.by)].concat(r.byName ? [r.byName] : []), dt: fmtShort(r.date) + ' ' + (r.time || ''), against: r.against, serial: r.serial || '______', items: r.items.length, remarks: r.remarks || '–', ent: [(r.enteredBy || {}).name || ''].concat((r.enteredBy || {}).emp ? [r.enteredBy.emp] : []) })),
       chips: [['Date', fmtLong(d)], ['Returns', list.length], ['Items', list.reduce((n, r) => n + r.items.length, 0)]],
-      detail: list.map(r => ({ head: r.no + '   ·   ' + r.store + '   ·   Returned by GA' + r.by + '   ·   Serial ' + (r.serial || '____'), cols: ['S.No', 'Item code', 'Item', 'UOM', 'Qty', 'Item remarks'], rows: r.items.map((x, i) => [i + 1, x.code, x.name || itemName(x.code), x.uom || itemUom(x.code), num(x.qty), x.remark || '–']) })),
+      detail: list.map(r => ({ head: r.no + '   ·   ' + r.store + '   ·   Returned by ' + rcvLabel(r.by) + '   ·   Serial ' + (r.serial || '____'), cols: ['S.No', 'Item code', 'Item', 'UOM', 'Qty', 'Item remarks'], rows: r.items.map((x, i) => [i + 1, x.code, x.name || itemName(x.code), x.uom || itemUom(x.code), num(x.qty), x.remark || '–']) })),
       file: 'Return-Register-' + d, sub2: 'Return · Department · Against Issue No 1111' };
   }
-  const objRows = type === 'pending' ? sortBy(rowsPending(), ['custom', 'az', 'time'].includes(p.sort) ? 'reqdate' : p.sort, r => ({ req: r['Request No'], store: r.Store, date: r['_date'] || '' })) : type === 'requests' ? rowsRequests() : type === 'entries' ? rowsEntries() : type === 'items' ? rowsItems() : type === 'stock' ? rowsStock() : type === 'returns' ? rowsReturns() : type === 'search' ? searchRows() : type === 'arts' ? artsList().sort((a, b) => byStore(a.l.store, b.l.store) || String(a.l.req).localeCompare(String(b.l.req), undefined, { numeric: true })).map(({ l, k }) => ({ Store: l.store, 'Request No': l.req, 'Requested on': fmtLong(l.date), Item: itemName(l.code), 'Item code': l.code, Qty: l.qty, UOM: itemUom(l.code), Status: k === 'issue' ? 'Ready' : k === 'later' ? 'Scheduled' : k === 'hold' ? 'On hold' : k === 'missing' ? 'Not in stock' : 'Short' })) : type === 'verifyItems' ? (() => { const R = (S.verifyReports || []).find(r => r.id === ui.vrep) || (S.verifyReports || [])[0] || {}; const out = []; Object.values(R.details || {}).forEach(D => { D.items.forEach(i => out.push({ Serial: D.serial, Slip: D.slip, 'Project Area': D.pa, 'Received by': D.rcv ? 'GA' + D.rcv : '', Code: i.code, Item: i.name, 'CUIMS qty': i.qty, 'App qty': i.app == null ? 'not in app' : i.app, Remarks: i.remark || '' })); D.missing.forEach(m => out.push({ Serial: D.serial, Slip: D.slip, 'Project Area': D.pa, 'Received by': D.rcv ? 'GA' + D.rcv : '', Code: m.code, Item: itemName(m.code), 'CUIMS qty': 'missing', 'App qty': m.qty, Remarks: '' })); }); return out; })() : type === 'verify' ? (((S.verifyReports || []).find(r => r.id === ui.vrep) || (S.verifyReports || [])[0] || { findings: [] }).findings.map(f => ({ Entry: f.label || (f.serial ? 'Serial ' + f.serial : ''), Result: { ok: 'All good', notFound: 'Not found on CUIMS', serial: 'Serial missing in app', multi: 'Slip used more than once', store: 'Store differs', rcv: 'Receiver differs', type: 'Not a return', missing: 'Missing on CUIMS', qty: 'Qty differs', remark: 'Remark differs', extra: 'Extra on CUIMS', notInApp: 'On CUIMS, not in app' }[f.kind] || f.kind, Item: f.code ? itemName(f.code) + ' (' + f.code + ')' : '', App: f.app != null ? String(f.app) : (f.qty != null ? String(f.qty) : ''), CUIMS: f.cuims != null ? String(f.cuims) : (f.val || f.serial || ''), Status: f.fixed ? 'Fixed in app' : (f.kind === 'ok' ? '' : 'Open') }))) : type === 'cons' ? consRows() : type === 'done' ? doneRows() : type === 'expiry' ? expiryRows().filter(r => r.left <= expDays()).map(r => ({ Item: r.name, Code: r.code, Qty: r.qty, UOM: r.uom, MFD: r.mfd ? fmtLong(r.mfd) : '', Expiry: fmtLong(r.exp), 'Days left': r.left, Status: r.left < 0 ? 'Expired' : r.left <= 15 ? 'Within 15 days' : 'Within ' + expDays() + ' days', 'Counted on': fmtLong(r.countDate) })) : type === 'counts' ? countRows((S.counts || []).filter(c => !ui.countExportId || String(c.id) === String(ui.countExportId))) : [];
+  const objRows = type === 'pending' ? sortBy(rowsPending(), ['custom', 'az', 'time'].includes(p.sort) ? 'reqdate' : p.sort, r => ({ req: r['Request No'], store: r.Store, date: r['_date'] || '' })) : type === 'requests' ? rowsRequests() : type === 'entries' ? rowsEntries() : type === 'items' ? rowsItems() : type === 'stock' ? rowsStock() : type === 'returns' ? rowsReturns() : type === 'search' ? searchRows() : type === 'arts' ? artsList().sort((a, b) => byStore(a.l.store, b.l.store) || String(a.l.req).localeCompare(String(b.l.req), undefined, { numeric: true })).map(({ l, k }) => ({ Store: l.store, 'Request No': l.req, 'Requested on': fmtLong(l.date), Item: itemName(l.code), 'Item code': l.code, Qty: l.qty, UOM: itemUom(l.code), Status: k === 'issue' ? 'Ready' : k === 'later' ? 'Scheduled' : k === 'hold' ? 'On hold' : k === 'missing' ? 'Not in stock' : 'Short' })) : type === 'verifyItems' ? (() => { const R = (S.verifyReports || []).find(r => r.id === ui.vrep) || (S.verifyReports || [])[0] || {}; const out = []; Object.values(R.details || {}).forEach(D => { D.items.forEach(i => out.push({ Serial: D.serial, Slip: D.slip, 'Project Area': D.pa, 'Received by': D.rcv ? rcvLabel(D.rcv) : '', Code: i.code, Item: i.name, 'CUIMS qty': i.qty, 'App qty': i.app == null ? 'not in app' : i.app, Remarks: i.remark || '' })); D.missing.forEach(m => out.push({ Serial: D.serial, Slip: D.slip, 'Project Area': D.pa, 'Received by': D.rcv ? rcvLabel(D.rcv) : '', Code: m.code, Item: itemName(m.code), 'CUIMS qty': 'missing', 'App qty': m.qty, Remarks: '' })); }); return out; })() : type === 'verify' ? (((S.verifyReports || []).find(r => r.id === ui.vrep) || (S.verifyReports || [])[0] || { findings: [] }).findings.map(f => ({ Entry: f.label || (f.serial ? 'Serial ' + f.serial : ''), Result: { ok: 'All good', notFound: 'Not found on CUIMS', serial: 'Serial missing in app', multi: 'Slip used more than once', store: 'Store differs', rcv: 'Receiver differs', type: 'Not a return', missing: 'Missing on CUIMS', qty: 'Qty differs', remark: 'Remark differs', extra: 'Extra on CUIMS', notInApp: 'On CUIMS, not in app' }[f.kind] || f.kind, Item: f.code ? itemName(f.code) + ' (' + f.code + ')' : '', App: f.app != null ? String(f.app) : (f.qty != null ? String(f.qty) : ''), CUIMS: f.cuims != null ? String(f.cuims) : (f.val || f.serial || ''), Status: f.fixed ? 'Fixed in app' : (f.kind === 'ok' ? '' : 'Open') }))) : type === 'cons' ? consRows() : type === 'done' ? doneRows() : type === 'expiry' ? expiryRows().filter(r => r.left <= expDays()).map(r => ({ Item: r.name, Code: r.code, Qty: r.qty, UOM: r.uom, MFD: r.mfd ? fmtLong(r.mfd) : '', Expiry: fmtLong(r.exp), 'Days left': r.left, Status: r.left < 0 ? 'Expired' : r.left <= 15 ? 'Within 15 days' : 'Within ' + expDays() + ' days', 'Counted on': fmtLong(r.countDate) })) : type === 'counts' ? countRows((S.counts || []).filter(c => !ui.countExportId || String(c.id) === String(ui.countExportId))) : [];
   const keys = objRows.length ? Object.keys(objRows[0]) : [];
   const chips = type === 'pending' ? [['Date', fmtLong(today())], ['Stores', new Set(objRows.map(r => r.Store)).size], ['Articles', objRows.length]] : [['Date', fmtLong(today())], ['Rows', objRows.length]];
   return { cols: keys.map(k => [k, k]), rows: objRows, chips, file: REPORTS[type].name.replace(/[^A-Za-z]+/g, '-') + '-' + today(), sub2: '' };
@@ -1523,7 +1536,7 @@ async function syncNow(quiet, kind, note) {
   if (S.testMode) { if (!quiet) toast('Test mode: cloud backup is paused.'); return; }
   const payload = { action: 'sync', kind: kind || 'auto', note: note || '', counts: { requests: requests().length, articles: S.lines.length, entries: S.entries.length, returns: S.returns.length }, at: new Date().toISOString(), by: meTag(),
     tabs: { 'Requests': rowsRequests(), 'Request lines': rowsAllLines(), 'Entries': rowsEntries(), 'Entry items': rowsItems(), 'Pending': rowsPending(), 'Returns': rowsReturns(), 'Stock': rowsStock(),
-      'Stores': Object.entries(S.stores).map(([s, v]) => ({ Store: s, Receiver: v.rcv ? 'GA' + v.rcv : '', Name: v.rname || '' })) },
+      'Stores': Object.entries(S.stores).map(([s, v]) => ({ Store: s, Receiver: v.rcv ? rcvLabel(v.rcv) : '', Name: v.rname || '' })) },
     backup: JSON.stringify(S) };
   if (syncBusy) return; syncBusy = true; paintSync();
   const startedAt = S.sync.changedAt;
@@ -1557,16 +1570,16 @@ function shNewReq() {
   const f = ui.form, stores = [...new Set([...(S.storeOrder || []), ...Object.keys(S.stores), ...S.lines.map(l => l.store)])].sort(byStore);
   const reqClash = S.lines.some(l => l.req === f.req);
   let h = '<div class="row"><h2>Add store request</h2><button class="btn sm ghost" data-a="closeSheet">Close</button></div>';
-  h += '<label class="f">Store</label>' + pickBtn('nrStore', { title: 'Choose store', search: true, full: true, placeholder: 'Choose store', opts: stores.map(st => [st, st, (S.stores[st] || {}).rcv ? 'Receiver GA' + S.stores[st].rcv : '']), val: f.store, set: v => { ui.form.store = v; const d = (S.stores[v] || {}).rcv; if (d) ui.form.rcv = d; renderSheet(); } });
+  h += '<label class="f">Store</label>' + pickBtn('nrStore', { title: 'Choose store', search: true, full: true, placeholder: 'Choose store', opts: stores.map(st => [st, st, (S.stores[st] || {}).rcv ? 'Receiver ' + rcvLabel(S.stores[st].rcv) : '']), val: f.store, set: v => { ui.form.store = v; const d = (S.stores[v] || {}).rcv; if (d) ui.form.rcv = d; renderSheet(); } });
   h += '<div class="grid2"><label class="f">Request No<input type="text" data-nr="req" value="' + esc(f.req) + '" class="mono' + (reqClash ? ' bad' : '') + '"></label><label class="f">Request date<input type="date" data-nr="date" value="' + esc(f.date) + '"></label></div>' + (reqClash ? '<div class="err">Request No ' + esc(f.req) + ' already exists.</div>' : '');
-  h += '<div class="grid2"><label class="f">Receiver (6 digits)<input type="text" inputmode="numeric" maxlength="6" data-nr="rcv" value="' + esc(f.rcv) + '" class="mono"></label><label class="f">Slip No (optional)<input type="text" data-nr="slip" value="' + esc(f.slip) + '" class="mono" autocapitalize="characters"></label></div>';
+  h += '<div class="grid2"><label class="f">Receiver (GA or E code)<input type="text" inputmode="numeric" maxlength="6" data-nr="rcv" value="' + esc(f.rcv) + '" class="mono"></label><label class="f">Slip No (optional)<input type="text" data-nr="slip" value="' + esc(f.slip) + '" class="mono" autocapitalize="characters"></label></div>';
   h += '<label class="f">Custom remark (optional)<input type="text" data-nr="remark" value="' + esc(f.remark || '') + '" placeholder="Replaces Requisition Requested on …"></label>';
   h += '<div class="sect">Articles (' + f.items.length + ')</div>';
   if (f.items.length) h += '<div class="card" style="overflow:hidden">' + f.items.map((it, i) => '<div class="line" style="flex-direction:row;align-items:center;gap:10px"><span style="flex:1;min-width:0"><b>' + esc(it.name) + '</b><div class="meta"><span class="mono">' + esc(it.code) + '</span>' + (S.stock[it.code] ? '<i></i><span>stock ' + num(S.stock[it.code].qty) + '</span>' : '') + '</div></span><input type="number" inputmode="decimal" data-nrq="' + i + '" value="' + esc(it.qty) + '" placeholder="Qty" style="width:92px;text-align:right"><span class="note" style="width:34px">' + esc(it.uom) + '</span><button class="xbtn" data-a="nrDel" data-v="' + i + '" aria-label="Remove">' + ico('x', 16) + '</button></div>').join('') + '</div>';
   h += '<div class="card pad col" style="gap:8px"><label class="f">Find item by name or code<input type="search" data-nr="q" value="' + esc(f.q || '') + '" placeholder="Type e.g. atta, sugar, GR-198" autocomplete="off" enterkeyhint="done"></label>';
   h += '<div id="nrhits">' + nrHits() + '</div>';
   h += '</div>';
-  const ok = f.store && f.req && !reqClash && f.items.length && f.items.every(x => parseFloat(x.qty) > 0) && (!f.rcv || /^\d{6}$/.test(f.rcv)) && (!f.slip || !slipProblem(f.slip));
+  const ok = f.store && f.req && !reqClash && f.items.length && f.items.every(x => parseFloat(x.qty) > 0) && (!f.rcv || validRcv(f.rcv)) && (!f.slip || !slipProblem(f.slip));
   if (f.slip && slipProblem(f.slip)) h += '<div class="err">' + esc(slipProblem(f.slip)) + '</div>';
   h += '<button class="btn main full" data-a="nrSave"' + (ok ? '' : ' disabled') + '>Save request · ' + f.items.length + ' articles</button>';
   return h;
@@ -1577,7 +1590,7 @@ function nextReqNoFrom(used) {
   let mx = 0; S.lines.concat(used.map(r => ({ req: r }))).forEach(l => { if (String(l.req).startsWith(pre)) { const n = parseInt(String(l.req).slice(pre.length), 10); if (n > mx) mx = n; } });
   return pre + String(mx + 1).padStart(2, '0');
 }
-function lastRetBy(store) { const r = S.returns.filter(x => x.store === store && /^\d{6}$/.test(x.by)).sort((a, b) => String(b.date).localeCompare(String(a.date)))[0]; return r ? r.by : ((S.stores[store] || {}).rcv || ''); }
+function lastRetBy(store) { const r = S.returns.filter(x => x.store === store && validRcv(x.by)).sort((a, b) => String(b.date).localeCompare(String(a.date)))[0]; return r ? r.by : ((S.stores[store] || {}).rcv || ''); }
 function batchAddGroup(store) {
   const f = ui.form;
   if (f.mode === 'return') { f.groups.push({ store, req: nextReturnNo(f.date, f.groups.map(g => g.req)), _auto: true, rcv: lastRetBy(store), slip: '', remark: '', items: [] }); f.act = f.groups.length - 1; return; }
@@ -1614,14 +1627,14 @@ function shBatch() {
       g.items.map((it, ii) => '<div class="line" style="flex-direction:row;align-items:center;gap:10px"><span style="flex:1;min-width:0"><b>' + esc(it.name) + '</b><div class="meta"><span class="mono">' + esc(it.code) + '</span>' + (S.stock[it.code] ? '<i></i><span>stock ' + num(S.stock[it.code].qty) + '</span>' : '') + '</div></span><input type="number" inputmode="decimal" enterkeyhint="next" data-bq="' + gi + '|' + ii + '" value="' + esc(it.qty) + '" placeholder="Qty" style="width:88px;text-align:right"><button class="xbtn" data-a="btItemDel" data-v="' + gi + '|' + ii + '" aria-label="Remove">' + ico('x', 16) + '</button></div>').join('') +
       '<div class="pad col" style="gap:8px;background:var(--soft)"><div class="sbox"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input type="search" data-bt="q" value="' + esc(f.q || '') + '" placeholder="Add item: type name or code" autocomplete="off" enterkeyhint="done"></div><div id="bthits">' + batchHits(gi) + '</div></div></div>';
   });
-  if (!(RET && f.single && f.groups.length)) h += pickBtn('btStore', { title: 'Add a store', search: true, full: true, placeholder: RET ? (f.groups.length ? '+ Another return (store)' : '+ Choose the store it came from') : '+ Add a store', opts: stores.map(st => [st, st, (S.stores[st] || {}).rcv ? 'Receiver GA' + S.stores[st].rcv : '']), val: '', set: v => { batchAddGroup(v); ui.form.q = ''; renderSheet(); const i = document.querySelector('[data-bt="q"]'); if (i) i.focus(); } });
+  if (!(RET && f.single && f.groups.length)) h += pickBtn('btStore', { title: 'Add a store', search: true, full: true, placeholder: RET ? (f.groups.length ? '+ Another return (store)' : '+ Choose the store it came from') : '+ Add a store', opts: stores.map(st => [st, st, (S.stores[st] || {}).rcv ? 'Receiver ' + rcvLabel(S.stores[st].rcv) : '']), val: '', set: v => { batchAddGroup(v); ui.form.q = ''; renderSheet(); const i = document.querySelector('[data-bt="q"]'); if (i) i.focus(); } });
   h += '<details class="card pad"><summary><b>Paste rows from Excel</b></summary><div class="note" style="margin:8px 0">One row per article: <b>Store, Item code, Qty</b> (tab or comma). Optional 4th column: ' + (RET ? 'Return No' : 'Request No') + '.</div><textarea data-bt="paste" rows="5">' + esc(f.paste || '') + '</textarea><button class="btn" data-a="btPaste" style="margin-top:8px">Add pasted rows</button></details>';
   const rows = f.groups.flatMap(g => g.items.map(it => ({ g, it })));
   if (rows.length) h += '<div class="sect">Preview · ' + rows.length + ' articles · ' + f.groups.length + (RET ? ' returns' : ' requests') + '</div><div class="card tblwrap"><table><tr><th>' + (RET ? 'Return' : 'Request') + '</th><th>Store</th><th>Item</th><th>Qty</th><th>' + (RET ? 'By employee' : 'Receiver') + '</th>' + (RET ? '' : '<th>Slip</th>') + '</tr>' +
     rows.map(({ g, it }) => '<tr><td><b>' + esc(g.req) + '</b></td><td>' + esc(g.store) + '</td><td>' + esc(it.name) + ' <span class="note mono">' + esc(it.code) + '</span></td><td' + (parseFloat(it.qty) > 0 ? '' : ' style="color:var(--noInk);font-weight:700"') + '>' + esc(it.qty || 'missing') + '</td><td>' + esc(g.rcv || '–') + (g.rcv && rcvName(g.rcv) ? ' ' + esc(rcvName(g.rcv)) : '') + '</td>' + (RET ? '' : '<td>' + esc(g.slip || '–') + '</td>') + '</tr>').join('') + '</table></div>';
   const bad = f.groups.find(g => !g.req || (RET ? S.returns.some(r => String(r.no).toUpperCase() === String(g.req).toUpperCase()) : S.lines.some(l => l.req === g.req)) || f.groups.filter(x => x.req === g.req).length > 1);
   if (bad) h += '<div class="err">' + (RET ? 'Return' : 'Request') + ' No ' + esc(bad.req) + ' is empty or already used.</div>';
-  const badRcv = RET && f.groups.find(g => !/^\d{6}$/.test(g.rcv || ''));
+  const badRcv = RET && f.groups.find(g => !validRcv(g.rcv || ''));
   if (badRcv) h += '<div class="err">' + esc(badRcv.store) + ': By employee needs 6 digits.</div>';
   const ok = rows.length && !bad && !badRcv && rows.every(({ it }) => parseFloat(it.qty) > 0);
   h += '<button class="btn main full" data-a="btSave"' + (ok ? '' : ' disabled') + '>' + (RET ? 'Save ' + f.groups.length + ' return' + (f.groups.length > 1 ? 's' : '') + ' · ' : 'Save all · ') + rows.length + ' articles</button>';
@@ -1653,7 +1666,7 @@ function shMslips() {
   h += '<div class="card pad col" style="gap:10px"><div class="row"><b class="ttl" style="font-size:17px">Add slip ' + (sl.length + 1) + '</b><span class="stag man" style="position:static">Manual</span></div>' +
     '<div class="grid2"><label class="f">Slip No<input type="text" data-f="slip" value="' + esc(f.slip) + '" class="mono" autocapitalize="characters"></label><label class="f">Serial No<input type="text" data-f="serial" value="' + esc(f.serial) + '" class="mono" inputmode="numeric"></label></div>' +
     '<div class="grid2"><label class="f">Date<input type="date" data-f="date" value="' + esc(f.date) + '"></label><label class="f">Time<input type="time" data-f="time" value="' + esc(f.time) + '"></label></div>' +
-    '<label class="f">Receiver (6 digits)<input type="text" data-f="rcv" value="' + esc(f.rcv) + '" class="mono" inputmode="numeric" maxlength="6"></label>' +
+    '<label class="f">Receiver (GA or E code)<input type="text" data-f="rcv" value="' + esc(f.rcv) + '" class="mono" inputmode="numeric" maxlength="6"></label>' +
     '<div class="grid2"><label class="f">Entered by<input type="text" data-f="byName" value="' + esc(f.byName) + '"></label><label class="f">Emp code<input type="text" data-f="byEmp" value="' + esc(f.byEmp) + '" autocapitalize="characters"></label></div>' +
     '<div class="row"><b>Articles in this slip</b><button class="btn sm ghost" data-a="msAll">' + (W.every(l => f.pick[l.id]) ? 'Untick all' : 'Tick all') + '</button></div>' +
     W.map(l => '<label class="chk" style="min-height:44px;gap:12px"><input type="checkbox" data-a="markPick" data-v="' + l.id + '"' + (f.pick[l.id] ? ' checked' : '') + '><span style="flex:1"><b>' + esc(itemName(l.code)) + '</b><span class="note mono" style="display:block">' + esc(l.code) + '</span></span><b class="qty">' + num(l.qty) + ' ' + esc(itemUom(l.code)) + '</b></label>').join('') +
@@ -1666,7 +1679,7 @@ function shManReq() {
   h += '<div class="note">For requests done outside the app. No item details needed: just the slips, serials and article counts.</div>';
   h += '<div class="card pad col"><div class="grid2"><label class="f">Request No<input type="text" data-mr="req" value="' + esc(f.req) + '" class="mono"' + (f._new ? '' : ' disabled') + '></label><label class="f">Request date<input type="date" data-mr="date" value="' + esc(f.date) + '"></label></div>' +
     '<label class="f">Store</label>' + pickBtn('mrStore', { title: 'Store', search: true, full: true, placeholder: 'Choose store', opts: allStores().map(x => [x, x]), val: f.store, set: v => { ui.form.store = v; const d = S.stores[v] || {}; if (!ui.form.rcv && d.rcv) { ui.form.rcv = d.rcv; ui.form.rname = d.rname || ''; } renderSheet(); } }) +
-    '<div class="grid2"><label class="f">Issued to (6 digits)<input type="text" data-mr="rcv" value="' + esc(f.rcv) + '" class="mono" inputmode="numeric" maxlength="6"></label><label class="f">Receiver name<input type="text" data-mr="rname" value="' + esc(f.rname) + '"></label></div>' +
+    '<div class="grid2"><label class="f">Issued to (GA or E code)<input type="text" data-mr="rcv" value="' + esc(f.rcv) + '" class="mono" inputmode="numeric" maxlength="6"></label><label class="f">Receiver name<input type="text" data-mr="rname" value="' + esc(f.rname) + '"></label></div>' +
 
     '<label class="f">Total articles in the request<input type="number" inputmode="numeric" data-mr="total" value="' + esc(f.total) + '" placeholder="e.g. 14"></label></div>';
   h += '<div class="sect">Slips (' + f.slips.length + ')</div>';
@@ -1721,7 +1734,7 @@ function shRetBatch() {
     const pn = (() => { const used = []; for (let k = 0; k <= gi; k++) used.push(nextReturnNo(f.recvDate, used)); return used[gi]; })();
     h += '<div class="card pad col" style="gap:10px;box-shadow:inset 4px 0 0 #5B9BFF"><div class="row"><b>Return ' + (gi + 1) + ' · <span class="mono" style="color:#2F6FE0">' + esc(pn) + '</span></b><button class="xbtn" data-a="rbDelG" data-v="' + gi + '" aria-label="Remove">' + ico('x', 16) + '</button></div>' +
       '<label class="f">Store (returned from)<input type="text" data-rb="' + gi + '|store" value="' + esc(g.store) + '" list="rbStores" autocapitalize="characters" placeholder="e.g. LC MESS"></label>' +
-      '<label class="f">By employee (6 digits)<input type="text" data-rb="' + gi + '|by" value="' + esc(g.by) + '" class="mono" inputmode="numeric" maxlength="6"></label>' +
+      '<label class="f">By employee (GA or E code)<input type="text" data-rb="' + gi + '|by" value="' + esc(g.by) + '" class="mono" inputmode="numeric" maxlength="6"></label>' +
       g.rows.map((r, ri) => '<div class="rbrow"><input type="text" data-rbr="' + gi + '|' + ri + '|code" value="' + esc(r.code) + '" class="mono" placeholder="Item code" autocapitalize="characters"><input type="number" inputmode="decimal" data-rbr="' + gi + '|' + ri + '|qty" value="' + esc(r.qty) + '" placeholder="Qty"><button class="xbtn" data-a="rbDelR" data-v="' + gi + '|' + ri + '" aria-label="Remove item">' + ico('x', 14) + '</button><span class="rbname">' + (r.code && S.stock[String(r.code).toUpperCase()] ? esc(itemName(String(r.code).toUpperCase())) + ' · ' + esc(itemUom(String(r.code).toUpperCase())) : r.code ? 'code not in stock list' : '') + '</span></div>').join('') +
       '<button class="btn sm ghost" data-a="rbAddR" data-v="' + gi + '">+ Item</button>' +
       (g.store ? '<div class="note mono">' + esc(retRemark({ store: g.store, recvDate: f.recvDate })) + '</div>' : '') + '</div>';
@@ -1805,6 +1818,7 @@ window.onSiteEvent = function (raw) {
   else if (e.type === 'progress' && e.code && isFinite(e.stock)) {
     if (S.stock[e.code] && Math.abs(S.stock[e.code].qty - e.stock) > 1e-6) { S.stock[e.code].qty = e.stock; save(true); }
   } else if (e.type === 'submitted') { recordSubmit(e); }
+  else if (e.type === 'names') { S.cuimsNames = Object.assign(S.cuimsNames || {}, e.names || {}); const n = Object.keys(e.names || {}).length, miss = (e.missing || []).length; save(); render(); renderSheet(); toast(n + ' name' + (n === 1 ? '' : 's') + ' saved from CUIMS' + (miss ? ' · ' + miss + ' code' + (miss > 1 ? 's' : '') + ' not in the CUIMS list: ' + e.missing.map(rcvLabel).join(', ') : '') + '.'); }
   else if (e.type === 'verified') { if (e.scope && /^link/.test(e.scope.type)) { buildLinkProposal(e); toast('CUIMS serials read. Check and save.'); } else { buildVerifyReport(e); toast('Verification finished.'); } }
   else if (e.type === 'cancelled') { let jk = ''; try { jk = (JSON.parse(N.jobGet() || '{}') || {}).kind || ''; } catch (x) {} toast(jk === 'verify' ? 'Verification stopped. Nothing on CUIMS was changed.' : 'Entry cancelled. Nothing was submitted.'); if (N) N.showApp(); }
 };
@@ -2221,7 +2235,7 @@ function buildVerifyReport(e) {
     const ms = [...new Set(r.multi || [])]; if (ms.length > 1) add({ key, label, kind: 'multi', serials: ms });
     if (ent && sh.pa && vNorm(sh.pa) !== vNorm(ent.store)) add({ key, label, kind: 'store', app: ent.store, cuims: sh.pa });
     const appR = String(ent ? ent.rcv : ret ? ret.by : '');
-    const okCode = x => /^\d{6}$/.test(String(x || ''));
+    const okCode = x => validRcv(String(x || ''));
     const storeSide = ret ? new Set([String(sh.rcv || ''), String((r.list && r.list.rcv) || '')].filter(okCode)) : new Set();
     const cand = ret ? [...new Set([sh.emp].concat((r.list && r.list.codes) || [], sh.allCodes || []).filter(okCode).map(String))].filter(c => !storeSide.has(c) || c === String(sh.emp))
       : [...new Set([].concat((r.list && r.list.rcv) || [], sh.rcv || []).filter(okCode).map(String))];
@@ -2255,13 +2269,13 @@ function vFinding(f, rep) {
     serial: ['Serial missing in app', 'c-gd', 'CUIMS has Serial ' + f.val],
     multi: ['Slip used more than once', 'c-no', 'Serials ' + (f.serials || []).join(', ')],
     store: ['Store differs', 'c-no', 'App: ' + esc(f.app) + ' · CUIMS Project Area: ' + esc(f.cuims)],
-    rcv: [f.ret ? 'By employee differs' : 'Receiver differs', 'c-no', 'App: GA' + esc(f.app) + (rcvName(f.app) ? ' ' + esc(rcvName(f.app)) : '') + ' · CUIMS: ' + (/^\d{6}$/.test(String(f.cuims || '')) ? 'GA' + esc(f.cuims) + (rcvName(f.cuims) ? ' ' + esc(rcvName(f.cuims)) : '') : 'not readable') + ((f.all || []).length > 1 ? ' · codes on CUIMS: ' + f.all.map(c => 'GA' + c).join(', ') : '')],
+    rcv: [f.ret ? 'By employee differs' : 'Receiver differs', 'c-no', 'App: ' + esc(rcvLabel(f.app)) + (rcvName(f.app) ? ' ' + esc(rcvName(f.app)) : '') + ' · CUIMS: ' + (validRcv(String(f.cuims || '')) ? esc(rcvLabel(f.cuims)) + (rcvName(f.cuims) ? ' ' + esc(rcvName(f.cuims)) : '') : 'not readable') + ((f.all || []).length > 1 ? ' · codes on CUIMS: ' + f.all.map(c => rcvLabel(c)).join(', ') : '')],
     type: ['Not a return on CUIMS', 'c-no', 'CUIMS type: ' + esc(f.cuims)],
     missing: ['Missing on CUIMS', 'c-no', nm(f.code) + ' (' + esc(f.code) + ') ' + num(f.qty) + ' is in the app but not in this serial'],
     qty: ['Qty differs', 'c-gd', nm(f.code) + ' · app ' + num(f.app) + ' · CUIMS ' + num(f.cuims)],
     remark: ['Remark differs', 'c-gd', nm(f.code) + ' · CUIMS: ' + esc(f.cuims)],
     extra: ['Extra on CUIMS', 'c-no', esc(f.name || itemName(f.code)) + ' (' + esc(f.code) + ') ' + num(f.qty) + ' is on CUIMS but not in the app'],
-    notInApp: ['On CUIMS, not in app', 'c-no', (f.isReturn ? 'Return' : 'Issue') + ' Serial ' + esc(f.serial) + ' · Slip ' + esc(f.slip || '–') + ' · ' + esc(f.store || '') + ' · GA' + esc(f.rcv || '–') + ' · ' + (f.items || []).length + ' articles · by ' + esc(f.entryBy || '')] }[f.kind] || ['Note', 'c-gy', ''];
+    notInApp: ['On CUIMS, not in app', 'c-no', (f.isReturn ? 'Return' : 'Issue') + ' Serial ' + esc(f.serial) + ' · Slip ' + esc(f.slip || '–') + ' · ' + esc(f.store || '') + ' · ' + esc(rcvLabel(f.rcv || '–')) + ' · ' + (f.items || []).length + ' articles · by ' + esc(f.entryBy || '')] }[f.kind] || ['Note', 'c-gy', ''];
   const fix = f.fixed ? '<span class="sc ok">fixed</span>' : ({ serial: 'Save Serial ' + f.val + ' in app', qty: 'Use CUIMS qty in app', missing: 'Make it pending again', extra: 'Add to app as issued', store: 'Use CUIMS store in app', rcv: f.ret ? 'Use CUIMS employee in app' : 'Use CUIMS receiver in app', notInApp: 'Add as manual slip' }[f.kind]);
   if (f.kind === 'notInApp' && (f.ignored || isIgnored(f.serial, f.entryBy))) return '<div class="vf"><div class="row">' + pill('Ignored', 'c-gy') + '</div><div class="vft">Serial ' + esc(f.serial) + ' is on your ignore list. It will not be checked again.</div></div>';
   const ign = f.kind === 'notInApp' && !f.fixed ? '<div class="grid2" style="margin-top:2px"><button class="btn sm ghost" data-a="vfIgn" data-v="' + rep.id + '|' + f.id + '">Ignore this serial</button>' + (personCode(f.entryBy) ? '<button class="btn sm ghost" data-a="vfIgnP" data-v="' + rep.id + '|' + f.id + '">Ignore all by ' + esc(personCode(f.entryBy)) + '</button>' : '<span></span>') + '</div>' : '';
@@ -2270,7 +2284,7 @@ function vFinding(f, rep) {
 }
 function vReport() {
   const R = (S.verifyReports || []).find(r => r.id === ui.vrep) || (S.verifyReports || [])[0];
-  if (R) R.findings = R.findings.filter(f => !(f.kind === 'multi' && new Set(f.serials || []).size < 2) && !(f.kind === 'rcv' && !/^\d{6}$/.test(String(f.cuims || ''))));
+  if (R) R.findings = R.findings.filter(f => !(f.kind === 'multi' && new Set(f.serials || []).size < 2) && !(f.kind === 'rcv' && !validRcv(String(f.cuims || ''))));
   let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Verification</h1><div class="sub">' + (R ? esc(R.title) + ' · checked ' + esc(fmtDT(R.at)) : 'No checks yet') + '</div></div></header><main>';
   if (!R) return h + '<div class="card pad note">Use "Verify on CUIMS" on a request, a return, or a whole day.</div></main>';
   const bad = R.findings.filter(f => f.kind !== 'ok' && !f.fixed && !fIgnored(f) && !(f.kind === 'notInApp' && isIgnored(f.serial, f.entryBy))), ok = R.findings.filter(f => f.kind === 'ok'), nIgn = R.findings.filter(fIgnored).length;
@@ -2285,7 +2299,7 @@ function vReport() {
     const D = (R.details || {})[L[0].key], dk = R.id + ':' + L[0].key, op = !!(ui.vdOpen || {})[dk];
     let det = '';
     if (D) { det = '<button class="leftbtn retl" data-a="vdTog" data-v="' + esc(dk) + '" style="border-radius:16px"><span>' + (op ? 'Hide' : 'Show') + ' CUIMS details · ' + D.items.length + ' articles</span>' + ico(op ? 'up' : 'down', 18) + '</button>';
-      if (op) det += '<div class="vdet"><div class="vdgrid">' + [['Serial', D.serial], ['Slip No', D.slip], ['Entry date', D.date], ['Entered by', D.entryBy], [D.isRet ? 'By employee (CUIMS)' : 'Received by', (D.isRet ? (D.emp || (D.codes || [])[0]) : D.rcv) ? 'GA' + (D.isRet ? (D.emp || D.codes[0]) : D.rcv) + (rcvName(D.isRet ? (D.emp || D.codes[0]) : D.rcv) ? ' ' + rcvName(D.isRet ? (D.emp || D.codes[0]) : D.rcv) : '') : ''], [D.isRet ? 'Other codes on CUIMS' : '', D.isRet ? (D.codes || []).filter(c => c !== (D.emp || D.codes[0])).map(c => 'GA' + c).join(', ') : ''], ['Project Area', D.pa], ['Transaction', [D.type, D.issueType].filter(Boolean).join(' · ')], ['Department', D.dept]].filter(x => x[1]).map(x => '<div><span>' + x[0] + '</span><b>' + esc(x[1]) + '</b></div>').join('') + '</div>' +
+      if (op) det += '<div class="vdet"><div class="vdgrid">' + [['Serial', D.serial], ['Slip No', D.slip], ['Entry date', D.date], ['Entered by', D.entryBy], [D.isRet ? 'By employee (CUIMS)' : 'Received by', (D.isRet ? (D.emp || (D.codes || [])[0]) : D.rcv) ? rcvLabel(D.isRet ? (D.emp || D.codes[0]) : D.rcv) + (rcvName(D.isRet ? (D.emp || D.codes[0]) : D.rcv) ? ' ' + rcvName(D.isRet ? (D.emp || D.codes[0]) : D.rcv) : '') : ''], [D.isRet ? 'Other codes on CUIMS' : '', D.isRet ? (D.codes || []).filter(c => c !== (D.emp || D.codes[0])).map(c => rcvLabel(c)).join(', ') : ''], ['Project Area', D.pa], ['Transaction', [D.type, D.issueType].filter(Boolean).join(' · ')], ['Department', D.dept]].filter(x => x[1]).map(x => '<div><span>' + x[0] + '</span><b>' + esc(x[1]) + '</b></div>').join('') + '</div>' +
         '<div class="tblwrap"><table><tr><th>Code</th><th>Item</th><th>CUIMS qty</th><th>App qty</th><th>Remarks</th></tr>' +
         D.items.map(i => '<tr><td class="mono">' + esc(i.code) + '</td><td>' + esc(i.name) + '</td><td><b>' + num(i.qty) + '</b> ' + esc(itemUom(i.code)) + '</td><td' + (i.app == null ? ' style="color:var(--noInk);font-weight:700">not in app' : Math.abs(i.app - i.qty) > 1e-6 ? ' style="color:#B45309;font-weight:700">' + num(i.app) : ' style="color:#0B5E3D;font-weight:700">' + num(i.app) + ' ✓') + '</td><td>' + esc(i.remark || '–') + '</td></tr>').join('') +
         D.missing.map(m => '<tr style="background:#FFF0F3"><td class="mono">' + esc(m.code) + '</td><td>' + esc(itemName(m.code)) + '</td><td style="color:var(--noInk);font-weight:700">missing</td><td><b>' + num(m.qty) + '</b></td><td>–</td></tr>').join('') + '</table></div></div>'; }
@@ -2356,7 +2370,7 @@ function vLinkReview() {
     const issued = (p.rows || []).filter(r => r.got > 0 && Math.abs(r.got - r.want) < 1e-6).length, part = (p.rows || []).filter(r => r.got > 0 && r.got < r.want - 1e-6).length, over = (p.rows || []).filter(r => r.got > r.want + 1e-6).length, left = (p.rows || []).filter(r => !r.got).length;
     h += '<div class="card pad col" style="gap:10px' + (p.on && p.txs.length ? ';box-shadow:inset 4px 0 0 #2F6FE0' : '') + '"><div class="row"><span><span class="reqno sm" data-req="' + esc(p.req) + '">' + esc(p.req) + '</span> <b>' + esc(p.store) + '</b></span>' + (p.txs.length ? '<label class="chk" style="min-height:0"><input type="checkbox" data-a="lkOn" data-v="' + pi + '"' + (p.on ? ' checked' : '') + '> Save</label>' : pill('No serial found', 'c-gd')) + '</div>';
     if (p.txs.length) {
-      h += '<div class="slips" style="padding:0">' + p.txs.map(t => '<div class="slipline cu"><span class="stag cu">CUIMS</span><span class="sl">' + esc(t.slip || '–') + '</span>' + serFmt(t.serial) + '<span class="st">' + esc(fmtShort(t.iso)) + (t.time ? ' · ' + esc(t.time) : '') + ' · GA' + esc(t.rcv || '–') + ' · ' + esc(String(t.by).split('(')[0].trim()) + (vNorm(t.pa) !== vNorm(p.store) ? ' · <b style="color:#B4123B">Project Area ' + esc(t.pa) + '</b>' : '') + '</span></div>').join('') + '</div>';
+      h += '<div class="slips" style="padding:0">' + p.txs.map(t => '<div class="slipline cu"><span class="stag cu">CUIMS</span><span class="sl">' + esc(t.slip || '–') + '</span>' + serFmt(t.serial) + '<span class="st">' + esc(fmtShort(t.iso)) + (t.time ? ' · ' + esc(t.time) : '') + ' · ' + esc(rcvLabel(t.rcv || '–')) + ' · ' + esc(String(t.by).split('(')[0].trim()) + (vNorm(t.pa) !== vNorm(p.store) ? ' · <b style="color:#B4123B">Project Area ' + esc(t.pa) + '</b>' : '') + '</span></div>').join('') + '</div>';
       h += '<div class="scrow">' + (issued ? '<span class="sc ok">' + issued + ' issued</span>' : '') + (part ? '<span class="sc gd">' + part + ' partly</span>' : '') + (over ? '<span class="sc no">' + over + ' more than asked</span>' : '') + (left ? '<span class="sc no">' + left + ' still pending</span>' : '') + (p.extra.length ? '<span class="sc no">' + p.extra.length + ' not in request</span>' : '') + '</div>';
       h += '<div class="tblwrap"><table><tr><th>Item</th><th>Asked</th><th>CUIMS</th><th>Serial</th><th>Result</th></tr>' + p.rows.map(r => '<tr><td><b>' + esc(itemName(r.code)) + '</b><div class="note mono">' + esc(r.code) + '</div></td><td>' + num(r.want) + '</td><td><b>' + (r.got ? num(r.got) : '–') + '</b></td><td class="mono">' + esc(r.serials.join(', ') || '–') + '</td><td>' + (!r.got ? '<span class="sc no">pending</span>' : r.got < r.want - 1e-6 ? '<span class="sc gd">' + num(r.want - r.got) + ' stays pending</span>' : r.got > r.want + 1e-6 ? '<span class="sc no">over by ' + num(r.got - r.want) + '</span>' : '<span class="sc ok">issued</span>') + '</td></tr>').join('') +
         p.extra.map(x => '<tr style="background:#FFF0F3"><td><b>' + esc(x.name || itemName(x.code)) + '</b><div class="note mono">' + esc(x.code) + '</div></td><td>–</td><td><b>' + num(x.qty) + '</b></td><td class="mono">' + esc(x.serial) + '</td><td><span class="sc no">not in request</span></td></tr>').join('') + '</table></div>';
@@ -2470,23 +2484,25 @@ function jvStockFile2(b64, name) {
   } catch (e) { toast('Could not read the downloaded stock file: ' + e.message); }
 }
 function rcvBook() {
-  const m = {}; const put = (c, n) => { c = String(c || '').replace(/\D/g, ''); n = String(n || '').trim(); if (c.length === 6 && n && !/^GA\d+$/i.test(n)) m[c] = n; };
+  const m = {}; const put = (c, n) => { c = normRcv(c); n = String(n || '').trim(); if (c && n && !/^(GA|E)\d+$/i.test(n)) m[c] = n; };
   Object.values(S.stores || {}).forEach(x => put(x.rcv, x.rname));
   (S.entries || []).forEach(e => put(e.rcv, e.rname)); (S.returns || []).forEach(r => put(r.by, r.byName));
   Object.values(S.manReqs || {}).forEach(x => put(x.rcv, x.rname));
   Object.entries(S.rnames || {}).forEach(([c, n]) => put(c, n));
   return m;
 }
-function rcvName(code) { return rcvBook()[String(code || '').replace(/\D/g, '')] || ''; }
+function rcvName(code) { const k = normRcv(code); return (S.cuimsNames || {})[k] || rcvBook()[k] || ''; }
 const RCV_SEL = 'input[data-rb$="|by"],input[data-in="rcv"],input[data-nr="rcv"],input[data-mr="rcv"],input[data-f="rcv"],input[data-store-rcv],input[data-bg$="|rcv"],input[data-br$="|rcv"],input[data-ef="rcv"],input[data-rf="by"]';
 function rcvHint(inp) {
+  if (!inp.dataset.rcvx) { inp.dataset.rcvx = '1'; inp.setAttribute('inputmode', 'text'); inp.setAttribute('maxlength', '8'); inp.setAttribute('autocapitalize', 'characters'); inp.setAttribute('placeholder', inp.getAttribute('placeholder') || 'e.g. 601051 or E1234'); }
   let h = inp.parentNode.querySelector('.rcvname'); if (!h) { h = document.createElement('span'); h.className = 'rcvname'; inp.insertAdjacentElement('afterend', h); }
-  const v = String(inp.value || '').replace(/\D/g, '');
-  if (!v) { h.textContent = ''; h.className = 'rcvname'; return; }
-  if (v.length < 6) { h.textContent = 'Type all 6 digits'; h.className = 'rcvname wait'; return; }
-  const n = rcvName(v);
-  h.className = 'rcvname ' + (n ? 'ok' : 'new'); h.textContent = n ? 'GA' + v + ' · ' + n : 'GA' + v + ' · name not saved yet (CUIMS will show it)';
-  const mr = document.querySelector('input[data-mr="rname"]'); if (n && mr && !mr.value && ui.form) { mr.value = n; ui.form.rname = n; }
+  const raw = String(inp.value || '').trim(); if (!raw) { h.textContent = ''; h.className = 'rcvname'; return; }
+  const n = normRcv(raw);
+  if (!n) { h.className = 'rcvname new'; h.innerHTML = 'Type 6 digits for GA, or up to 5 digits for an E code'; return; }
+  const nm = rcvName(n), ver = (S.cuimsNames || {})[n];
+  h.className = 'rcvname ' + (nm ? 'ok' : 'new');
+  h.innerHTML = '<span class="ckind ' + (/^E/.test(n) ? 'e' : 'ga') + '">' + rcvKind(n) + '</span> <b>' + esc(rcvLabel(n)) + '</b> · ' + (nm ? esc(nm) + (ver ? ' <span class="cver">✓ CUIMS</span>' : '') : 'name not known yet') + ' <button type="button" class="ckbtn" data-a="nameLookup" data-v="' + esc(n) + '">' + (ver ? 'Recheck on CUIMS' : 'Check on CUIMS') + '</button>';
+  const mr = document.querySelector('input[data-mr="rname"]'); if (nm && mr && !mr.value && ui.form) { mr.value = nm; ui.form.rname = nm; }
 }
 function enhanceRcv(root) { if (root) root.querySelectorAll(RCV_SEL).forEach(rcvHint); }
 document.addEventListener('input', e => { if (e.target.matches && e.target.matches(RCV_SEL)) rcvHint(e.target); }, true);
@@ -2547,7 +2563,7 @@ function shBulk() {
   f.rows.forEach((r, i) => {
     h += '<div class="card pad col" style="gap:8px"><div class="row"><b>' + esc(r.store) + '</b><span class="note">Request ' + esc(r.req) + ' · ' + r.n + ' open</span></div>' +
       '<div class="grid2"><label class="f">Slip No<input type="text" data-br="' + i + '|slip" value="' + esc(r.slip) + '" class="mono" autocapitalize="characters"></label><label class="f">Request No<input type="text" data-br="' + i + '|newReq" value="' + esc(r.newReq) + '" class="mono"></label></div>' +
-      '<div class="grid2"><label class="f">Request date<input type="date" data-br="' + i + '|date" value="' + esc(r.date) + '"></label><label class="f">Receiver (6 digits)<input type="text" data-br="' + i + '|rcv" value="' + esc(r.rcv) + '" class="mono" inputmode="numeric" maxlength="6"></label></div></div>';
+      '<div class="grid2"><label class="f">Request date<input type="date" data-br="' + i + '|date" value="' + esc(r.date) + '"></label><label class="f">Receiver (GA or E code)<input type="text" data-br="' + i + '|rcv" value="' + esc(r.rcv) + '" class="mono" inputmode="numeric" maxlength="6"></label></div></div>';
   });
   h += '<button class="btn main full" data-a="bulkSave">Save all</button>';
   return h;
@@ -2557,7 +2573,7 @@ function shMark() {
   let h = '<div class="row"><h2>Mark as issued</h2><button class="btn sm ghost" data-a="closeSheet">Close</button></div>';
   h += '<div class="note">Use this when the entry is already submitted on CUIMS but the app did not record it. Stock and pending update like a normal entry.</div>';
   h += '<div class="grid2"><label class="f">Slip No<input type="text" data-f="slip" value="' + esc(f.slip) + '" class="mono" autocapitalize="characters"></label><label class="f">Serial No<input type="text" data-f="serial" value="' + esc(f.serial) + '" class="mono" inputmode="numeric"></label></div>';
-  h += '<div class="grid2"><label class="f">Receiver (6 digits)<input type="text" data-f="rcv" value="' + esc(f.rcv) + '" class="mono" inputmode="numeric" maxlength="6"></label><label class="f">Date<input type="date" data-f="date" value="' + esc(f.date) + '"></label></div>';
+  h += '<div class="grid2"><label class="f">Receiver (GA or E code)<input type="text" data-f="rcv" value="' + esc(f.rcv) + '" class="mono" inputmode="numeric" maxlength="6"></label><label class="f">Date<input type="date" data-f="date" value="' + esc(f.date) + '"></label></div>';
   h += '<div class="sect">Articles in this entry</div><div class="card">' + f.lines.map(l => '<label class="line chk" style="flex-direction:row;gap:10px"><input type="checkbox" data-a="markPick" data-v="' + l.id + '"' + (f.pick[l.id] ? ' checked' : '') + '><span><b>' + esc(itemName(l.code)) + '</b><br><span class="note mono">' + esc(l.code) + ' · ' + num(l.qty) + ' ' + esc(itemUom(l.code)) + '</span></span></label>').join('') + '</div>';
   h += '<button class="btn main full" data-a="markSave">Save as issued</button>';
   return h;
@@ -2575,7 +2591,7 @@ function shEditReq() {
 }
 
 /* ---------------- lock ---------------- */
-const GUARDED = new Set(['lkSave', 'vfIgnF', 'vfUnIgn', 'ignDelE', 'vfIgn', 'vfIgnP', 'ignDel', 'ignAddS', 'ignAddP', 'vfFix', 'retStartAll', 'dcRetFmt', 'dcRetFix', 'clClear', 'retCuims', 'saveReturnCuims', 'rbSave', 'stkEdit', 'stkRen', 'stkDel', 'stkAdd', 'mgDone', 'mgPend', 'mgDel', 'mgDelSlipPend', 'paperAddFrom', 'advIssue', 'paperAdd', 'mrSave', 'mrRemove', 'manReqToggle', 'msSave', 'artQty', 'artHold', 'artDel', 'artsBHold', 'artsBRel', 'artsBDel', 'testToggle', 'testClear', 'dcRenum', 'dcMerge', 'dcKeepFirst', 'dcDate', 'dcBad', 'renumReq', 'impRenum', 'impDrop', 'credSave', 'credDel', 'corrOpen', 'corrSave', 'bulkEdit', 'bulkSave', 'dropReq', 'dropStore', 'editReq', 'saveReq', 'markDone', 'markSave', 'newManual', 'saveEntry', 'delEntry', 'newReturn', 'saveReturn', 'delReturn',
+const GUARDED = new Set(['nameLookup', 'lkSave', 'vfIgnF', 'vfUnIgn', 'ignDelE', 'vfIgn', 'vfIgnP', 'ignDel', 'ignAddS', 'ignAddP', 'vfFix', 'retStartAll', 'dcRetFmt', 'dcRetFix', 'clClear', 'retCuims', 'saveReturnCuims', 'rbSave', 'stkEdit', 'stkRen', 'stkDel', 'stkAdd', 'mgDone', 'mgPend', 'mgDel', 'mgDelSlipPend', 'paperAddFrom', 'advIssue', 'paperAdd', 'mrSave', 'mrRemove', 'manReqToggle', 'msSave', 'artQty', 'artHold', 'artDel', 'artsBHold', 'artsBRel', 'artsBDel', 'testToggle', 'testClear', 'dcRenum', 'dcMerge', 'dcKeepFirst', 'dcDate', 'dcBad', 'renumReq', 'impRenum', 'impDrop', 'credSave', 'credDel', 'corrOpen', 'corrSave', 'bulkEdit', 'bulkSave', 'dropReq', 'dropStore', 'editReq', 'saveReq', 'markDone', 'markSave', 'newManual', 'saveEntry', 'delEntry', 'newReturn', 'saveReturn', 'delReturn',
   'rmStore', 'addStore', 'wipe', 'restore', 'bkRestore', 'bkDel', 'bkKeep', 'bkSave', 'bkNoteSave', 'photo', 'photoDel', 'mode', 'lockToggle', 'syncAuto', 'mgrToggle', 'moveStore', 'saveUrls', 'resetZoom', 'hold', 'cropSave']);
 let pendingAuth = null;
 function askUnlock(after) {
@@ -2635,7 +2651,7 @@ document.addEventListener('click', async ev => {
     case 'vrExportItems': openExport('verifyItems'); break;
     case 'vfFix': { const [rid, fid] = v.split('|'); const R = (S.verifyReports || []).find(r => r.id === rid); const f = R && R.findings.find(x => x.id === fid); if (!f || f.fixed) break;
       const en = S.entries.find(x => 'e' + x.id === f.key);
-      const q = { serial: 'Save Serial ' + f.val + ' on slip ' + (en ? en.slip : '') + '?', qty: 'Change ' + itemName(f.code) + ' from ' + num(f.app) + ' to ' + num(f.cuims) + ' in the app?', missing: 'Remove ' + itemName(f.code) + ' from this slip in the app and make it pending again?', extra: 'Add ' + itemName(f.code) + ' ' + num(f.qty) + ' to this slip in the app as issued?', store: 'Change the store in the app to ' + f.cuims + '?', rcv: 'Change the receiver in the app to GA' + f.cuims + '?', notInApp: 'Add Serial ' + f.serial + ' to the app as a manual ' + (f.isReturn ? 'return' : 'slip') + '?' }[f.kind];
+      const q = { serial: 'Save Serial ' + f.val + ' on slip ' + (en ? en.slip : '') + '?', qty: 'Change ' + itemName(f.code) + ' from ' + num(f.app) + ' to ' + num(f.cuims) + ' in the app?', missing: 'Remove ' + itemName(f.code) + ' from this slip in the app and make it pending again?', extra: 'Add ' + itemName(f.code) + ' ' + num(f.qty) + ' to this slip in the app as issued?', store: 'Change the store in the app to ' + f.cuims + '?', rcv: 'Change the receiver in the app to ' + rcvLabel(f.cuims) + '?', notInApp: 'Add Serial ' + f.serial + ' to the app as a manual ' + (f.isReturn ? 'return' : 'slip') + '?' }[f.kind];
       if (!q || !(await uiConfirm(q, 'Fix in app'))) break;
       undoArm('vfFix');
       if (f.kind === 'serial' && en) { en.serial = f.val; S.lines.forEach(l => (l.issued || []).forEach(z => { if (z.slip === en.slip && !z.serial) z.serial = f.val; })); }
@@ -2645,7 +2661,7 @@ document.addEventListener('click', async ev => {
         if (l) { l.status = 'issued'; l.issued.push({ slip: en.slip, serial: en.serial || '', at: en.at }); }
         en.items.push({ lineId: l ? l.id : 0, req, code: f.code, name: itemName(f.code), uom: itemUom(f.code), qty: f.qty, remark: '' }); }
       if (f.kind === 'store' && en) en.store = f.cuims;
-      if (f.kind === 'rcv' && !/^\d{6}$/.test(String(f.cuims || ''))) { toast('CUIMS code is not readable, nothing changed.'); break; }
+      if (f.kind === 'rcv' && !validRcv(String(f.cuims || ''))) { toast('CUIMS code is not readable, nothing changed.'); break; }
       if (f.kind === 'rcv' && en) en.rcv = f.cuims;
       if (f.kind === 'rcv' && f.ret) { const rt = S.returns.find(x => 'r' + x.id === f.key); if (rt) { rt.by = f.cuims; rt.byName = rcvName(f.cuims); } }
       if (f.kind === 'notInApp') { const d = (String(f.date || '').match(/(\d+)\/(\d+)\/(\d{4})/) || []); const iso = d.length ? d[3] + '-' + String(d[1]).padStart(2, '0') + '-' + String(d[2]).padStart(2, '0') : today();
@@ -2670,6 +2686,10 @@ document.addEventListener('click', async ev => {
         Object.values(byT).forEach(({ t, items }) => { const by = String(t.by || ''); S.entries.push({ id: nid(), slip: t.slip || ('CUIMS-' + t.serial), serial: t.serial, store: p.store, rcv: t.rcv, rname: rcvName(t.rcv), at: new Date(t.iso + 'T' + (t.time || '12:00')).toISOString(), date: t.iso, time: t.time, by: { name: by.split('(')[0].trim(), emp: (by.match(/GA\d{6}/i) || [''])[0].toUpperCase() }, kind: 'cuims', remarks: 'linked from CUIMS', reqs: p.req, items }); });
       });
       save(); ui.view = null; ui.tab = 'reg'; ui.reg.type = 'issue'; render(); toast(P.length + ' requests saved with their CUIMS serials.'); break; }
+    case 'nameLookup': { const codes = v === '*' ? [...new Set([].concat(Object.values(S.stores).map(x => x.rcv), S.returns.map(r => r.by), S.entries.map(e => e.rcv)).map(normRcv).filter(Boolean))] : [normRcv(v)].filter(Boolean);
+      if (!codes.length || !N) break;
+      if (!(await uiConfirm('Check ' + (codes.length === 1 ? rcvLabel(codes[0]) : codes.length + ' codes') + ' on CUIMS? The app only types the code in Received By and reads the names in the list. Nothing is selected or saved on CUIMS.', 'Check names'))) break;
+      N.startJob(JSON.stringify({ id: 'N' + Date.now(), kind: 'names', phase: 'names', slip: 'NAMES', store: 'Receiver names', title: 'Receiver names from CUIMS', codes, idx: 0, names: {}, log: [], tries: {}, queue: false, autoSubmit: false, items: [] })); break; }
     case 'vfIgnF': { const [rid, fid] = v.split('|'); const R = (S.verifyReports || []).find(r => r.id === rid); const f = R && R.findings.find(x => x.id === fid); if (!f) break;
       const note = await uiPrompt('Ignore this error in all future checks? Add a short reason (optional).', '', 'Ignore'); if (note == null) break;
       S.verifyIgnore = S.verifyIgnore || {}; S.verifyIgnore[fSig(f)] = { at: new Date().toISOString(), note: note.trim(), kind: f.kind, label: f.label || f.serial || '', code: f.code || '' }; save(); render(); break; }
@@ -2694,11 +2714,11 @@ document.addEventListener('click', async ev => {
     case 'rbDelG': ui.form.groups.splice(+v, 1); if (!ui.form.groups.length) ui.form.groups.push({ store: '', by: '', rows: [{ code: '', qty: '' }] }); renderSheet(); break;
     case 'rbAddR': ui.form.groups[+v].rows.push({ code: '', qty: '' }); renderSheet(); break;
     case 'rbDelR': { const [g, r] = v.split('|').map(Number); ui.form.groups[g].rows.splice(r, 1); if (!ui.form.groups[g].rows.length) ui.form.groups[g].rows.push({ code: '', qty: '' }); renderSheet(); break; }
-    case 'rbPaste': { const f = ui.form; const G = {}; String(f.paste || '').split(/\r?\n/).forEach(line => { const c = line.split(/\t|,|;/).map(x => x.trim()); if (c.length < 4 || !c[0] || !/^\d{6}$/.test(c[1].replace(/^GA/i, ''))) return; const k = c[0].toUpperCase() + '|' + c[1].replace(/^GA/i, ''); (G[k] = G[k] || { store: c[0].toUpperCase(), by: c[1].replace(/^GA/i, ''), rows: [] }).rows.push({ code: c[2].toUpperCase(), qty: c[3] }); });
+    case 'rbPaste': { const f = ui.form; const G = {}; String(f.paste || '').split(/\r?\n/).forEach(line => { const c = line.split(/\t|,|;/).map(x => x.trim()); if (c.length < 4 || !c[0] || !validRcv(c[1].replace(/^GA/i, ''))) return; const k = c[0].toUpperCase() + '|' + c[1].replace(/^GA/i, ''); (G[k] = G[k] || { store: c[0].toUpperCase(), by: c[1].replace(/^GA/i, ''), rows: [] }).rows.push({ code: c[2].toUpperCase(), qty: c[3] }); });
       const add = Object.values(G); if (!add.length) { toast('Paste rows as: Store, Employee code, Item code, Qty'); break; }
       f.groups = f.groups.filter(g => g.store || g.by || g.rows.some(r => r.code)).concat(add); f.paste = ''; renderSheet(); break; }
     case 'rbSave': { const f = ui.form; const G = f.groups.map(g => ({ store: String(g.store || '').trim().toUpperCase(), by: String(g.by || '').trim(), rows: g.rows.filter(r => r.code && parseFloat(r.qty) > 0) })).filter(g => g.store || g.rows.length);
-      const bad = G.find(g => !g.store || !/^\d{6}$/.test(g.by) || !g.rows.length); if (bad) { toast('Each return needs a store, a 6-digit employee and at least one item.'); break; }
+      const bad = G.find(g => !g.store || !validRcv(g.by) || !g.rows.length); if (bad) { toast('Each return needs a store, a 6-digit employee and at least one item.'); break; }
       if (!G.length) { toast('Add at least one return.'); break; }
       if (!(await uiConfirm('Save ' + G.length + ' return' + (G.length > 1 ? 's' : '') + ' (' + G.reduce((n, g) => n + g.rows.length, 0) + ' items), came on ' + cuimsDate(f.recvDate) + '?', 'Save returns'))) break;
       undoArm('retBatchSave');
@@ -2750,7 +2770,7 @@ document.addEventListener('click', async ev => {
       ui.form = { req: v, store: r.store, date: r.date, rcv: (r.lines.find(l => l.rcv) || {}).rcv || '', slip: (w.find(l => l.slip) || {}).slip || '', remark: (w.find(l => l.remark) || {}).remark || '', items: w.map(l => ({ lineId: l.id, code: l.code, qty: l.qty, name: itemName(l.code), uom: itemUom(l.code) })) };
       ui.sheet = { kind: 'editReq' }; renderSheet(); break; }
     case 'dropReq': if (await uiConfirm('Remove request ' + v + ' (' + ((requests().find(x => x.req === v) || {}).store || '') + ') from the list? Waiting articles are removed; issued ones stay in the records.')) { S.lines.forEach(l => { if (l.req === v && l.status === 'waiting') l.status = 'dropped'; }); save(); ui.view = null; render(); } break;
-    case 'saveReq': { const f = ui.form; if (f.rcv && !/^\d{6}$/.test(f.rcv)) { toast('Receiver must be 6 digits or blank.'); break; }
+    case 'saveReq': { const f = ui.form; if (f.rcv && !validRcv(f.rcv)) { toast('Receiver must be a GA or E code, or blank.'); break; }
       const items = cleanItems(f.items); const keep = new Set(items.filter(i => i.lineId).map(i => i.lineId));
       const sl = (f.slip || '').trim().toUpperCase(); if (sl && !SLIP_RE.test(sl)) { toast('Slip No must be 2–10 characters with a digit.'); break; }
       S.lines.forEach(l => { if (l.req !== f.req) return; l.store = f.store.trim().toUpperCase(); l.date = f.date || l.date; l.rcv = f.rcv || ''; if (l.status === 'waiting') { l.slip = sl; l.remark = (f.remark || '').trim(); } if (l.status === 'waiting' && !keep.has(l.id)) l.status = 'dropped'; });
@@ -2763,7 +2783,7 @@ document.addEventListener('click', async ev => {
       f.rows.forEach(r => { if (r.slip) return; let sl; do { sl = m[1] + String(n).padStart(m[2].length, '0'); n++; } while (used.has(sl.toUpperCase())); used.add(sl.toUpperCase()); r.slip = sl; });
       renderSheet(); break; }
     case 'bulkDate': ui.form.rows.forEach(r => r.date = ui.form.allDate || today()); renderSheet(); break;
-    case 'bulkSave': { const f = ui.form; const bad = f.rows.find(r => (r.slip && !SLIP_RE.test(r.slip)) || (r.rcv && !/^\d{6}$/.test(r.rcv)) || !String(r.newReq || '').trim());
+    case 'bulkSave': { const f = ui.form; const bad = f.rows.find(r => (r.slip && !SLIP_RE.test(r.slip)) || (r.rcv && !validRcv(r.rcv)) || !String(r.newReq || '').trim());
       const reqClash = f.rows.find(r => r.newReq.trim() !== r.req && S.lines.some(l => l.req === r.newReq.trim()));
       if (reqClash) { toast('Request No ' + reqClash.newReq + ' already exists. Use another.'); break; }
       if (bad) { toast('Check ' + bad.store + ': Slip 2–10 chars with a digit, receiver 6 digits.'); break; }
@@ -2777,7 +2797,7 @@ document.addEventListener('click', async ev => {
       ui.sheet = { kind: 'mark' }; renderSheet(); break; }
     case 'markPick': if (t.checked) ui.form.pick[v] = 1; else delete ui.form.pick[v]; break;
     case 'markSave': { const f = ui.form; const slip = (f.slip || '').trim().toUpperCase(); const sp = slipProblem(slip);
-      if (sp) { toast(sp); break; } if (!/^\d{6}$/.test(f.rcv)) { toast('Receiver must be 6 digits.'); break; }
+      if (sp) { toast(sp); break; } if (!validRcv(f.rcv)) { toast('Receiver must be 6 digits (GA) or up to 5 digits (E code).'); break; }
       const ls = f.lines.filter(l => f.pick[l.id]); if (!ls.length) { toast('Tick at least one article.'); break; }
       const at = new Date(f.date + 'T' + timeNow()).toISOString();
       S.entries.push({ id: nid(), slip, serial: (f.serial || '').trim(), store: f.store, rcv: f.rcv, rname: rname(f.rcv), at, date: f.date, time: timeNow(), by: meTag(), kind: 'manual', remarks: 'marked by hand',
@@ -2878,7 +2898,7 @@ document.addEventListener('click', async ev => {
       ui.sheet = { kind: 'mslips' }; renderSheet(); break; }
     case 'msAll': { const r = requests().find(x => x.req === ui.form.req); const W = r.lines.filter(l => l.status === 'waiting'); const all = W.every(l => ui.form.pick[l.id]); ui.form.pick = {}; if (!all) W.forEach(l => ui.form.pick[l.id] = 1); renderSheet(); break; }
     case 'msSave': { const f = ui.form; const slip = String(f.slip || '').trim().toUpperCase(); const sp = slipProblem(slip); if (sp) { toast(sp); break; }
-      if (!/^\d{6}$/.test(f.rcv)) { toast('Receiver must be 6 digits.'); break; }
+      if (!validRcv(f.rcv)) { toast('Receiver must be 6 digits (GA) or up to 5 digits (E code).'); break; }
       const ls = S.lines.filter(l => l.req === f.req && l.status === 'waiting' && f.pick[l.id]); if (!ls.length) { toast('Tick at least one article.'); break; }
       if (!(await uiConfirm('Save ' + slip + (f.serial ? ' (Serial ' + f.serial + ')' : '') + ' for ' + ls.length + ' article' + (ls.length > 1 ? 's' : '') + ' of ' + f.req + '?', 'Save slip'))) break;
       undoArm('markSave');
@@ -3001,7 +3021,7 @@ document.addEventListener('click', async ev => {
     case 'queueToggle': S.queue = t.checked; save(true); if (ui.sheet && ui.sheet.kind === 'start') renderSheet(); else render(); break;
     case 'queuePend': S.queuePend = t.checked; save(true); if (ui.sheet && ui.sheet.kind === 'start') renderSheet(); else render(); break;
     case 'autoSubToggle': S.autoSubmit = t.checked; save(true); break;
-    case 'startFill': { const s = ui.sheet; if (slipProblem(s.slip) || !/^\d{6}$/.test(s.rcv)) break;
+    case 'startFill': { const s = ui.sheet; if (slipProblem(s.slip) || !validRcv(s.rcv)) break;
       if (!S.stores[s.store]) S.stores[s.store] = { rcv: s.rcv, rname: '' }; else if (!S.stores[s.store].rcv) S.stores[s.store].rcv = s.rcv;
       const ids = s.lineIds.filter(id => !s.off[id]);
       if (!ids.length) { toast('Select at least one article.'); break; }
@@ -3034,7 +3054,7 @@ document.addEventListener('click', async ev => {
     case 'mrSt': ui.form.status = v; renderSheet(); break;
     case 'mrRemove': { const f = ui.form; if (!(await uiConfirm('Delete manual request ' + f.req + ' and its ' + f.slips.length + ' slip(s)?', 'Delete', true))) break; undoArm('delEntry'); S.entries = S.entries.filter(e => !(e.kind === 'manual' && !e.items.length && entryHasReq(e, f.req))); delete S.manReqs[f.req]; save(); ui.sheet = null; renderSheet(); render(); break; }
     case 'mrSave': { const f = ui.form; const req = String(f.req || '').trim();
-      if (!req) { toast('Enter the Request No.'); break; } if (!f.store) { toast('Choose the store.'); break; } if (f.rcv && !/^\d{6}$/.test(f.rcv)) { toast('Issued to must be 6 digits.'); break; }
+      if (!req) { toast('Enter the Request No.'); break; } if (!f.store) { toast('Choose the store.'); break; } if (f.rcv && !validRcv(f.rcv)) { toast('Issued to must be 6 digits.'); break; }
       if (f._new && (S.lines.some(l => l.req === req) || (S.manReqs || {})[req])) { toast('Request No ' + req + ' already exists.'); break; }
       const keep = new Set(f.slips.filter(x => x.id).map(x => String(x.id)));
       const used = allSlips(); const mine = new Set(S.entries.filter(e => keep.has(String(e.id))).map(e => String(e.slip).toUpperCase()));
@@ -3052,7 +3072,7 @@ document.addEventListener('click', async ev => {
     case 'newManualFreeOld': ui.form = { _new: true, kind: 'manual', slip: '', serial: '', store: '', rcv: '', rname: '', date: ui.reg.date, time: timeNow(), reqs: '', remarks: '', byName: S.me.name, byEmp: S.me.emp, items: [blankItem()] }; ui.sheet = { kind: 'entry' }; renderSheet(); break;
     case 'editEntry': { const e = S.entries.find(x => String(x.id) === v); ui.form = Object.assign(JSON.parse(JSON.stringify(e)), { date: entryDate(e), time: entryTime(e), reqs: e.reqs || [...new Set(e.items.map(i => i.req).filter(Boolean))].join(', '), byName: (e.by || {}).name || '', byEmp: (e.by || {}).emp || '' }); ui.sheet = { kind: 'entry' }; renderSheet(); break; }
     case 'saveEntry': { const f = ui.form; const items = cleanItems(f.items);
-      if (!f.slip.trim() || !f.store.trim() || !/^\d{6}$/.test(f.rcv)) { toast('Slip No, store and a 6-digit receiver are needed.'); break; }
+      if (!f.slip.trim() || !f.store.trim() || !validRcv(f.rcv)) { toast('Slip No, store and a 6-digit receiver are needed.'); break; }
       const clash = S.entries.find(e => e.id !== f.id && String(e.slip).toUpperCase() === f.slip.trim().toUpperCase());
       if (clash && !await uiConfirm('Slip ' + f.slip + ' is already used for ' + clash.store + '. Save anyway?')) break;
       if (!items.length) { toast('Add at least one item with code and qty.'); break; }
@@ -3065,7 +3085,7 @@ document.addEventListener('click', async ev => {
     case 'newReturnOld': ui.form = { _new: true, _autoNo: true, no: nextReturnNo(today()), against: '1111', store: '', by: '', byName: '', recvDate: today(), date: ui.reg.date, time: timeNow(), serial: '', remarks: '', ebName: S.me.name, ebEmp: S.me.emp, items: [blankItem()] }; ui.sheet = { kind: 'return' }; renderSheet(); break;
     case 'editReturn': { const r = S.returns.find(x => String(x.id) === v); ui.form = Object.assign(JSON.parse(JSON.stringify(r)), { ebName: (r.enteredBy || {}).name || '', ebEmp: (r.enteredBy || {}).emp || '' }); ui.sheet = { kind: 'return' }; renderSheet(); break; }
     case 'saveReturn': case 'saveReturnCuims': { const f = ui.form; const items = cleanItems(f.items);
-      if (!f.store.trim() || !/^\d{6}$/.test(f.by)) { toast('Store and a 6-digit "Returned by" are needed.'); break; }
+      if (!f.store.trim() || !validRcv(f.by)) { toast('Store and a 6-digit "Returned by" are needed.'); break; }
       if (!items.length) { toast('Add at least one item with code and qty.'); break; }
       if (S.returns.some(x => String(x.no).toUpperCase() === String(f.no || '').trim().toUpperCase() && x.id !== f.id)) { toast('Return No ' + f.no + ' is already used. Next free: ' + nextReturnNo(f.recvDate || today()) + '.'); break; }
       const rec = { id: f.id || nid(), no: f.no.trim().toUpperCase(), against: (f.against || '1111').trim(), store: f.store.trim().toUpperCase(), by: f.by, byName: (f.byName || '').trim() || rcvName(f.by), date: f.date, recvDate: f.recvDate || f.date, time: f.time, serial: (f.serial || '').trim(), remarks: (f.remarks || '').trim(), enteredBy: { name: f.ebName.trim(), emp: f.ebEmp.trim() }, items };
@@ -3113,7 +3133,7 @@ document.addEventListener('click', async ev => {
 
 document.addEventListener('input', ev => {
   const el = ev.target;
-  if (el.dataset.in === 'slip' || el.dataset.in === 'rcv') { const k = focusKey(el); ui.sheet[el.dataset.in] = el.dataset.in === 'slip' ? el.value.trim().toUpperCase() : el.value.replace(/\D/g, ''); renderSheet(); refocus(k); return; }
+  if (el.dataset.in === 'slip' || el.dataset.in === 'rcv') { const k = focusKey(el); ui.sheet[el.dataset.in] = el.dataset.in === 'slip' ? el.value.trim().toUpperCase() : el.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); renderSheet(); refocus(k); return; }
   if (el.dataset.in === 'q') { ui.search.q = el.value; clearTimeout(ui.sT); ui.sT = setTimeout(() => { const box = document.getElementById('sres'); if (box) box.innerHTML = sResults(searchRecords()); }, 120); return; }
   if (el.dataset.pkq) { ui.picker.q = el.value; const box = document.querySelector('#picker .pklist'); if (box) box.innerHTML = pickList(); return; }
   if (el.dataset.bk) { ui.sheet[el.dataset.bk] = el.value; return; }
@@ -3129,22 +3149,22 @@ document.addEventListener('input', ev => {
   if (el.dataset.lk) { ui.form[el.dataset.lk] = el.value; ui.form.map = {}; renderSheet(); return; }
   if (el.dataset.lks) { ui.form.map = ui.form.map || {}; ui.form.map[el.dataset.lks] = el.value; const b = document.querySelector('[data-a="lkRead"]'); if (b) { const n = Object.values(ui.form.map).join(',').split(/[^\d]+/).filter(x => /^\d{3,9}$/.test(x)).length; b.disabled = !n; b.textContent = 'Read ' + n + ' serial' + (n === 1 ? '' : 's') + ' on CUIMS'; } return; }
   if (el.dataset.rbf) { ui.form[el.dataset.rbf] = el.value; if (el.dataset.rbf === 'recvDate') renderSheet(); return; }
-  if (el.dataset.rb) { const [g, k] = el.dataset.rb.split('|'); ui.form.groups[+g][k] = k === 'by' ? el.value.replace(/\D/g, '') : el.value; return; }
+  if (el.dataset.rb) { const [g, k] = el.dataset.rb.split('|'); ui.form.groups[+g][k] = k === 'by' ? el.value.toUpperCase().replace(/[^A-Z0-9]/g, '') : el.value; return; }
   if (el.dataset.rbr) { const [g, r, k] = el.dataset.rbr.split('|'); ui.form.groups[+g].rows[+r][k] = k === 'code' ? el.value.toUpperCase() : el.value;
     if (k === 'code') { const c = el.value.trim().toUpperCase(), sp = el.parentNode.querySelector('.rbname'); if (sp) sp.textContent = c ? (S.stock[c] ? itemName(c) + ' · ' + itemUom(c) : 'code not in stock list') : ''; } return; }
   if (el.dataset.mg) { const k = el.dataset.mg; ui.mg[k] = el.value; ui.mg.sel = {}; if (k === 'q') { clearTimeout(ui.mgT); ui.mgT = setTimeout(() => { const b = document.getElementById('mgres'); if (b) b.innerHTML = mgResults(); }, 120); } else render(); return; }
   if (el.dataset.artsday) { ui.arts.dayPick = el.value || today(); ui.arts.sel = {}; render(); return; }
   if (el.dataset.arts) { ui.arts.q = el.value; clearTimeout(ui.aT); ui.aT = setTimeout(() => { const b = document.getElementById('artsres'); if (b) b.innerHTML = artsResults(); }, 120); return; }
   if (el.dataset.asc) { autoStockCfg()[el.dataset.asc] = el.value.trim(); save(true); return; }
-  if (el.dataset.mr) { const k = el.dataset.mr; ui.form[k] = k === 'rcv' ? el.value.replace(/\D/g, '') : el.value; return; }
+  if (el.dataset.mr) { const k = el.dataset.mr; ui.form[k] = k === 'rcv' ? el.value.toUpperCase().replace(/[^A-Z0-9]/g, '') : el.value; return; }
   if (el.dataset.ms) { const [i, k] = el.dataset.ms.split('|'); ui.form.slips[+i][k] = k === 'slip' ? el.value.toUpperCase() : el.value; return; }
   if (el.dataset.tk) { ui.newTask = el.value; return; }
-  if (el.dataset.nr) { const k = el.dataset.nr; ui.form[k] = k === 'rcv' ? el.value.replace(/\D/g, '') : el.value;
+  if (el.dataset.nr) { const k = el.dataset.nr; ui.form[k] = k === 'rcv' ? el.value.toUpperCase().replace(/[^A-Z0-9]/g, '') : el.value;
     if (k === 'store') { const d = (S.stores[el.value] || {}).rcv; if (d && !ui.form.rcv) ui.form.rcv = d; }
     if (k === 'q') { const box = document.getElementById('nrhits'); if (box) box.innerHTML = nrHits(); return; }
     if (k === 'req' || k === 'slip') { const fk = focusKey(el); renderSheet(); refocus(fk); } return; }
   if (el.dataset.bt) { const k = el.dataset.bt; ui.form[k] = el.value; if (k === 'date' && ui.form.mode === 'return') { renderSheet(); return; } if (k === 'q') { const box = document.getElementById('bthits'); if (box) box.innerHTML = batchHits(ui.form.act); } return; }
-  if (el.dataset.bg) { const [gi, k] = el.dataset.bg.split('|'); if (k === 'req') ui.form.groups[+gi]._auto = false; ui.form.groups[+gi][k] = k === 'rcv' ? el.value.replace(/\D/g, '') : k === 'slip' ? el.value.toUpperCase() : el.value; return; }
+  if (el.dataset.bg) { const [gi, k] = el.dataset.bg.split('|'); if (k === 'req') ui.form.groups[+gi]._auto = false; ui.form.groups[+gi][k] = k === 'rcv' ? el.value.toUpperCase().replace(/[^A-Z0-9]/g, '') : k === 'slip' ? el.value.toUpperCase() : el.value; return; }
   if (el.dataset.bq) { const [gi, ii] = el.dataset.bq.split('|').map(Number); ui.form.groups[gi].items[ii].qty = el.value; return; }
   if (el.dataset.nrq != null) { ui.form.items[+el.dataset.nrq].qty = el.value; const b = document.querySelector('[data-a=nrSave]'); if (b) { const f = ui.form; b.disabled = !(f.store && f.req && f.items.length && f.items.every(x => parseFloat(x.qty) > 0)); } return; }
   if (el.dataset.var) { const c = curCount(); if (c) { const [a1, k, f] = el.dataset.var.split('|'); const it = c.items[+a1]; it.variants[+k][f] = el.value; syncPhysical(it); save(true); } return; }
@@ -3158,7 +3178,7 @@ document.addEventListener('input', ev => {
   if (el.dataset.stq) { ui.sheet.qty[el.dataset.stq] = el.value; return; }
   if (el.dataset.stadd) { ui.sheet[el.dataset.stadd === 'code' ? 'addCode' : 'addQty'] = el.value; return; }
   if (el.dataset.f) { ui.form[el.dataset.f] = el.value; return; }
-  if (el.dataset.br) { const [i, f] = el.dataset.br.split('|'); ui.form.rows[+i][f] = f === 'slip' ? el.value.trim().toUpperCase() : f === 'rcv' ? el.value.replace(/\D/g, '') : el.value; return; }
+  if (el.dataset.br) { const [i, f] = el.dataset.br.split('|'); ui.form.rows[+i][f] = f === 'slip' ? el.value.trim().toUpperCase() : f === 'rcv' ? el.value.toUpperCase().replace(/[^A-Z0-9]/g, '') : el.value; return; }
   if (el.dataset.bulkstart) { ui.form.start = el.value; return; }
   if (el.dataset.bulkdate) { ui.form.allDate = el.value; return; }
   if (el.dataset.it) { const [i, f] = el.dataset.it.split('|'); ui.form.items[+i][f] = el.value; return; }
@@ -3211,10 +3231,10 @@ document.addEventListener('change', async ev => {
   if (el.dataset.in === 'sTo') { ui.search.to = el.value; render(); return; }
   if (el.dataset.in === 'sStore') { ui.search.store = el.value; render(); return; }
   if (el.dataset.set) { const [o, k] = el.dataset.set.split('.'); S[o][k] = el.value.trim(); save(true); return; }
-  if (el.dataset.storeRcv) { const s = el.dataset.storeRcv; S.stores[s].rcv = el.value.replace(/\D/g, ''); save(); later(() => { const k = focusKey(document.activeElement); render(); refocus(k); }); return; }
+  if (el.dataset.storeRcv) { const s = el.dataset.storeRcv; S.stores[s].rcv = el.value.toUpperCase().replace(/[^A-Z0-9]/g, ''); save(); later(() => { const k = focusKey(document.activeElement); render(); refocus(k); }); return; }
   if (el.dataset.storeName) { const s = el.dataset.storeName; S.stores[s].rname = el.value.trim(); S.rnames = S.rnames || {}; if (S.stores[s].rcv) S.rnames[S.stores[s].rcv] = el.value.trim(); save(); return; }
   if (el.dataset.it && el.dataset.it.endsWith('|code')) { const i = +el.dataset.it.split('|')[0]; fillItemMeta(ui.form.items[i]); later(() => { const k = focusKey(document.activeElement); renderSheet(); refocus(k); }); return; }
-  if (el.dataset.f === 'rcv' || el.dataset.f === 'by') { const nm = rname(el.value.replace(/\D/g, '')); const key = el.dataset.f === 'rcv' ? 'rname' : 'byName'; if (nm && !ui.form[key]) { ui.form[key] = nm; later(() => { const k = focusKey(document.activeElement); renderSheet(); refocus(k); }); } }
+  if (el.dataset.f === 'rcv' || el.dataset.f === 'by') { const nm = rname(el.value.toUpperCase().replace(/[^A-Z0-9]/g, '')); const key = el.dataset.f === 'rcv' ? 'rname' : 'byName'; if (nm && !ui.form[key]) { ui.form[key] = nm; later(() => { const k = focusKey(document.activeElement); renderSheet(); refocus(k); }); } }
 });
 
 function doImport() {

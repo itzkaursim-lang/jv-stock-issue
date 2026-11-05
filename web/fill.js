@@ -164,6 +164,9 @@
     try {
       if (!j || !j.phase) return;
       if (j.phase === 'cancelled') { if (lastNote) { B.progressClear && B.progressClear(); lastNote = ''; } if (B.keepAwake) B.keepAwake(false); return; }
+      if (j.kind === 'names') { var nn = (j.codes || []).length, nd = Math.min(j.idx || 0, nn), non = active(j);
+        var dn = { kind: j.phase === 'done' ? 'saved' : 'verify', over: 'Receiver names · read only', bigOver: 'CUIMS NAMES', title: j.title, reqL: 'CHECKED', req: nd + ' of ' + nn, slipL: 'FOUND', slip: String(Object.keys(j.names || {}).length), done: nd, total: nn, now: nd < nn ? 'Checking ' + (/^E/i.test(j.codes[nd]) ? j.codes[nd] : 'GA' + j.codes[nd]) : 'Finished', nowSub: 'Nothing is selected on CUIMS', metaL: nd + ' of ' + nn + ' codes', metaR: 'Read only', b1: 'Open|open', b3: 'Stop|cancel', tag: 'verify' };
+        var nkey = JSON.stringify(dn) + non; if (nkey !== lastNote) { lastNote = nkey; if (B.progress2) B.progress2(JSON.stringify(dn), non); } if (B.keepAwake) B.keepAwake(non); return; }
       if (j.kind === 'verify') {
         var vn = (j.targets || []).length, vd = Math.min(j.idx || 0, vn), vt = (j.targets || [])[vd], vbad = Object.values(j.res || {}).filter(function (r) { return !r.found; }).length, von = active(j);
         var dv = { title: j.title, reqL: 'CHECKED', req: vd + ' of ' + vn, slipL: 'NOT FOUND', slip: String(vbad), done: vd, total: vn, metaL: vd + ' of ' + vn + ' serials read', metaR: 'Read only · nothing changes on CUIMS', tag: 'verify' };
@@ -282,8 +285,12 @@
     var btns = j.phase === 'done' ? '' : row2(j.paused ? btn('resume', 'Resume', 'main') : btn('pause', 'Pause', ''), btn('cancel', 'Stop', 'link'));
     return h + wrap(msg + head + '<div style="background:' + C.soft + ';border-radius:20px;padding:2px 16px">' + rows + '</div>' + btns + chips(j) + credit());
   }
+  function namesPanel(j) { var n = (j.codes || []).length, d = Math.min(j.idx || 0, n);
+    return hero('Receiver names · read only', j.title || 'Checking names', j, C.ink) + wrap(statusCard('run', d < n ? 'Checking ' + (/^E/i.test(j.codes[d]) ? j.codes[d] : 'GA' + j.codes[d]) : 'Finished', d + ' of ' + n + ' codes · nothing is selected or saved on CUIMS') +
+      '<div style="background:' + C.soft + ';border-radius:20px;padding:2px 16px">' + (j.codes || []).slice(Math.max(0, d - 3), d + 3).map(function (c) { var nm = (j.names || {})[c], miss = (j.missing || []).indexOf(c) >= 0; return '<div style="display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid ' + C.line + '"><b style="font:700 14px ' + F + '">' + esc(/^E/i.test(c) ? c : 'GA' + c) + '</b><span style="font:600 13px ' + F + ';color:' + (nm ? C.okInk : miss ? C.noInk : C.mute) + '">' + esc(nm || (miss ? 'not in list' : 'waiting')) + '</span></div>'; }).join('') + '</div>' + row2('', btn('cancel', 'Stop', 'link')) + credit()); }
   function paintInner2() {
-    var jv = job(); if (jv && jv.kind === 'verify' && active(jv) && !mini) {
+    var jv = job();
+    if (jv && jv.kind === 'names' && active(jv) && !mini) { bar.style.borderRadius = '30px'; bar.style.background = '#fff'; bar.style.boxShadow = '0 24px 60px rgba(30,20,70,.28)'; bar.innerHTML = namesPanel(jv); return; } if (jv && jv.kind === 'verify' && active(jv) && !mini) {
       bar.style.borderRadius = '30px'; bar.style.boxShadow = '0 24px 60px rgba(30,20,70,.28),0 0 0 1px rgba(20,20,20,.04)'; bar.style.background = '#fff';
       if (ui.confirmCancel) { bar.innerHTML = hero('Stop verifying?', jv.title || '', jv, C.ink) + wrap(statusCard('no', 'Stop the check now?', 'Serials read so far are not saved as a report. Nothing on CUIMS was changed.') + '<div style="display:flex;flex-direction:column;gap:8px">' + btn('cancelKeep', 'Yes, stop', 'warn') + btn('noCancel', 'Keep checking', 'main') + '</div>'); return; }
       bar.innerHTML = verifyPanel(jv); return; }
@@ -445,6 +452,26 @@
     await idle(600);
   }
 
+  /* ---------- receiver names (read only: type code, read list, select nothing) ---------- */
+  async function stepNames(j) {
+    j.names = j.names || {}; j.missing = j.missing || []; j.idx = j.idx || 0;
+    var code = (j.codes || [])[j.idx];
+    if (!code) { j.phase = 'done'; save(j); ev('names', { names: j.names, missing: j.missing }); setTimeout(function () { try { B.showApp(); } catch (e) {} }, 700); return 'stop'; }
+    if (!j.ready) { if ($('DivInsert')) $('DivInsert').click(); var dt = live('ContentPlaceHolder1_ddldoctype'); if (dt && dt.value !== 'Issue') { dt.value = 'Issue'; fire(dt, 'change'); await idle(600); return; }
+      var dep = $('ContentPlaceHolder1_rblIssue_1'); if (dep && !dep.checked) { dep.click(); await idle(600); return; } j.ready = true; save(j); }
+    var rc = $('txtIssueTo') || empBox(); if (!rc) pauseWith('Received By box not found');
+    var isE = /^E/i.test(code), label = isE ? code.toUpperCase() : 'GA' + code, typed = isE ? label : code, re = new RegExp('\\b' + label + '\\b', 'i');
+    var key = function (el, type, ch) { var kc = ch ? ch.charCodeAt(0) : 0; el.dispatchEvent(new KeyboardEvent(type, { key: ch, keyCode: kc, which: kc, bubbles: true })); if (jq) { try { jq(el).trigger(jq.Event(type, { keyCode: kc, which: kc })); } catch (e) {} } };
+    rc.focus(); rc.value = ''; fire(rc, 'input');
+    for (var i = 0; i < typed.length; i++) { var ch = typed[i]; rc.value += ch; key(rc, 'keydown', ch); key(rc, 'keypress', ch); fire(rc, 'input'); key(rc, 'keyup', ch); await sleep(110); }
+    if (jq) { try { jq(rc).autocomplete('search', rc.value); } catch (e) {} }
+    var found = '', t0 = Date.now();
+    while (Date.now() - t0 < 7000 && !found) { document.querySelectorAll('li,a,div,span,td').forEach(function (el) { if (found || el === rc || el.offsetParent === null || bar.contains(el)) return; var t = (el.textContent || '').trim(); if (t.length > 160 || !re.test(t)) return; if (Array.prototype.some.call(el.children, function (c) { return re.test(c.textContent || '') && c.offsetParent !== null; })) return; found = t; }); if (!found) await sleep(250); }
+    if (found) j.names[code] = found.replace(re, '').replace(/\s*\((?:[^()]|\([^()]*\))*\)\s*$/, '').replace(/^[\s\-–:|,]+|[\s\-–:|,]+$/g, '').trim() || found; else j.missing.push(code);
+    rc.value = ''; fire(rc, 'input'); try { document.body.click(); } catch (e) {}
+    j.idx++; save(j); log(j, label + ': ' + (found ? j.names[code] : 'not in the CUIMS list')); return;
+  }
+
   /* ---------- read-only verification (Show Transactions → SHOW) ---------- */
   function txRows() {
     var sec = $('divSearchSection') || document; var out = [];
@@ -453,9 +480,9 @@
       var serial = '', idx = -1; for (var k = 0; k < tds.length; k++) { var t = tds[k].textContent.trim(); if (/^\d{3,9}$/.test(t)) { serial = t; idx = k; break; } }
       if (!serial) return;
       var desc = (tds[idx + 2] || {}).textContent || '', by = (tds[idx + 3] || {}).textContent || '', dt = (tds[idx + 4] || {}).textContent || '';
-      var sm = desc.match(/Slip\s*No\s*:\s*([^\s)]+)/i), rm = desc.match(/(?:Received|Returned)?\s*By\s*(GA\d{6})/i) || desc.match(/(GA\d{6})/i);
+      var sm = desc.match(/Slip\s*No\s*:\s*([^\s)]+)/i), rm = desc.match(/(?:Received|Returned)?\s*By\s*(GA\d{6}|E\d{1,5})\b/i) || desc.match(/\b(GA\d{6}|E\d{1,5})\b/i);
       var btn = tr.querySelector('input[type=submit],input[type=button],a,button');
-      var codes = (desc.match(/GA\d{6}/gi) || []).map(function (x) { return x.toUpperCase().replace(/^GA/, ''); });
+      var codes = (desc.match(/\b(?:GA\d{6}|E\d{1,5})\b/gi) || []).map(function (x) { return x.toUpperCase().replace(/^GA/, ''); });
       out.push({ codes: codes, serial: serial, mode: ((tds[idx + 1] || {}).textContent || '').trim(), desc: desc.replace(/\s+/g, ' ').trim(), slip: sm ? sm[1].trim() : '', rcv: rm ? rm[1].replace(/^GA/i, '') : '', entryBy: by.replace(/\s+/g, ' ').trim(), entryDate: dt.replace(/\s+/g, ' ').trim(), isReturn: /return/i.test(desc), btnId: btn ? btn.id : '' });
     });
     var seen = {}; out = out.filter(function (r) { if (seen[r.serial]) return false; seen[r.serial] = 1; return true; });
@@ -477,8 +504,8 @@
     var slip = ''; var td = it ? it.closest('td') : null; if (td) [].slice.call(td.querySelectorAll('input')).forEach(function (x) { if (x.value && x.value.trim()) slip = x.value.trim(); });
     if (!slip) { var sb = $('ContentPlaceHolder1_txtSlipNo'); if (sb) slip = sb.value.trim(); }
     var items = [].slice.call(document.querySelectorAll('[id^="ContentPlaceHolder1_grdselecteditems_lblFinalCode_"]')).map(function (sp) { var r = gridRow(sp.textContent.trim()); return r ? { code: r.code.toUpperCase(), qty: r.qty, remark: r.remark, name: r.name } : null; }).filter(Boolean);
-    var empF = rowFor(/^(By\s*)?Employee\s*:?$/i), em = (val(empF).match(/\d{6}/) || [''])[0];
-    var all = {}; [].slice.call(document.querySelectorAll('input,select,textarea')).forEach(function (x) { var t = x.tagName === 'SELECT' ? (x.selectedIndex >= 0 ? x.options[x.selectedIndex].text : '') : (x.value || ''); (String(t).match(/GA\s*\d{6}/gi) || []).forEach(function (c) { all[c.replace(/\D/g, '')] = 1; }); });
+    var empF = rowFor(/^(By\s*)?Employee\s*:?$/i), emm = String(val(empF)).toUpperCase().match(/\bE\d{1,5}\b|\d{6}/), em = emm ? emm[0] : '';
+    var all = {}; [].slice.call(document.querySelectorAll('input,select,textarea')).forEach(function (x) { var t = x.tagName === 'SELECT' ? (x.selectedIndex >= 0 ? x.options[x.selectedIndex].text : '') : (x.value || ''); (String(t).match(/\b(?:GA\s*\d{6}|E\d{1,5})\b/gi) || []).forEach(function (c) { var u = c.toUpperCase().replace(/\s+/g, ''); all[/^E/.test(u) ? u : u.replace(/\D/g, '')] = 1; }); });
     return { allCodes: Object.keys(all), emp: em, type: val($('ContentPlaceHolder1_ddldoctype')), pa: val($('ContentPlaceHolder1_ddlProjectArea') || rowFor(/^Project\s*Area/i)), rcv: val(rowFor(/^Rec\w*\s*By/i) || empBox()).replace(/^GA/i, '').slice(0, 6), slip: slip, issueType: val(it), dept: val($('ContentPlaceHolder1_ddldepartment')), date: val(rowFor(/^Date\*?:?$/i)), items: items };
   }
   async function stepVerify(j) {
@@ -633,10 +660,10 @@
 
   async function pickReceiver(j, rc) {
     guard(j, 'rcv');
-    var code = 'GA' + j.rcv, re = new RegExp('\\bGA' + j.rcv + '\\b', 'i');
+    var isE = /^E\d+$/i.test(j.rcv), code = isE ? String(j.rcv).toUpperCase() : 'GA' + j.rcv, re = new RegExp('\\b' + code + '\\b', 'i'), typed = isE ? code : j.rcv;
     var key = function (el, type, ch) { var kc = ch ? ch.charCodeAt(0) : 0; el.dispatchEvent(new KeyboardEvent(type, { key: ch, keyCode: kc, which: kc, bubbles: true })); if (jq) { try { jq(el).trigger(jq.Event(type, { keyCode: kc, which: kc })); } catch (e) {} } };
     rc.focus(); rc.value = ''; fire(rc, 'input');
-    for (var i = 0; i < j.rcv.length; i++) { var ch = j.rcv[i]; rc.value += ch; key(rc, 'keydown', ch); key(rc, 'keypress', ch); fire(rc, 'input'); key(rc, 'keyup', ch); await sleep(120); }
+    for (var i = 0; i < typed.length; i++) { var ch = typed[i]; rc.value += ch; key(rc, 'keydown', ch); key(rc, 'keypress', ch); fire(rc, 'input'); key(rc, 'keyup', ch); await sleep(120); }
     if (jq) { try { jq(rc).autocomplete('search', rc.value); } catch (e) {} }
     var cands = function () {
       var out = [];
@@ -651,7 +678,7 @@
     var list = [], t0 = Date.now();
     while (Date.now() - t0 < 8000) { list = cands(); if (list.length) break; await sleep(250); }
     if (!list.length) pauseWith('No receiver ' + code + ' in the CUIMS list. Pick it yourself in Received By, then tap Resume.');
-    var best = list.find(function (el) { return /\(GA\)/i.test(el.textContent); }) || list[0];
+    var best = (isE ? null : list.find(function (el) { return /\(GA\)/i.test(el.textContent); })) || list[0];
     var label = best.textContent.trim();
     j = job(); j.rname = label.replace(re, '').replace(/\s*\((?:[^()]|\([^()]*\))*\)\s*$/, '').replace(/^[\s\-–:|,]+|[\s\-–:|,]+$/g, '').trim(); save(j);
     log(j, 'Receiver: ' + label);
@@ -761,6 +788,7 @@
         if (j.phase === 'dup') r = await stepDup(j);
         else if (j.phase === 'fill') r = await stepFill(j);
         else if (j.phase === 'capture') r = await stepCapture(j);
+        else if (j.phase === 'names') r = await stepNames(j);
         else if (j.phase === 'verify') { try { r = await stepVerify(j); } catch (ve) { var jv = job(); var tv = (jv.targets || [])[jv.idx || 0]; tv = tv || {}; tv.errs = (tv.errs || 0) + 1;
             if (tv.errs >= 3) { jv.res = jv.res || {}; jv.res[tv.key] = { found: false, serial: tv.serial, slip: tv.slip, err: String(ve && ve.message || ve) }; jv.idx = (jv.idx || 0) + 1; } else { tv.st = ''; }
             jv.paused = false; save(jv); log(jv, 'Retrying: ' + String(ve && ve.message || ve)); await sleep(1200); r = 'wait'; } }
