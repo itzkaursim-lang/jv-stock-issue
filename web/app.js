@@ -2312,34 +2312,42 @@ function vReport() {
 function cuDate(t) { const m = String(t || '').match(/(\d{1,2})\/(\d{1,2})\/(\d{4})(?:\s+(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?)?/i); if (!m) return { iso: today(), time: '' };
   let hh = +(m[4] || 0); if (m[6]) { if (/PM/i.test(m[6]) && hh < 12) hh += 12; if (/AM/i.test(m[6]) && hh === 12) hh = 0; }
   return { iso: m[3] + '-' + String(m[1]).padStart(2, '0') + '-' + String(m[2]).padStart(2, '0'), time: m[4] ? String(hh).padStart(2, '0') + ':' + m[5] : '' }; }
-function linkReqs(d) { return requests().filter(r => r.date === d && r.lines.some(l => l.status === 'waiting')).sort((a, b) => String(a.req).localeCompare(String(b.req), undefined, { numeric: true })); }
+function addDays(iso, k) { const d = new Date(iso + 'T12:00'); d.setDate(d.getDate() + k); return isoOf(d); }
+function lkRange(f) { f.rFrom = f.rFrom || f.date || today(); f.rTo = f.rTo && f.rTo >= f.rFrom ? f.rTo : f.rFrom; f.cFrom = f.cFrom || f.rFrom; f.cTo = f.cTo && f.cTo >= f.cFrom ? f.cTo : addDays(f.rTo, 1); return f; }
+function linkReqs(a, b) { b = b || a; return requests().filter(r => r.date >= a && r.date <= b && r.lines.some(l => l.status === 'waiting')).sort((a, b) => String(a.req).localeCompare(String(b.req), undefined, { numeric: true })); }
 function shLink() {
-  const f = ui.form, R = linkReqs(f.date);
+  const f = lkRange(ui.form), R = linkReqs(f.rFrom, f.rTo);
+  const gap = Math.round((new Date(f.cTo) - new Date(f.cFrom)) / 864e5);
   let h = '<div class="row"><h2>Link CUIMS serials</h2><button class="btn sm ghost" data-a="closeSheet">Close</button></div>';
   h += '<div class="note">For issues already done on CUIMS outside the app. Type the Serial No(s) for each request (comma separated), or let the app find them for the whole day. Nothing is saved until you confirm.</div>';
-  h += '<label class="f">Request date<input type="date" data-lk="date" value="' + esc(f.date) + '"></label>';
-  h += '<button class="btn ret full" data-a="lkAuto">Find serials automatically for ' + fmtShort(f.date) + '</button>';
-  if (!R.length) return h + '<div class="card pad note">No open requests on this date.</div>';
-  h += '<div class="card" style="overflow:hidden">' + R.map(r => '<div class="line" style="gap:6px"><div class="row"><span><span class="reqno sm" data-req="' + esc(r.req) + '">' + esc(r.req) + '</span> <b>' + esc(r.store) + '</b></span><span class="note">' + r.lines.filter(l => l.status === 'waiting').length + ' pending</span></div><input type="text" inputmode="numeric" data-lks="' + esc(r.req) + '" value="' + esc((f.map || {})[r.req] || '') + '" placeholder="Serial No(s), e.g. 21910, 21911" class="mono"></div>').join('') + '</div>';
+  h += '<div class="card pad col" style="gap:10px"><b>Requests from these dates</b><div class="grid2"><label class="f">From<input type="date" data-lk="rFrom" value="' + esc(f.rFrom) + '"></label><label class="f">To<input type="date" data-lk="rTo" value="' + esc(f.rTo) + '"></label></div>' +
+    '<div class="daychips">' + [['0', 'One day'], ['1', '2 days'], ['2', '3 days'], ['6', '7 days']].map(([k, l]) => '<button data-a="lkRspan" data-v="' + k + '" class="' + (String(Math.round((new Date(f.rTo) - new Date(f.rFrom)) / 864e5)) === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div></div>';
+  h += '<div class="card pad col" style="gap:10px"><b>Search CUIMS between</b><div class="grid2"><label class="f">From<input type="date" data-lk="cFrom" value="' + esc(f.cFrom) + '"></label><label class="f">To<input type="date" data-lk="cTo" value="' + esc(f.cTo) + '"></label></div>' +
+    '<div class="daychips">' + [['same', 'Same as requests'], ['1', '+1 day gap'], ['2', '+2 days'], ['3', '+3 days']].map(([k, l]) => { const on = k === 'same' ? (f.cFrom === f.rFrom && f.cTo === f.rTo) : (f.cFrom === f.rFrom && f.cTo === addDays(f.rTo, +k)); return '<button data-a="lkCspan" data-v="' + k + '" class="' + (on ? 'on' : '') + '">' + l + '</button>'; }).join('') + '</div>' +
+    '<div class="note">CUIMS Show Transactions will use From ' + usOf(f.cFrom) + ' To ' + usOf(f.cTo) + ' (' + (gap + 1) + ' day' + (gap ? 's' : '') + ').</div></div>';
+  h += '<button class="btn ret full" data-a="lkAuto">Find serials automatically · ' + fmtShort(f.cFrom) + (f.cTo !== f.cFrom ? ' – ' + fmtShort(f.cTo) : '') + '</button>';
+  if (!R.length) return h + '<div class="card pad note">No open requests on these dates.</div>';
+  h += '<div class="card" style="overflow:hidden">' + R.map(r => '<div class="line" style="gap:6px"><div class="row"><span><span class="reqno sm" data-req="' + esc(r.req) + '">' + esc(r.req) + '</span> <b>' + esc(r.store) + '</b>' + (f.rFrom !== f.rTo ? ' <span class="note">' + fmtShort(r.date) + '</span>' : '') + '</span><span class="note">' + r.lines.filter(l => l.status === 'waiting').length + ' pending</span></div><input type="text" inputmode="numeric" data-lks="' + esc(r.req) + '" value="' + esc((f.map || {})[r.req] || '') + '" placeholder="Serial No(s), e.g. 21910, 21911" class="mono"></div>').join('') + '</div>';
   const n = Object.values(f.map || {}).join(',').split(/[^\d]+/).filter(x => /^\d{3,9}$/.test(x)).length;
   h += '<button class="btn main full" data-a="lkRead"' + (n ? '' : ' disabled') + '>Read ' + n + ' serial' + (n === 1 ? '' : 's') + ' on CUIMS</button>';
   return h;
 }
 async function startLink(auto) {
-  const f = ui.form; if (!N) { toast('Open this inside the JV Stock Issue app.'); return; }
+  const f = lkRange(ui.form); if (!N) { toast('Open this inside the JV Stock Issue app.'); return; }
   const map = {}, T = [], seen = new Set();
-  if (!auto) Object.entries(f.map || {}).forEach(([req, txt]) => String(txt).split(/[^\d]+/).filter(x => /^\d{3,9}$/.test(x)).forEach(sn => { (map[req] = map[req] || []).push(sn); if (!seen.has(sn)) { seen.add(sn); T.push({ key: 's' + sn, serial: sn, slip: '', from: usOf(f.date, -2), to: usOf(f.date, 4) }); } }));
+  if (!auto) Object.entries(f.map || {}).forEach(([req, txt]) => String(txt).split(/[^\d]+/).filter(x => /^\d{3,9}$/.test(x)).forEach(sn => { (map[req] = map[req] || []).push(sn); if (!seen.has(sn)) { seen.add(sn); T.push({ key: 's' + sn, serial: sn, slip: '', from: usOf(f.cFrom), to: usOf(f.cTo) }); } }));
   if (!auto && !T.length) { toast('Type at least one Serial No.'); return; }
-  if (!(await uiConfirm(auto ? 'Find every CUIMS issue of ' + fmtLong(f.date) + ' and match it to your requests by store and articles? It only reads CUIMS.' : 'Read ' + T.length + ' serial' + (T.length > 1 ? 's' : '') + ' on CUIMS and match them to your requests? It only reads CUIMS.', 'Start'))) return;
+  if (!(await uiConfirm(auto ? 'Find every CUIMS issue from ' + usOf(f.cFrom) + ' to ' + usOf(f.cTo) + ' and match it to your requests of ' + fmtShort(f.rFrom) + (f.rTo !== f.rFrom ? ' – ' + fmtShort(f.rTo) : '') + ' by store and articles? It only reads CUIMS.' : 'Read ' + T.length + ' serial' + (T.length > 1 ? 's' : '') + ' on CUIMS and match them to your requests? It only reads CUIMS.', 'Start'))) return;
   const known = S.entries.map(e => String(e.serial || '')).filter(Boolean);
-  const job = { id: 'V' + Date.now(), kind: 'verify', phase: 'verify', slip: 'LINK', store: 'Link ' + fmtShort(f.date), title: (auto ? 'Find serials · ' : 'Link serials · ') + fmtLong(f.date), scope: { type: auto ? 'linkday' : 'link', id: f.date, map }, targets: T, idx: 0, res: {}, log: [], tries: {}, queue: false, autoSubmit: false, items: [] };
-  if (auto) { const ds = []; for (let k = 0; k <= 2; k++) ds.push(usOf(f.date, k)); job.day = { us: usOf(f.date), to: usOf(f.date, 2), label: fmtShort(f.date) + ' – ' + fmtShort(isoOf(new Date(new Date(f.date + 'T12:00').getTime() + 2 * 864e5))) }; }
+  const job = { id: 'V' + Date.now(), kind: 'verify', phase: 'verify', slip: 'LINK', store: 'Link ' + fmtShort(f.date), title: (auto ? 'Find serials · ' : 'Link serials · ') + fmtShort(f.rFrom) + (f.rTo !== f.rFrom ? ' – ' + fmtShort(f.rTo) : ''), scope: { type: auto ? 'linkday' : 'link', id: f.rFrom, from: f.rFrom, to: f.rTo, map }, targets: T, idx: 0, res: {}, log: [], tries: {}, queue: false, autoSubmit: false, items: [] };
+  if (auto) job.day = { us: usOf(f.cFrom), to: usOf(f.cTo), label: fmtShort(f.cFrom) + (f.cTo !== f.cFrom ? ' – ' + fmtShort(f.cTo) : '') };
   { const I = ignList(); job.ignore = { serials: Object.keys(I.serials).concat(known), people: Object.keys(I.people) }; }
   ui.sheet = null; renderSheet(); N.startJob(JSON.stringify(job));
 }
 function buildLinkProposal(e) {
   const scope = e.scope || {}, res = e.res || {}, map = scope.map || {}, d = scope.id;
-  const reqs = requests().filter(r => (scope.type === 'link' ? Object.keys(map).includes(r.req) : r.date === d) && r.lines.some(l => l.status === 'waiting'));
+  const rf = scope.from || d, rt = scope.to || d;
+  const reqs = requests().filter(r => (scope.type === 'link' ? Object.keys(map).includes(r.req) : r.date >= rf && r.date <= rt) && r.lines.some(l => l.status === 'waiting'));
   const txs = Object.entries(res).filter(([k, r]) => r.found && r.shown).map(([k, r]) => { const dt = cuDate((r.list || {}).entryDate);
     return { serial: (r.list || {}).serial || k.slice(1), slip: (r.shown.slip || (r.list || {}).slip || '').trim(), pa: r.shown.pa || '', rcv: (r.list || {}).rcv || r.shown.rcv || '', by: (r.list || {}).entryBy || '', iso: dt.iso, time: dt.time, isRet: !!(r.list || {}).isReturn || /return/i.test(r.shown.type || ''), items: (r.shown.items || []).map(i => ({ code: vNorm(i.code), qty: Number(i.qty), remark: i.remark || '', name: i.name || itemName(i.code) })) }; })
     .filter(t => !t.isRet && !S.entries.some(x => String(x.serial) === String(t.serial)));
@@ -2668,8 +2676,10 @@ document.addEventListener('click', async ev => {
         if (f.isReturn) S.returns.push({ id: nid(), no: nextReturnNo(iso), against: '1111', store: String(f.store || '').toUpperCase(), by: f.rcv || '', byName: rcvName(f.rcv), date: iso, recvDate: iso, time: '', serial: f.serial, remarks: 'added from CUIMS check', enteredBy: { name: f.entryBy || '' }, items: (f.items || []).map(i => ({ code: i.code, name: itemName(i.code), uom: itemUom(i.code), qty: Number(i.qty), remark: i.remark || '' })) });
         else S.entries.push({ id: nid(), slip: f.slip || ('CUIMS-' + f.serial), serial: f.serial, store: String(f.store || '').toUpperCase(), rcv: f.rcv || '', rname: rcvName(f.rcv), at: new Date(iso + 'T12:00').toISOString(), date: iso, time: '', by: { name: f.entryBy || '' }, kind: 'manual', remarks: 'added from CUIMS check', items: (f.items || []).map(i => ({ lineId: 0, req: '', code: i.code, name: itemName(i.code), uom: itemUom(i.code), qty: Number(i.qty), remark: i.remark || '' })) }); }
       f.fixed = true; save(); render(); break; }
-    case 'lkOpen': ui.drawer = false; ui.form = { date: v || ui.homeDate || today(), map: {} }; ui.sheet = { kind: 'link' }; renderSheet(); break;
+    case 'lkOpen': ui.drawer = false; ui.form = lkRange({ rFrom: v || ui.homeDate || today(), map: {} }); ui.sheet = { kind: 'link' }; renderSheet(); break;
     case 'lkAuto': startLink(true); break;
+    case 'lkRspan': { const f = lkRange(ui.form); const keepGap = Math.round((new Date(f.cTo) - new Date(f.rTo)) / 864e5); f.rTo = addDays(f.rFrom, +v); f.cFrom = f.rFrom; f.cTo = addDays(f.rTo, Math.max(0, keepGap)); f.map = {}; renderSheet(); break; }
+    case 'lkCspan': { const f = lkRange(ui.form); f.cFrom = f.rFrom; f.cTo = v === 'same' ? f.rTo : addDays(f.rTo, +v); renderSheet(); break; }
     case 'lkRead': startLink(false); break;
     case 'lkOn': ui.link.props.filter(p => p.req)[+v].on = t.checked; render(); break;
     case 'lkSave': { const L = ui.link, P = L.props.filter(p => p.req && p.on && p.txs.length); if (!P.length) break;
@@ -3146,7 +3156,7 @@ document.addEventListener('input', ev => {
   if (el.dataset.f === 'recvDate' && ui.sheet && ui.sheet.kind === 'return') { ui.form.recvDate = el.value; renderSheet(); return; }
   if (el.dataset.clq) { ui.clq = el.value; clearTimeout(ui.clT); ui.clT = setTimeout(() => { const b = document.getElementById('clres'); if (b) b.innerHTML = clResults(); }, 120); return; }
   if (el.dataset.cperday) { S.countPerDay = el.value ? Math.max(1, parseInt(el.value, 10) || 0) : 0; save(true); return; }
-  if (el.dataset.lk) { ui.form[el.dataset.lk] = el.value; ui.form.map = {}; renderSheet(); return; }
+  if (el.dataset.lk) { const k = el.dataset.lk, f = ui.form; f[k] = el.value; if (k === 'rFrom' || k === 'rTo') { f.map = {}; if (k === 'rFrom' && f.rTo < f.rFrom) f.rTo = f.rFrom; f.cFrom = f.rFrom; f.cTo = addDays(f.rTo, 1); } if (k === 'cFrom' && f.cTo < f.cFrom) f.cTo = f.cFrom; renderSheet(); return; }
   if (el.dataset.lks) { ui.form.map = ui.form.map || {}; ui.form.map[el.dataset.lks] = el.value; const b = document.querySelector('[data-a="lkRead"]'); if (b) { const n = Object.values(ui.form.map).join(',').split(/[^\d]+/).filter(x => /^\d{3,9}$/.test(x)).length; b.disabled = !n; b.textContent = 'Read ' + n + ' serial' + (n === 1 ? '' : 's') + ' on CUIMS'; } return; }
   if (el.dataset.rbf) { ui.form[el.dataset.rbf] = el.value; if (el.dataset.rbf === 'recvDate') renderSheet(); return; }
   if (el.dataset.rb) { const [g, k] = el.dataset.rb.split('|'); ui.form.groups[+g][k] = k === 'by' ? el.value.toUpperCase().replace(/[^A-Z0-9]/g, '') : el.value; return; }
