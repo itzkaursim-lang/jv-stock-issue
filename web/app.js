@@ -261,6 +261,38 @@ function parseReqSheet(ws, kind, sheetName) {
   const info = 'Read sheet "' + sheetName + '", headers on row ' + (hm.h + 1) + ', ' + data + ' filled rows' + (ex ? ', ' + ex + ' example rows (EX-…) skipped' : '') + '.';
   return { rows: out, dup, warn: [...warn], info, skipped, notes };
 }
+const nmKey = n => String(n || '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
+function stockDiff(file) {
+  const cur = S.stock || {}, byName = {}, dupName = new Set();
+  Object.entries(cur).forEach(([c, v]) => { const k = nmKey(v.name); if (!k) return; if (byName[k] && byName[k] !== c) dupName.add(k); byName[k] = c; });
+  const D = { code: [], name: [], up: [], down: [], same: [], fresh: [], gone: [] }, used = new Set();
+  Object.entries(file).forEach(([c, v]) => {
+    let to = cur[c] ? c : null, how = 'code';
+    if (!to) { const k = nmKey(v.name); if (k && byName[k] && !dupName.has(k) && !file[byName[k]] && !used.has(byName[k])) { to = byName[k]; how = 'name'; } }
+    if (!to) { D.fresh.push({ code: c, v }); return; }
+    used.add(to); const o = cur[to], x = { code: to, fileCode: c, name: o.name, uom: o.uom, from: Number(o.qty) || 0, to: Number(v.qty) || 0, how };
+    D[how].push(x); if (x.to > x.from + 1e-9) D.up.push(x); else if (x.to < x.from - 1e-9) D.down.push(x); else D.same.push(x);
+  });
+  Object.keys(cur).forEach(c => { if (!used.has(c)) D.gone.push({ code: c, v: cur[c] }); });
+  return D;
+}
+function stockDiffHtml(u) {
+  const D = u.diff, mode = u.stockMode || 'update', R = (ui.sdOpen = ui.sdOpen || {});
+  const tile = (n, l, cls) => '<div class="tile ' + cls + '"><b>' + n.toLocaleString('en-IN') + '</b><span>' + l + '</span></div>';
+  const list = (k, arr, fmt) => { if (!arr.length) return ''; const op = !!R[k]; return '<button class="leftbtn retl" data-a="sdTog" data-v="' + k + '" style="border-radius:16px"><span>' + (op ? 'Hide' : 'Show') + ' ' + fmt[0] + ' · ' + arr.length + '</span>' + ico(op ? 'up' : 'down', 18) + '</button>' + (op ? '<div class="card tblwrap"><table><tr>' + fmt[1] + '</tr>' + arr.slice(0, 300).map(fmt[2]).join('') + '</table>' + (arr.length > 300 ? '<div class="note pad">Showing 300 of ' + arr.length + '.</div>' : '') + '</div>' : ''); };
+  const chg = x => '<tr><td class="mono">' + esc(x.code) + (x.how === 'name' ? '<div class="note">file: ' + esc(x.fileCode) + '</div>' : '') + '</td><td>' + esc(x.name) + '</td><td>' + num(x.from) + '</td><td><b>' + num(x.to) + '</b></td><td style="color:' + (x.to > x.from ? '#0B5E3D' : x.to < x.from ? '#B4123B' : 'var(--mute)') + ';font-weight:700">' + (x.to === x.from ? '–' : (x.to > x.from ? '+' : '') + num(Math.round((x.to - x.from) * 1000) / 1000)) + '</td></tr>';
+  const hd = '<th>Code</th><th>Item</th><th>Now</th><th>File</th><th>Change</th>';
+  const newRow = x => '<tr><td class="mono">' + esc(x.code) + '</td><td>' + esc(x.v.name) + '</td><td><b>' + num(x.v.qty) + '</b> ' + esc(x.v.uom) + '</td></tr>';
+  const nm = D.code.length + D.name.length;
+  let h = '<div class="card pad col" style="gap:10px"><b>How to use this report</b><div class="seg"><button data-a="sdMode" data-v="update" class="' + (mode === 'update' ? 'on' : '') + '">Update closing only</button><button data-a="sdMode" data-v="fresh" class="' + (mode === 'fresh' ? 'on' : '') + '">Totally fresh report</button></div>' +
+    '<div class="note">' + (mode === 'update' ? 'Only the closing qty of matching items changes. Items not in this file stay exactly as they are. Names, units and your other items are kept.' : 'The whole stock list is replaced by this file. Items not in the file are removed from the stock list.') + '</div>' +
+    (mode === 'update' && D.fresh.length ? '<label class="chk"><input type="checkbox" data-a="sdAddNew"' + (u.addNew ? ' checked' : '') + '> Also add the ' + D.fresh.length + ' new items from the file</label>' : '') + '</div>';
+  h += '<div class="grid3">' + tile(nm, 'Matched', 't-in') + tile(D.up.length, 'Qty up', 't-ok') + tile(D.down.length, 'Qty down', 't-pt') + '</div>';
+  h += '<div class="grid3">' + tile(D.same.length, 'No change', 't-in') + tile(D.fresh.length, 'New in file', 't-ok') + tile(D.gone.length, mode === 'fresh' ? 'Will be removed' : 'Not in file (kept)', 't-pt') + '</div>';
+  h += '<div class="note">Linked by item code: <b>' + D.code.length + '</b> · by item name (code differs): <b>' + D.name.length + '</b></div>';
+  h += list('up', D.up, ['qty up', hd, chg]) + list('down', D.down, ['qty down', hd, chg]) + list('name', D.name, ['linked by name', hd, chg]) + list('fresh', D.fresh, ['new items in file', '<th>Code</th><th>Item</th><th>Qty</th>', newRow]) + list('gone', D.gone, [mode === 'fresh' ? 'items that will be removed' : 'items not in file (kept)', '<th>Code</th><th>Item</th><th>Qty now</th>', newRow]);
+  return h;
+}
 function parseStock(wb) {
   const rows = rowsOf(wb.Sheets[wb.SheetNames[0]]);
   const hm = headerMap(rows, [/item code|^code$/, /closing|stock|qty|quantity/]);
@@ -676,7 +708,9 @@ function shUpload() {
   }
   const r = u.result;
   if (u.kind === 'stock') {
-    h += '<div class="card pad col"><b>' + r.count + ' items will be imported</b><div class="note">This replaces the current stock (updated ' + (S.stockAt ? esc(ago(S.stockAt)) : 'never') + ', ' + Object.keys(S.stock).length + ' items). Everything is re-planned.</div></div>';
+    if (!u.diff) { u.diff = stockDiff(r.stock); if (!u.stockMode) u.stockMode = Object.keys(S.stock).length ? 'update' : 'fresh'; }
+    h += '<div class="card pad col"><b>' + r.count.toLocaleString('en-IN') + ' items in this report</b><div class="note">Current stock: ' + Object.keys(S.stock).length.toLocaleString('en-IN') + ' items, updated ' + (S.stockAt ? esc(ago(S.stockAt)) : 'never') + '.</div></div>';
+    if (Object.keys(S.stock).length) h += stockDiffHtml(u);
   } else {
     const stores = [...new Set(r.rows.map(x => x.store))];
     const reqs = [...new Set(r.rows.map(x => x.req))];
@@ -690,7 +724,8 @@ function shUpload() {
   if (u.auto) h = '<div class="okbox" style="background:#ECE6FF;color:#4B3BA8"><span><b>Live stock downloaded from CUIMS</b> · ' + esc((S.autoStock || {}).store || '') + ' · ' + esc(((S.autoStock || {}).fy) || curFY()) + '</span></div>' + h;
   h += importReport(r, u.kind);
   const nImp = u.kind === 'stock' ? r.count : r.rows.length, nSk = (r.skipped || []).length;
-  h += '<div class="grid2"><button class="btn" data-a="uploadCancel">Back</button><button class="btn main" data-a="uploadOk"' + (!nImp ? ' disabled' : '') + '>Import ' + nImp + (nSk ? ', skip ' + nSk : '') + '</button></div>';
+  const lbl = u.kind === 'stock' && u.diff && Object.keys(S.stock).length ? (u.stockMode === 'fresh' ? 'Replace with ' + nImp + ' items' : 'Update ' + (u.diff.code.length + u.diff.name.length) + ' items' + (u.addNew && u.diff.fresh.length ? ' + add ' + u.diff.fresh.length : '')) : 'Import ' + nImp + (nSk ? ', skip ' + nSk : '');
+  h += '<div class="grid2"><button class="btn" data-a="uploadCancel">Back</button><button class="btn main" data-a="uploadOk"' + (!nImp ? ' disabled' : '') + '>' + lbl + '</button></div>';
   return h;
 }
 
@@ -2636,7 +2671,7 @@ document.addEventListener('click', async ev => {
   if (a === 'lockTap') { if (ui.locked) askUnlock(); else { ui.locked = true; render(); renderSheet(); } return; }
   if (ui.locked && GUARDED.has(a)) { ev.preventDefault(); if (t.type === 'checkbox') t.checked = !t.checked; const sel = '[data-a="' + a + '"]' + (v != null ? '[data-v="' + CSS.escape(v) + '"]' : ''); askUnlock(() => { const el = document.querySelector(sel); if (el) el.click(); }); return; }
   if (a === 'bgClose') { if (ev.target === t) { ui.sheet = null; renderSheet(); } return; }
-  if (t.type === 'checkbox' && !['hold', 'queueToggle', 'regItems', 'mgrToggle', 'syncAuto', 'lockToggle', 'markPick', 'stOn', 'rpTog', 'rpCol', 'autoSubToggle', 'queuePend', 'credAuto', 'artsSel', 'artsAll', 'artsGrp', 'autoStockTog', 'mgSel', 'mgAll', 'lkOn'].includes(a)) return;
+  if (t.type === 'checkbox' && !['hold', 'queueToggle', 'regItems', 'mgrToggle', 'syncAuto', 'lockToggle', 'markPick', 'stOn', 'rpTog', 'rpCol', 'autoSubToggle', 'queuePend', 'credAuto', 'artsSel', 'artsAll', 'artsGrp', 'autoStockTog', 'mgSel', 'mgAll', 'lkOn', 'sdAddNew'].includes(a)) return;
   const _busy = BUSY[a];
   if (_busy && !(ui.locked && GUARDED.has(a))) { loader(true, _busy); await new Promise(r => setTimeout(r, 40)); }
   try {
@@ -2649,6 +2684,9 @@ document.addEventListener('click', async ev => {
     case 'openReq': { if (ui.view !== 'req') { const ids = []; document.querySelectorAll('[data-a="openReq"][data-v]').forEach(x => { if (!ids.includes(x.dataset.v)) ids.push(x.dataset.v); }); ui.reqList = ids.length > 1 ? ids : null; }
       ui.lastReq = v; ui.view = 'req'; ui.req = v; render(); window.scrollTo(0, 0); break; }
     case 'reqGo': goReq(+v); break;
+    case 'sdMode': ui.upload.stockMode = v; renderSheet(); break;
+    case 'sdAddNew': ui.upload.addNew = t.checked; renderSheet(); break;
+    case 'sdTog': ui.sdOpen = ui.sdOpen || {}; ui.sdOpen[v] = !ui.sdOpen[v]; renderSheet(); break;
     case 'verReq': startVerify({ type: 'req', id: v }); break;
     case 'verRet': startVerify({ type: 'ret', id: v }); break;
     case 'verDay': startVerify({ type: 'day', id: v || today() }); break;
@@ -3045,7 +3083,11 @@ document.addEventListener('click', async ev => {
       S.lines.push(nl); s.lineIds.push(nl.id); s.addCode = ''; s.addQty = ''; save(true); renderSheet(); if (!S.stock[code]) toast(code + ' is not in the stock sheet; CUIMS will check it.'); break; }
     case 'upPick': ui.upload = { kind: v }; document.getElementById('fileIn').click(); break;
     case 'uploadCancel': ui.upload = null; renderSheet(); break;
-    case 'uploadOk': doImport(); break;
+    case 'uploadOk': { const u = ui.upload; if (u && u.kind === 'stock' && u.diff && Object.keys(S.stock).length) { const D = u.diff;
+        const msg = u.stockMode === 'fresh' ? 'Replace the whole stock list with this report? ' + u.result.count + ' items · ' + D.up.length + ' qty up · ' + D.down.length + ' qty down · ' + D.fresh.length + ' new · ' + D.gone.length + ' removed (not in file).'
+          : 'Update closing qty only? ' + (D.code.length + D.name.length) + ' items matched (' + D.code.length + ' by code, ' + D.name.length + ' by name) · ' + D.up.length + ' up · ' + D.down.length + ' down · ' + D.same.length + ' same' + (u.addNew ? ' · ' + D.fresh.length + ' new added' : ' · ' + D.fresh.length + ' new skipped') + ' · ' + D.gone.length + ' not in file kept as they are.';
+        if (!(await uiConfirm(msg, u.stockMode === 'fresh' ? 'Replace stock' : 'Update closing'))) { ui.pendUndo = null; break; } }
+      doImport(); break; }
     case 'regType': ui.reg.type = v; render(); break;
     case 'regItems': ui.reg.items = t.checked; break;
     case 'pdfIssue': openExport('issue'); break;
@@ -3249,6 +3291,12 @@ document.addEventListener('change', async ev => {
 
 function doImport() {
   const u = ui.upload, r = u.result;
+  if (u.kind === 'stock' && u.diff && u.stockMode === 'update' && Object.keys(S.stock).length) {
+    const D = u.diff; D.code.concat(D.name).forEach(x => { if (S.stock[x.code]) S.stock[x.code].qty = x.to; if (S.stockEdits) delete S.stockEdits[x.code]; });
+    if (u.addNew) D.fresh.forEach(x => { S.stock[x.code] = Object.assign({}, x.v); });
+    S.stockAt = new Date().toISOString(); S.stockSrc = u.auto ? 'auto' : 'file';
+    S.stockLog = (S.stockLog || []).concat([{ at: S.stockAt, src: S.stockSrc, mode: 'update', n: D.code.length + D.name.length, up: D.up.length, down: D.down.length, added: u.addNew ? D.fresh.length : 0, by: S.me.name || '' }]).slice(-60);
+    save(); toast('Closing updated for ' + (D.code.length + D.name.length) + ' items' + (u.addNew && D.fresh.length ? ', ' + D.fresh.length + ' added' : '') + '. Everything re-planned.'); return; }
   if (u.kind === 'stock') { S.stock = r.stock; S.stockEdits = {}; S.stockAt = new Date().toISOString(); S.stockSrc = u.auto ? 'auto' : 'file'; S.stockLog = (S.stockLog || []).concat([{ at: S.stockAt, src: S.stockSrc, n: r.count, by: S.me.name || '' }]).slice(-60); save(); toast('Stock replaced: ' + r.count + ' items. Everything re-planned.'); }
   else {
     r.rows.forEach(x => {
