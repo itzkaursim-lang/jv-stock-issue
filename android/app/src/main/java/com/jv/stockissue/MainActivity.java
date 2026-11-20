@@ -229,6 +229,7 @@ public class MainActivity extends AppCompatActivity {
 
     WebView makeView(String profile) {
         WebView w = new WebView(this);
+        w.setBackgroundColor(0xFFF2F1F6);
         if (profile != null) {
             try {
                 if (WebViewFeature.isFeatureSupported(WebViewFeature.MULTI_PROFILE)) {
@@ -435,7 +436,8 @@ public class MainActivity extends AppCompatActivity {
         shield = new android.widget.LinearLayout(this);
         shield.setOrientation(android.widget.LinearLayout.VERTICAL);
         shield.setGravity(android.view.Gravity.CENTER);
-        shield.setBackgroundColor(0xFFF2F1F6);
+        android.graphics.drawable.GradientDrawable sg = new android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TL_BR, new int[]{0xFFE4DCFF, 0xFFF3EEFF, 0xFFFFF4E3});
+        shield.setBackground(sg);
         shield.setClickable(true);
         FrameLayout orb = new FrameLayout(this);
         int[] rings = {R.drawable.sh_ring_pnk, R.drawable.sh_ring_lav, R.drawable.sh_ring_org};
@@ -483,7 +485,9 @@ public class MainActivity extends AppCompatActivity {
         shield.addView(t3);
         shield.setVisibility(View.GONE);
     }
+    static final String[] FUN_MSG = {"The penguin is fetching the next page", "Robot is juggling onions…", "Detective duck is on the case", "Cat is chasing the loading bar", "Hold tight, secret mission in progress"};
     void showShield(String msg) {
+        if (prefs.getBoolean("fun_emp", false) && msg != null) msg = FUN_MSG[(int) ((System.currentTimeMillis() / 2000) % FUN_MSG.length)];
         if (shieldMsg != null && msg != null) shieldMsg.setText(msg);
         if (shield.getVisibility() != View.VISIBLE) {
             shield.setAlpha(0f); shield.setVisibility(View.VISIBLE); shield.animate().alpha(1f).setDuration(160).start();
@@ -637,6 +641,7 @@ public class MainActivity extends AppCompatActivity {
         }
         @JavascriptInterface public void autoStop() { prefs.edit().putBoolean("autoStockOn", false).putBoolean("cover_mgr", false).apply(); runOnUiThread(() -> { setFull(false); coverMode = false; h.post(uncoverR); }); }
         @JavascriptInterface public void fetchStockUrl(String u) { if ("mgr".equals(who) && prefs.getBoolean("autoStockOn", false)) runOnUiThread(() -> fetchStock(u, "stock.xlsx")); }
+        @JavascriptInterface public void setFun(boolean on) { prefs.edit().putBoolean("fun_" + who, on).apply(); }
         @JavascriptInterface public void setCover(boolean on) { prefs.edit().putBoolean("cover_" + who, on).apply(); coverMode = on; if (!on) runOnUiThread(uncoverR); }
         @JavascriptInterface public void uncover() { painted.put(who, true); h.removeCallbacks(uncoverR); h.postDelayed(uncoverR, 60); }
         @JavascriptInterface public void markLogin() { if (!"app".equals(who)) prefs.edit().putLong("login_" + who, System.currentTimeMillis()).apply(); }

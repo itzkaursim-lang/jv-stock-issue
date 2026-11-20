@@ -663,7 +663,7 @@ function startJob(store, slip, rcv, lineIds, adv) {
   rcv = normRcv(rcv) || rcv;
   const ls = S.lines.filter(l => lineIds.includes(l.id) && l.status === 'waiting');
   const nq = S.queue && !adv ? nextQueueJob(lineIds) : null;
-  const job = { id: 'J' + Date.now(), adv: !!adv, test: !!S.testMode, slip, rcv, store, queue: !!S.queue && !adv, next: nq ? nq.req + ' · ' + nq.store : '', autoSubmit: !!S.autoSubmit && !S.testMode && !adv, phase: 'dup', paused: false, log: [], tries: {},
+  const job = { id: 'J' + Date.now(), fun: !!S.funMode, adv: !!adv, test: !!S.testMode, slip, rcv, store, queue: !!S.queue && !adv, next: nq ? nq.req + ' · ' + nq.store : '', autoSubmit: !!S.autoSubmit && !S.testMode && !adv, phase: 'dup', paused: false, log: [], tries: {},
     items: ls.map(l => ({ lineId: l.id, req: l.req, reqDate: l.date, code: l.code, name: itemName(l.code), uom: itemUom(l.code), qty: l.qty, remark: adv ? adv.remark : (l.remark || remarkFor(l.date)), skip: false })) };
   if (!N) { toast('Open this inside the JV Stock Issue app to fill CUIMS.'); return; }
   N.startJob(JSON.stringify(job));
@@ -850,7 +850,7 @@ function startReturnJob(r) {
   if (!r.store || !validRcv(r.by) || !r.items.length) { toast('Store, a By employee code (GA or E) and at least one item are needed.'); return; }
   const rem = retRemark(r);
   const nx = S.queue ? retQueue(r.id)[0] : null;
-  const job = { id: 'J' + Date.now(), kind: 'return', retId: r.id, slip: r.no, rcv: normRcv(r.by) || r.by, rname: r.byName || rcvName(r.by), store: r.store, retDateText: cuimsDate(r.recvDate || r.date), test: !!S.testMode, queue: !!S.queue, autoSubmit: !!S.autoSubmit && !S.testMode, phase: 'fill', paused: false, log: [], tries: {}, next: nx ? nx.no + ' · ' + nx.store : '',
+  const job = { id: 'J' + Date.now(), fun: !!S.funMode, kind: 'return', retId: r.id, slip: r.no, rcv: normRcv(r.by) || r.by, rname: r.byName || rcvName(r.by), store: r.store, retDateText: cuimsDate(r.recvDate || r.date), test: !!S.testMode, queue: !!S.queue, autoSubmit: !!S.autoSubmit && !S.testMode, phase: 'fill', paused: false, log: [], tries: {}, next: nx ? nx.no + ' · ' + nx.store : '',
     items: r.items.map((i, k) => ({ lineId: 'r' + r.id + '_' + k, req: '', reqDate: '', code: i.code, name: i.name || itemName(i.code), uom: i.uom || itemUom(i.code), qty: Number(i.qty), remark: rem, skip: false })) };
   if (!N) { toast('Open this inside the JV Stock Issue app to fill CUIMS.'); return; }
   N.startJob(JSON.stringify(job));
@@ -1028,6 +1028,7 @@ function vSet() {
   h += '<div class="pad col"><input type="text" id="newStore" list="areaList" placeholder="Add store: type or pick Project Area" autocapitalize="characters">' + areaDatalist() + '<button class="btn" data-a="addStore">+ Add store</button></div></div>';
   }
   if (pg === 'fill') {
+  h += '<div class="card pad col"><h3>Spy mode</h3><label class="chk"><input type="checkbox" data-a="funToggle"' + (S.funMode ? ' checked' : '') + '> Show funny cartoon scenes on CUIMS while entries run</label><div class="note">ON: store names, slips and items are hidden behind a cartoon mission (also in the notification). Peek shows the real panel for 10 seconds. CUIMS errors still pop up clearly. OFF: the normal professional panel.</div></div>';
   h += '<div class="card pad col"><h3>Auto submit</h3><label class="chk"><input type="checkbox" data-a="autoSubToggle"' + (S.autoSubmit ? ' checked' : '') + '> Tap SUBMIT automatically when the recheck matches 100%</label><div class="note">A 4-second countdown with a Stop button appears first. You can also switch this in the CUIMS bar.</div></div>';
   h += '<div class="card pad col"><h3>Filling</h3><label class="chk"><input type="checkbox" data-a="queueToggle"' + (S.queue ? ' checked' : '') + '> Queue mode: after each submit, fill the next request automatically</label></div>';
     h += queueBox();
@@ -1863,7 +1864,7 @@ async function checkUpdate(manual) {
 /* ---------------- events from CUIMS ---------------- */
 window.onSiteEvent = function (raw) {
   let e; try { e = JSON.parse(raw); } catch (x) { return; }
-  if (e.type === 'setPref' && ['queue', 'autoSubmit'].includes(e.key)) { S[e.key] = !!e.val; save(true); render(); return; }
+  if (e.type === 'setPref' && ['queue', 'autoSubmit', 'funMode'].includes(e.key)) { S[e.key] = !!e.val; save(true); render(); return; }
   if (e.type === 'areas' && Array.isArray(e.areas) && e.areas.length) {
     if (e.areas.join('|') !== S.areas.join('|')) { S.areas = e.areas; save(true); }
   } else if (e.type === 'login') { S.lastLoginAt = e.at; save(true); }
@@ -2713,7 +2714,7 @@ document.addEventListener('click', async ev => {
   if (a === 'lockTap') { if (ui.locked) askUnlock(); else { ui.locked = true; render(); renderSheet(); } return; }
   if (ui.locked && GUARDED.has(a)) { ev.preventDefault(); if (t.type === 'checkbox') t.checked = !t.checked; const sel = '[data-a="' + a + '"]' + (v != null ? '[data-v="' + CSS.escape(v) + '"]' : ''); askUnlock(() => { const el = document.querySelector(sel); if (el) el.click(); }); return; }
   if (a === 'bgClose') { if (ev.target === t) { ui.sheet = null; renderSheet(); } return; }
-  if (t.type === 'checkbox' && !['hold', 'queueToggle', 'regItems', 'mgrToggle', 'syncAuto', 'lockToggle', 'markPick', 'stOn', 'rpTog', 'rpCol', 'autoSubToggle', 'queuePend', 'credAuto', 'artsSel', 'artsAll', 'artsGrp', 'autoStockTog', 'mgSel', 'mgAll', 'lkOn', 'sdAddNew', 'artsCatOn', 'artsCatSel'].includes(a)) return;
+  if (t.type === 'checkbox' && !['hold', 'queueToggle', 'regItems', 'mgrToggle', 'syncAuto', 'lockToggle', 'markPick', 'stOn', 'rpTog', 'rpCol', 'autoSubToggle', 'queuePend', 'credAuto', 'artsSel', 'artsAll', 'artsGrp', 'autoStockTog', 'mgSel', 'mgAll', 'lkOn', 'sdAddNew', 'artsCatOn', 'artsCatSel', 'funToggle'].includes(a)) return;
   const _busy = BUSY[a];
   if (_busy && !(ui.locked && GUARDED.has(a))) { loader(true, _busy); await new Promise(r => setTimeout(r, 40)); }
   try {
@@ -2726,6 +2727,7 @@ document.addEventListener('click', async ev => {
     case 'openReq': { if (ui.view !== 'req') { const ids = []; document.querySelectorAll('[data-a="openReq"][data-v]').forEach(x => { if (!ids.includes(x.dataset.v)) ids.push(x.dataset.v); }); ui.reqList = ids.length > 1 ? ids : null; }
       ui.lastReq = v; ui.view = 'req'; ui.req = v; render(); window.scrollTo(0, 0); break; }
     case 'reqGo': goReq(+v); break;
+    case 'funToggle': S.funMode = t.checked; save(true); toast('Spy mode ' + (S.funMode ? 'on' : 'off') + '.'); break;
     case 'sdMode': ui.upload.stockMode = v; renderSheet(); break;
     case 'sdLink': ui.upload.linkBy = v; ui.upload.diff = stockDiff(ui.upload.result.stock, v); renderSheet(); break;
     case 'sdAddNew': ui.upload.addNew = t.checked; renderSheet(); break;

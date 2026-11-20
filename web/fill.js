@@ -39,6 +39,8 @@
     await sleep(400);
   }
 
+  function isOkMsg(m) { return /success|saved|generated|submitted|serial\s*no/i.test(String(m || '')); }
+  function isErrMsg(m) { m = String(m || ''); return !!m.trim() && !isOkMsg(m) && /error|invalid|not\s|fail|insufficient|exceed|already|required|please|cannot|can't|unable|exception|mandatory|wrong|select|blank|empty|negative|less than|greater than/i.test(m); }
   function Pause(msg) { this.msg = msg; }
   function pauseWith(msg) { var j = job(); if (!j) return; j.paused = true; j.pauseMsg = msg; save(j); log(j, msg, true); ev('paused', { msg: msg }); throw new Pause(msg); }
   function guard(j, k) { j.tries = j.tries || {}; j.tries[k] = (j.tries[k] || 0) + 1; save(j); if (j.tries[k] > 5) pauseWith('CUIMS did not respond at step "' + k + '" after 5 tries. Check the page, then tap Resume.'); }
@@ -92,7 +94,7 @@
   function uncoverSoon() { try { if (B.uncover) requestAnimationFrame(function () { requestAnimationFrame(function () { B.uncover(); }); }); } catch (e) {} }
   function paint() { var before = bar.innerHTML; paintInner(); var now = bar.innerHTML; if (now !== lastHtml) { lastHtml = now; place(); } else if (before !== now) place();
     if (!J.entered) { J.entered = true; if (!hadGeo) { try { var fc = bar.firstElementChild; if (fc && fc.animate) fc.animate([{ opacity: 0, transform: 'translateY(22px) scale(.97)' }, { opacity: 1, transform: 'none' }], { duration: 320, easing: 'cubic-bezier(.2,.8,.2,1)' }); } catch (e) {} } }
-    if (!J.uncovered) { J.uncovered = true; try { var jc = job(); B.setCover && B.setCover((portal || !!AUTO || !!(jc && jc.kind === 'verify' && active(jc))) && !mini); } catch (e) {} uncoverSoon(); } }
+    if (!J.uncovered) { J.uncovered = true; try { var jc = job(); B.setCover && B.setCover((portal || !!AUTO || !!(jc && active(jc))) && !mini); B.setFun && B.setFun(!!(jc && jc.fun && active(jc))); } catch (e) {} uncoverSoon(); } }
   var LOGO = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAYAAADimHc4AAAYUUlEQVR42u19e5RcxXnn76uqe/s5PS+NnrwkhCRAYMsISUgyEsYoQNAJWayNcxw72AQnXntth909HC+2Fxs7Ppt1nE3Wwbu2z9k98nFIgh3wMa9IJgjBCITEUxgJPRikkWYkNDM9/e6+t6q+/eN293TPQw+Y6ZEmU33qzPTM7Xu7vq/qe/y+76sinE3btEni4YdN5e3shWs7HGmvIyGuB9nlxJhPQDuIYgBjajUCmHMM9DOhCyx2s7XbfSNeOH7w+ZNj0egM7npGTZR/WgC46PK1HwfwaUH2JiIxxzDB1wytLYxlWD7zG58vjQEIAqQgKCXgKIIkBrPttSy2AvjZkb3P/2Y0en1ABmySQMDRCy9f/XtE9DUpxEpjCbmChjaW4xGyM5sFzWqRNCMhKOQSeIotACKg5DH60pZPDBp+L2U5W2ChpKBYREEKhrF2JzN/r3vvjl8Np937ZMA6BTyrL1q0Yj4L9QOl5O2+ZmTy2jZHia9d7Ir1S0N0xcUKzdHgVp4GfM2gKbYEmAFHEVwVvE/lGW8d1tj2Zol3ve3ZVJ6pKaqEowham0fJ6nuO7H+pq0LDs2dAWZbNW3zdJiXoR0LI9sGMZ1rjgu5YGxG3rQwjESHs69Z4ab+PfUc1TiQNMnmGZ3hKiiBXEpqihFmtEksuUFixyMGSCxXSBcZjO4v45fMFm8xabmlypbWmX1v+wrG3X3j4VHqBRv/bJgE8bOYuuu4briO/7fkWhaLRt1wbUV+6LQYSwCM7CviXV0o48p6BtYCSQReCIGhKqmBYBqxlaANoAwgBXDRT4nc+EsLvr46ALfDDx3J4cldBR8JSuY6A55tv9ux/4YGyOLIYRpqRDFi3TuHZZ/W8RasecF336/mCZ1yH6N5PNImbloXw8215/OxfC+hLG0RDhJAiEAVLlGuW61RcARWxSuXfmYGSZuRLjBkJiU9/LIJPrY9i66sl/PdfZKznM0cjrvQ87zvH9r/4jQpta+8rRyP+3EUrvxFy3f+Wzft+S5zkg19sERd3SPz5T1J4ZEcRUgDxMEGIMuF56s340zGjMmYlgWiI4PmMZ/d42H3Qw6fWR/A714TpmTdKlM4ZHQk7N0Rb5tjMK53bsG6dwuHDdpQVEGjseZet/HeO4/yyUPR1c0zIH/3HVkrnLO75SQqpnEUiSjAWU87KGQ8rSQognWc0xwR+cHczEjGBL/yvJKdy1kTCjvJ9/45jB3b+c611RDV2K8+9dPkFUjlvGIuEFIyffLlV5D3Glx4chDGMsBsQf7qN3aQAih5DSsIP/0MLoi7h7r9NWmMJUiBttH91z6HdRytqpewwbCIATEI+KKRsyRWNvXdTk4hHCPf8eBDaMkIuQdvy8pvuY3ZtUaYV454fDyIeIdy7qUnkisYKKVtIyAeDSzdRoAPWrVM4/ISZd9nKW5Ujv5XMePq2ayPqcxvi+OqPB3HkpEEsND3zz9ZncBWQLjDePOzjq7c3oaffiDe6ijoWUUviLXN3ZQa27Me6dUrg2fU2EEH8Hd9nbosL+uLGJvz8mTxeOeAhESEYMz21z7YbAyQihFcOePj5M3l8cWMT2uKCfJ8Z4O8AEHh2vRXAt+y8S1der5Ralslr/sTaqBQC2Px0Dk0RMT3zP0AzFmiKCGx+OgchgE+sjcpMXrNSatm8S1deD3yrrAME/4mx4ESU7MZVETzSmUdfWsNVDObp6fx+OzPDVYy+tMYjnXlsXBVBIkrWWDAE/wkAiAuuWNVGAhuyBU0rFrsyERV46uUCIi7B8DQZP2g3DERcwlMvF5CICqxY7MpsQRMJbLjgilVtwnp6DUF0aG35hqvDtPeIj8MnDEIOwdqJ/4aCaESXRBCgEdfJUa4VRO/ruQSMeT/C+I3PWiDkEA6fMNh7xMcNV4dJa8sE0WE9vUYRxHpjCU0Rslde7Mpf78zDWAY1AExgZmTyeoQbzQAcSQiHZNXhy+b9UZ0/IQjRkDwrT5wI8HyLkmdHoLbMQCQkodT4QeoEwFjGS2+XsHFlFE0RssaSJIj1CsIu1xqY3SKoOUbY2+1BSZRl/8QS33Ukll/RCinKgy3jK44kvJcsYf/hDJQkMIDrrmpHOCSCVUkBl6QgZAoaew4OBivhDInva8YFsyJYMC9WB50zA0oS9nalMZDyxo0JwX2Bvd0e/uhjMXQ0Czo+aOAou1wR03ytGbNbFYGA40kLR04stlMhwsw2Bz/++nLEIwrGBIQwltHS5OAftnTjT7/7MtoSLpIZD5+57WL8wYYLMZj2IWVAGCmDoNCtX34OR47nEXLFaQkmiFD0NL525xLcceMFSGX96gSQkpDN+7jly8/BVmbEOGFHjgxoCwJmt0o62ufDlTRfAGjXhtGekPB8IJ2zIKIhkG0Cu7VAvqiRG94LGqWSrRKTLfBPW7qRzmnkSwa5oka+pDGY8ZCIOfjYtTORL5rTfm8AKJQM5s+JYcXSNpxMllAs3y+T90EAntxxHAeOZBFyJawdv7ESEdI5C88H2hMS2jAAtAuAo5Ytwi6RNgxPWxBVvvHE99GUoBCiLBYYxlrEIhK73hrAwe4MYmFZnclSEHxjcfN1sxEJCVh7mmcJQr5osH55B2a1hWEMl+MXwb0sM57sPA5BGN/xM4MooK0OMDWybAFwVNTKZOAcxPEZUIowkPaw9cUTgWK2Qwq4UDT40KIWXHlpMwpFDSHGHgFbi5BLuPm62fC1rZP94ZDEwe4sXtzTh1hEwtjxF8I0jNa10ftzHlsJOQJP7TiObF5DyiEiG8OIRxU2rJqFkm/HjEULIhRKFpdfksCyJa3IF02VWdYyIiGJrTtPoD/lQanGkUVUV0pdtKGB/bSRD8CagEBvHkzh1beTiIZlWdwAJICiZ3DTytloiTswenTvkQgolgw+vnIWmuMOjKmZhWVl/lRnL1wlghU20eOt+DeMyqvy98a+xhZ79dcJARRKGo8/3wtHDVk7wcw2WHxxEz6ypBW5gh9E6uqewdDGIh6V2LBqdt1KsZYRC0u8tn8QbxwcRCQsYKyd0PFyzejOCxGEsiMTCUv8664TONFfhOOIoUljAdcVuHnNbOhRssKorHw/vLgVVyxIoFAjfoJ0E4Ennu+tE0uNE0HnEcYediW6juXw/Ot9iNWIoYoyXn/NTMxqC8P3bR0PAr+jYi0NfY4REP+9ZAm/eelEnWhrvA7gc1cHDPXApHt8e09d5gVRoAcumRvDdVe3I1coW0MMEAO+bzGj2cUN185CoVSvfKMRiR2vn8Q7RzMIOQJseeLHW4tx4TziQB3BjgXOUq3nSyDcumZOGUyr2P5AvqCxcmk7Lr0ghmLJjLCUHtveA+baZLLGcUBMJun5bCY/gkzXqsjYWS8yBBHyRY3VH+rARXOiKHqB288EWGbcsnYOlBxS3rUirfO1PkTDCsZyw8Zc+f280QGVZhlQSuDxzp46pVlBOGe3h7HumpnIFTWkIHiexbyZUXz0wx3I1Thq1jKiYYmnd53A8YF6pd5gHTAMLGkECDT8mWMugZHXW2MRCwu8ti+JPQcG632CMph365o5cANsEbmCj48um4F5s6LwauBnIQLz9YnnjsGRVJb9DRpvzfvzbgVUiJcraDzR2QPXqfEJRCCGll/RjsWXJJAvajhK4NY1cwP3v8b2j4YDx+6VfclJsX7OOzO0TgzZIGiy9cXj6B8s4/bl/2kdwNkbVs3GYMbHZRc1YcVV7cgX6m1/1xF4srNnBLTRcAacizYQ1fnCoyhjZoRDAge6M3hhTx9iEVUnhjzf4pY1cyAEsO6amehoCQXgW/nzFXDvX17sLQd5uKHj5TolXCebziEdgNN/TmuLx7Yfq3O6KpDzFQuasWJpO65f1hGEWOugB4Wde/qw/900wm5Z/DRszKjTA+elCKoSMqKw/ZX3cHhENCyw6e+98wpcubClzvkCB9DEr7f3QJvJr+Q5bxlQkeO9Jwt4ZtcJRMO1YohQ9CzWfrgDiZiqIp/MQMgV6D6ew/aX30Os5jOTyIDzCovA8MQnJYHHth8LTEwxMvOhVsoFnrTCM7tP4NjJHFyXJiHxbJgnXHUxG0x/PgMenI421jAiYYXdb/XjrXdSiIRUOZg+xITR0lEe234Mgmhicf/T0d9W4wGTE48Bzizz4nT3kZKQyvh4srMHYVdUw5UjPeiAWfu60njpzX7EIo2DHk4Rj5lcHSAosDn5VLP/dAyygUn61I4eDGa8qjc8vGvN5bBmD1JZb1Jt/9qmRpcDE6uYCARrGYm4U7XhiWoeTUG6SuC9npoTloFIWGLvO4N4ZV8St350HjJZrz6wUrZ8fG3xxPPHyiuFJ3ycY3s4Q2tAjbk2xvvRFFgnhABMe2+giJVLZ6ApqjCQqp+RBKD3ZCFgwBnqamuB//erQyAAmXyQbFXrOYdDEvsPp3HgcGbI9m+o2TY6nVUjnksIMuFKXlChWSgZLFvcii/8+0XIFerDgJWsubfeSUEIcUapgcYGmRFbXujFY88dC1YTjzYJCNGwPKcKDNXIgDHXQQDjIW60tWhvCWHhhU1QSmDZ4lZ8ZuMCzGgOoeCZal5nYNtLHD2Rw8t7+xEJC1iuTRk4NUztugKhkDitAzcpfkud8TH0mvAVIASQz2vcvGYuNj+wBtm8j7CrkC34dcSvQAvtLSH83T/uQ29fHm3Nobr0kdM7Z3zelc+qMX2E8WS9DWz2Yskgm9dVZLJ25mttMaM1jJ17+vDgP+1HU9SBNVOoAnzsmHDjoINq+mM5TGhMYCI6SmDWjAh2/bYPd92/A4WiDtLS/w0Ug6uRZuf4m0EMhpKEWERBG4aSAlIQhCAYa3HkeB5/+9Be/O+H96NQMoiEZLlIZCo3rijhUyNBHxi1LEPEqayPV/cNIJPT8LTFQKqErmNZvLJvADv39KG3L49EzEU4NJQYy1OM3KPReML9AGsC/P2F10/ipj/9TVC4Zhi+ttDGBiVGYYW2RAjWciD3p+qEH90PmGgtXOuIleWeFAiHBKi854tlwPybKkjmGk94Mh5fNRent1wRmG6T7AlzPfJYG7qcnp/jbYYPSaDK+4bpgInQKcMHOK0DGkh4X9dT3FEUwNznmfemzjfi+36wO+/MtnB1nRIR+pLFctBdTniR+ThjQaPnq5x7xCf4vkVrwsVf/ecVWLakDb4OTFdHCuw/ksaf/+VLOPpePsjzP9fGMELKl/OCJjsn4kw7iWC/iD/btBh3bLgEsYjCjJYQZrSEEIsq3Lx2Hv7TH1+JQkmDRO3nBIQc6iTEpI5jpCd8HuktIQhzO6LIZT1oPQQ9G8tIZTzMnhGpS9YlImSzORg7lJYoBCEei1X9kWkdcJZNl6vbaz1rKu9qrg3XZIAzSiUPq1Zeg+ZEU1ABQ4RcLo+Xdr8KIoJSatKZUNYBdqQjMAkKdrQdT2zFay7LzVOlElZKkwSAfLGE//n9b+Pzd/3RiOt++ejj+OzdX23sWOus+zLNWZwbnjBREDgfzBkksxqDWV3+aWBMeZvgs1DW+UIRly+5rEp8Yy1sTb/j9t/FyhXXIJPNQYjJJYE6XWJWQ0xLE+Ts/P7aZiRiARwtiFDwLLa9lkU6bxBx6YxS2kEBsBeLRatiR9YQucKEeDwW+AxEDRnnWHSedB1QkQD33zkbN1+bqFaxB/tDEF74bR5f/bujONtYurXBtjujAmBCwFb34jyn/ABuqFwUBBRKjMsuDGH1lTGcHNR1GRCWgWWLIrjy4hB2vV2AOFWSFr0PP4YbON7qV+c6P+CcsIKUqFg3dcIExIDWqEuymmrtnFDCPAq4VqsjpjIqO+GJWadflXyGVQJnduXw8ZzZldw4CYThiVkNyg09Y/PgVNdU8YUzvPZs7jlJZtB0ROxc0QGTJ2vPLgWF+cz+F8SdeezJyJM32lp9p5htngjRQsmwI4kcBXjaolHlg8FuWAF84Fuus91tdXO+Ia3kKCqf1sdB6UCZmMYG9b9B7ZiFUkHWhbV26MSd8nslBJSS4LoapYn2dxiOknAkoVAyTARitnnFjH5BFD2Z1Ai7AomoRCpnIMXEm8cWgBKEEwMa+SKjvVmi6HH1GCxHEko+o6fPhyMInmEc7E4jHndRLFmock2BNoxEwkXX0SxKnkE87KK7uxf5fAHRaGRoiQMQKrC8u97thuu4QZH2RNOfgmOvElGJsCtwMqmDGjVGv2JQl1K4sLffZ2bQnHYHXb0lhBtwHGHldLqTgz4e+FkPPn9bB1yHKpMV1gKbt/Sjq7eEaFgiFnHwo3/ci7kdMaz6UEc1LOlIwlPPd+Mv/+8biIQUHEfh6LEe3Hn3V3DfvV9Boqmpui1yoVDA3/zwp/jtW28HcISd+HwkomALhTntDpiB3n6flSJiUJditrsdJa4/nvR5MGuwdEEY219Pg4JzfSb8y1kGIiGBba+msePNLEI1DPA0o+RZRMMC1lpISSiUNL70F51IxN06Yyid8+AqCccR0EYjFovhnx99HE889TRCIbcqgnzfRy6XR1NTHNaahohZAkEbi6ULwhjMGhxP+hxsPGh3C7bYJgUjmzfijUN5rL4yHoifBqpkZkYsIiBFEGzXhuHrQBTFIqIO41eS0BRzoLWBX9PjUQeOQ1XlymyRSMQhpYDv+/C1hu/7ICI0NycaqoQZDCmA1VfG8cahPLJ5I6RgsMU2Qb7bycaeFIJo6+4UL50fwSWzQyiVeFz30T/tPvtlbKxcOFl9th12fg2Xaw2IqK5bwyPqfk352CciUe0AYLRp2LgIQKnEuGR2CEvnR7B1d4qFIGJjT5Lvdop0+q0Bw9gSCyvu3JM1qZzBbatbqls7nrOnU4yyB8bY13JNb+z3rOzoeNvqFqRyBp17siYWVmwYW9LptwZEWQ7/VElQOuuLXzybxCdvbEd7i4KnTbCR9/RhJO+rBxt2G7S3KHzyxnb84tkk0llfKAmyjJ9WHDGR6z+0XVv9aizm0N9v7TPWMu7eOBO5rJ3SSORENykIuazF3RtnwlrG32/tM7GYQ9rqV3P9h7YjKKFbJwBYaHzdlYL6U5q//1AvPndrB665PIZU1kAJmp7QZ9mVIKSyBtdcHsPnbu3A9x/qRX9KsysFQePrgRu0TkjgsAUgvWJyvwo1L49G1JLXD2T1grlhcdfvduCR55IolAxcRedVxtlkz/yiZ9EUldh836XY9loGf/Nwr25pcpXW5rFs8p1vA5DAYVN3mGe49dILHIk3jOGEksA/3H+ZyBctPvPdgzA2sNe1mWbCKfF9GWyTLwWw+b6FiIYFPnn/AasNICWlfYOri8lDww/zDEq5islD3Wz5LseRouSz/ez3DnFLXGLzfQsRCwukcgZK0pQ7L368vF0lCamcQSwssPm+hWiJS3z2e4e45LN1HCnY8l3F5KHu8oS3QP2BzgxAeYXkb51QwoZc58Z0Vusndw6KTevb6c5bOvDagRy6uotQioa2kOdpwitB0JqRSWt8ZHEMm+9bCGuBz/zFIR5IaR2NOI7R/jezA13/B0EiRNUFl6PhY15hcJt0m1U4pG7I5H376HMDWHRRhP7rp+chFpV4/WAOyVSQg+mUz5GvnPlCVO9MTalezsYLiswBAsPzGbmcQVNM4it/MAff/fxF2PZaGl/66y6bLRiOhR3la/OdXPLd+8vE18NwutGwOwgAJt52yTeklN/2tUW+aPTtH21T/+UP50IQ4aGn+/DrziS6eouADU6hUIogBcZMBznfWwX21rpczSmA+XPC2LimFX944wxYZvyPh3rw6HMDOhqWylECxphvZgfefaA82e1wmXEqSkkAJtI2f5Mk+pEQoj2d8UxrQtGnNswQn1jfjpaYxJ53CtjxZgZ73smjp99DOmvglQ9HmypGU2UsriIk4hJz211ctSCK1UubcNWCCAZzBr/Y1o+fb+mzybTmRJMrrbX9hvkLhYGuhyu0HAOpPrVSB6BDzRfNV0L+QElxu6ctCnlt43HJa65KiA3XNtOHFsbQ2hTg7EXPTllLSUlC2A3slmRG4/WDOWzZleLOPWmbzRqKRJVwlYA29lFtzT2l1JGu0cTO2TAAtdyLtFzye5Loa1LSSt8E+/LDWo5GpZ3V5tLcdpc6Wh2KuME2M1NFEnH5MNGCZ3Ey6XNPv8cnBjzO542AEBSNKDgSMIZ3GubvFQbf/dVw2n0QBlT8hIqSRqxt/seJ8GkB3ASiOcYER4T4xoIrO5xMNTVQHhNJgiMFHCUgJQDmXgtsZcbPcgNdvxmNXuPBAIzG0Xh8YYdR+jopcD2BloN4PgHtAMWmptHJOQb6wdTF4N3GYrvU6oVs9uDJsWh0uvb/Aa4R3c2+9ZhRAAAAAElFTkSuQmCC';
   var ME = (function () { try { var d = JSON.parse(B.storeGet() || '{}'); return d.me || {}; } catch (e) { return {}; } })();
   var IC = {
@@ -140,7 +142,7 @@
     }).join('') + '</div>';
   }
   function chip(id, label, on) { return '<button type="button" data-jv="' + id + '" style="display:inline-flex;align-items:center;gap:7px;height:38px;border-radius:99px;padding:0 14px 0 11px;border:0;cursor:pointer;font:700 13px ' + F + ';background:' + (on ? C.ink : '#F2F1F6') + ';color:' + (on ? '#fff' : '#4A4758') + '"><i style="width:8px;height:8px;border-radius:50%;background:' + (on ? '#7CF0B5' : '#C9C5D6') + '"></i>' + label + '</button>'; }
-  function chips(j) { if (j && j.kind === 'verify') return '<div style="display:flex;gap:8px;flex-wrap:wrap">' + chip('tPortal', 'Big panel', portal) + chip('tFull', 'Full screen', immersive) + '</div>'; return '<div style="display:flex;gap:8px;flex-wrap:wrap">' + (j.adv ? '<span style="display:inline-flex;align-items:center;height:38px;border-radius:99px;padding:0 14px;font:700 13px ' + F + ';background:' + (j.kind === 'return' ? '#E3EEFF;color:#173A7A' : '#FFE7C2;color:#7A4B00') + '">' + (j.kind === 'return' ? 'Return' : 'Advance issue') + ' · manual SUBMIT only</span>' : chip('tQueue', 'Queue', !!j.queue) + chip('tAuto', 'Auto submit', !!j.autoSubmit)) + chip('tPortal', 'Big panel', portal) + chip('tFull', 'Full screen', immersive) + '</div>'; }
+  function chips(j) { var fc = j && j.kind !== 'verify' && j.kind !== 'names' ? chip('tFun', 'Spy mode', !!j.fun) : ''; if (j && j.kind === 'verify') return '<div style="display:flex;gap:8px;flex-wrap:wrap">' + chip('tPortal', 'Big panel', portal) + chip('tFull', 'Full screen', immersive) + '</div>'; return '<div style="display:flex;gap:8px;flex-wrap:wrap">' + (j.adv ? '<span style="display:inline-flex;align-items:center;height:38px;border-radius:99px;padding:0 14px;font:700 13px ' + F + ';background:' + (j.kind === 'return' ? '#E3EEFF;color:#173A7A' : '#FFE7C2;color:#7A4B00') + '">' + (j.kind === 'return' ? 'Return' : 'Advance issue') + ' · manual SUBMIT only</span>' : chip('tQueue', 'Queue', !!j.queue) + chip('tAuto', 'Auto submit', !!j.autoSubmit)) + chip('tPortal', 'Big panel', portal) + chip('tFull', 'Full screen', immersive) + fc + '</div>'; }
   function credit() { var who = ME.builder || ME.name || 'JV'; return '<div style="display:flex;align-items:center;justify-content:space-between;font:600 11.5px ' + F + ';color:#9A97A8">' + '<span>JV Stock Issue · Built by ' + esc(who) + '</span>' + (ME.photo ? '<img src="' + ME.photo + '" alt="" style="width:28px;height:28px;border-radius:50%;object-fit:cover;border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.2)">' : '') + '</div>'; }
   function row2(a, b) { return '<div style="display:flex;gap:10px;align-items:center">' + a + (b || '') + '</div>'; }
   function wrap(inner) { return '<div style="padding:16px 18px 18px;display:flex;flex-direction:column;gap:14px">' + inner + '</div>'; }
@@ -184,12 +186,73 @@
       else if (j.phase === 'await') { var v = verify(j), ok = v.store && v.slip && v.rcv && v.type && v.rows === v.total; d.kind = 'ready'; d.allOk = ok; d.over = req + ' · Slip ' + j.slip; d.bigOver = 'READY TO SUBMIT'; d.sub = ok ? 'Ready · waiting for SUBMIT' : 'Check the form before SUBMIT'; d.now = ok ? 'All checks match' : 'Something does not match'; d.nowSub = 'GA' + j.rcv + (j.rname ? ' ' + j.rname : '') + ' · ' + k.total + ' articles'; d.b1 = 'Open CUIMS|open'; d.b3 = 'Cancel|cancel'; }
       else if (j.phase === 'capture') { d.kind = 'capture'; d.over = req + ' · Slip ' + j.slip; d.bigOver = 'FINDING SERIAL'; d.sub = 'Finding the Serial No'; d.now = 'Finding the Serial No'; d.nowSub = 'Show Transactions · ' + j.slip; d.b2 = 'Open|open'; }
       else { d.kind = 'fill'; d.over = req + ' · Slip ' + j.slip; d.bigOver = j.phase === 'dup' ? 'CHECKING' : 'ISSUE ENTRY'; d.sub = cur ? 'Adding ' + cur.name + ' · ' + k.done + ' of ' + k.total : 'Filling the form'; d.now = cur ? 'Adding ' + String(cur.name || cur.code) : (j.phase === 'dup' ? 'Checking ' + j.slip : 'Filling the form'); d.nowSub = cur ? cur.code + ' · ' + cur.qty + (cur.uom ? ' ' + cur.uom : '') : 'Store, receiver, department'; d.b1 = 'Pause|pause'; d.b2 = 'Open|open'; d.b3 = 'Cancel|cancel'; }
+      if (j.fun) { d.title = 'Secret mission'; d.req = 'Agent JV'; d.slip = '• • •'; d.over = 'Top secret'; d.sub = funLine(j); d.now = j.paused ? 'Agent on a break' : j.phase === 'done' ? 'Mission complete' : 'Mission in progress'; d.nowSub = funLine(j); d.metaL = 'Mission ' + k.done + ' of ' + k.total; d.metaR = 'Spy mode'; if (d.serial) d.serial = '•••' + String(d.serial).slice(-2); }
       var key = JSON.stringify(d) + on;
       if (key !== lastNote) { lastNote = key; if (B.progress2) B.progress2(JSON.stringify(d), on); else B.progress(d.title, d.sub, d.done, d.total, on); }
       if (B.keepAwake) B.keepAwake(on);
     } catch (e) {}
   }
-  function paintInner() { notifyProgress(job()); paintInner2(); }
+  var FUN = {
+    fill: ['Teaching the penguin to moonwalk', 'The cat is chasing invoices again', 'Robot is juggling onions. Do not disturb', 'Counting potatoes… lost count… counting again', 'Dino is stacking sugar sacks', 'Feeding the hamster that powers this app', 'Polishing the tea leaves one by one', 'Negotiating with a very stubborn tomato'],
+    capture: ['Detective duck is looking for clues', 'Following the footprints of a serial number', 'Magnifying glass: engaged', 'Asking the owl. The owl says hoo', 'Searching under the sofa cushions'],
+    await: ['Rocket fuelled. Waiting for the captain', 'All ducks in a row. Literally', 'Penguins lined up for take-off', 'Mission ready. Big red button time'],
+    paused: ['Agent on a chai break', 'The penguin slipped. Tap Peek to see why', 'Shh… the cat is napping'],
+    done: ['Mission complete! Confetti time', 'High five from the robot', 'The penguin is doing a victory dance']
+  };
+  function funPhase(j) { return j.paused ? 'paused' : j.phase === 'done' ? 'done' : j.phase === 'capture' ? 'capture' : j.phase === 'await' ? 'await' : 'fill'; }
+  function funLine(j) { var L = FUN[funPhase(j)]; return L[Math.floor(Date.now() / 3500) % L.length]; }
+  function funOn(j) { return !!(j && j.fun && active(j) && !mini && !ui.peek && !ui.confirmCancel && j.kind !== 'verify' && j.kind !== 'names' && WHO !== 'mgr'); }
+  var FUN_SCENE = {
+    fill: '<span class="jf a1">🐈</span><span class="jf a2">🐁</span><span class="jf a3">🤖</span><span class="jf j1">🧅</span><span class="jf j2">🍅</span><span class="jf j3">🥔</span><span class="jf a4">🐧</span><span class="jf a5">🦖</span>',
+    capture: '<span class="jf d1">🕵️</span><span class="jf d2">🔍</span><span class="jf a4">🦆</span><span class="jf d3">🦉</span><span class="jf d4">👣</span>',
+    await: '<span class="jf r1">🚀</span><span class="jf a4">🐧</span><span class="jf d1">🦆</span><span class="jf d3">🦆</span>',
+    paused: '<span class="jf p1">☕</span><span class="jf p2">🐈</span><span class="jf p3">💤</span>',
+    done: '<span class="jf c1">🎉</span><span class="jf c2">🐧</span><span class="jf c3">🤖</span><span class="jf c4">🎊</span><span class="jf c5">✨</span>'
+  };
+  var FUN_CSS = '<style>#jvFun .stage{position:relative;height:190px;border-radius:24px;overflow:hidden;background:linear-gradient(180deg,#CFE6FF 0%,#EAF4FF 62%,#BFE8C9 62%,#A9DDB6 100%)}' +
+    '#jvFun .sun{position:absolute;right:18px;top:14px;font-size:30px;animation:jvsp 9s linear infinite}#jvFun .cl{position:absolute;top:18px;font-size:30px;animation:jvcl 14s linear infinite}#jvFun .cl.b{top:46px;font-size:22px;animation-duration:20s;animation-delay:-7s}' +
+    '#jvFun .jf{position:absolute;font-size:38px;line-height:1;bottom:42px}' +
+    '#jvFun .a1{animation:jvrun 4.5s linear infinite}#jvFun .a2{animation:jvrun 4.5s linear infinite;animation-delay:-.55s;font-size:26px;bottom:44px}' +
+    '#jvFun .a3{left:44%;bottom:40px;font-size:44px;animation:jvbob 1s ease-in-out infinite}#jvFun .j1,#jvFun .j2,#jvFun .j3{left:47%;bottom:96px;font-size:22px;animation:jvjug 1.5s ease-in-out infinite}#jvFun .j2{animation-delay:-.5s}#jvFun .j3{animation-delay:-1s}' +
+    '#jvFun .a4{left:12%;font-size:36px;animation:jvwob .9s ease-in-out infinite}#jvFun .a5{right:8%;font-size:46px;animation:jvbob 1.6s ease-in-out infinite}' +
+    '#jvFun .d1{left:14%;font-size:44px;animation:jvwalk 3s ease-in-out infinite alternate}#jvFun .d2{left:30%;bottom:70px;font-size:30px;animation:jvsweep 2.2s ease-in-out infinite}#jvFun .d3{right:12%;bottom:118px;font-size:34px;animation:jvbob 1.4s ease-in-out infinite}#jvFun .d4{left:55%;bottom:30px;font-size:22px;opacity:.7;animation:jvfade 1.6s ease-in-out infinite}' +
+    '#jvFun .r1{left:44%;font-size:52px;animation:jvshake .25s linear infinite}' +
+    '#jvFun .p1{left:30%;font-size:40px}#jvFun .p2{left:48%;font-size:44px;animation:jvbreath 2.4s ease-in-out infinite}#jvFun .p3{left:62%;bottom:96px;font-size:28px;animation:jvzz 2.4s ease-in-out infinite}' +
+    '#jvFun .c1,#jvFun .c4,#jvFun .c5{bottom:110px;font-size:30px;animation:jvpop 1.4s ease-in-out infinite}#jvFun .c1{left:10%}#jvFun .c4{right:10%;animation-delay:-.6s}#jvFun .c5{left:46%;bottom:130px;animation-delay:-.3s}#jvFun .c2{left:28%;animation:jvwob .5s ease-in-out infinite}#jvFun .c3{right:28%;animation:jvbob .6s ease-in-out infinite}' +
+    '@keyframes jvrun{from{left:-14%;transform:scaleX(-1)}to{left:108%;transform:scaleX(-1)}}@keyframes jvbob{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}' +
+    '@keyframes jvjug{0%{transform:translate(-26px,30px)}25%{transform:translate(-14px,-34px)}50%{transform:translate(26px,30px)}75%{transform:translate(14px,-34px)}100%{transform:translate(-26px,30px)}}' +
+    '@keyframes jvwob{0%,100%{transform:rotate(-12deg)}50%{transform:rotate(12deg) translateY(-4px)}}@keyframes jvwalk{from{left:6%}to{left:60%}}@keyframes jvsweep{0%,100%{transform:translateX(-30px) rotate(-15deg)}50%{transform:translateX(90px) rotate(15deg)}}' +
+    '@keyframes jvfade{0%,100%{opacity:.2}50%{opacity:.8}}@keyframes jvshake{0%{transform:translate(0,0) rotate(-2deg)}50%{transform:translate(1px,-2px) rotate(2deg)}100%{transform:translate(0,0) rotate(-2deg)}}' +
+    '@keyframes jvbreath{0%,100%{transform:scale(1)}50%{transform:scale(1.06)}}@keyframes jvzz{0%{transform:translate(0,0);opacity:0}30%{opacity:1}100%{transform:translate(20px,-40px);opacity:0}}@keyframes jvpop{0%,100%{transform:translateY(0) scale(1)}50%{transform:translateY(-22px) scale(1.2)}}' +
+    '@keyframes jvcl{from{left:-20%}to{left:110%}}@keyframes jvsp{to{transform:rotate(360deg)}}</style>';
+  function funPaint(j) {
+    var k = cnt(j), ph = funPhase(j);
+    if (!bar.querySelector('#jvFun') || bar.getAttribute('data-funph') !== ph) {
+      bar.setAttribute('data-funph', ph);
+      bar.style.borderRadius = '30px'; bar.style.background = '#fff'; bar.style.boxShadow = '0 24px 60px rgba(30,20,70,.28)';
+      bar.innerHTML = FUN_CSS + '<div id="jvFun"><div style="display:flex;align-items:center;gap:12px;padding:16px 18px 12px"><span style="width:44px;height:44px;border-radius:14px;background:#141414;display:flex;align-items:center;justify-content:center;font-size:24px">🕵️</span><span style="flex:1;min-width:0"><b style="display:block;font:800 12px ' + F + ';letter-spacing:.08em;color:#6E5BD6;text-transform:uppercase">Top secret · spy mode</b><b style="display:block;font:800 20px ' + F + ';color:#141414">Secret mission</b></span><span id="jvFunRing"></span><button type="button" data-jv="hide" aria-label="Hide" style="width:44px;height:44px;border-radius:50%;border:0;background:#F2F1F6;font:800 18px ' + F + '">⌄</button></div>' +
+        '<div style="padding:0 18px"><div class="stage"><span class="sun">🌞</span><span class="cl">☁️</span><span class="cl b">☁️</span>' + FUN_SCENE[ph] + '</div></div>' +
+        '<div style="padding:14px 18px 18px;display:flex;flex-direction:column;gap:12px"><div id="jvFunCap" style="font:700 16px ' + F + ';color:#141414;text-align:center;min-height:22px"></div><div id="jvFunBtns" style="display:flex;flex-direction:column;gap:10px"></div><div id="jvFunChips"></div></div></div>';
+    }
+    var cap = bar.querySelector('#jvFunCap'), t = funLine(j) + '…'; if (cap.textContent !== t) cap.textContent = t;
+    var rg = bar.querySelector('#jvFunRing'), rh = ring(k.done, k.total, ph === 'done' ? C.ok : C.ink); if (rg.innerHTML !== rh) rg.innerHTML = rh;
+    var b = '';
+    if (ph === 'await' && j.autoSubmit && !j.adv && !ui.autoStop && !j.cuimsErr && ui.lastAllOk) b = row2('<div style="flex:1;height:52px;border-radius:99px;background:#141414;color:#fff;display:flex;align-items:center;justify-content:center;font:800 15.5px ' + F + '">🚀 Launching in ' + (ui.autoAt ? Math.max(0, Math.ceil((ui.autoAt - Date.now()) / 1000)) : 4) + '</div>', btn('autoStop', 'Stop', 'warn'));
+    else if (ph === 'await') b = row2(ui.lastAllOk && !j.cuimsErr ? btn('funSubmit', '🚀 Launch (SUBMIT)', 'main') : btn('peek', 'Peek: needs a check', 'main'), btn('cancel', 'Abort', 'link'));
+    else if (ph === 'paused') b = row2(btn('resume', 'Resume', 'main'), btn('peek', 'Peek', '') + btn('cancel', 'Abort', 'link'));
+    else if (ph === 'done') b = '';
+    else b = row2(btn('pause', 'Pause', ''), btn('peek', 'Peek', '') + btn('cancel', 'Abort', 'link'));
+    var bb = bar.querySelector('#jvFunBtns'); if (bb.getAttribute('data-h') !== b) { bb.setAttribute('data-h', b); bb.innerHTML = b; }
+    var ch = '<div style="display:flex;gap:8px;flex-wrap:wrap">' + chip('tFun', 'Spy mode', true) + '</div>', cc = bar.querySelector('#jvFunChips'); if (cc.getAttribute('data-h') !== ch) { cc.setAttribute('data-h', ch); cc.innerHTML = ch; }
+  }
+  var funScratch = document.createElement('div');
+  setInterval(function () { var j = job(); if (funOn(j)) paint(); }, 1000);
+  function paintInner() {
+    var j = job(); notifyProgress(j);
+    if (funOn(j)) { var keep = bar; bar = funScratch; try { paintInner2(); } catch (e) {} bar = keep; funPaint(j); return; }
+    if (bar.getAttribute('data-funph')) { bar.removeAttribute('data-funph'); }
+    paintInner2();
+  }
   // ---------- automatic live stock (manager login) ----------
   var AS = (function () { try { var x = JSON.parse(localStorage.getItem('jvAS') || 'null'); return x && AUTO && x.run === AUTO.run ? x : { run: AUTO ? AUTO.run : 0, step: 'start' }; } catch (e) { return { run: 0, step: 'start' }; } })();
   function asSave() { try { localStorage.setItem('jvAS', JSON.stringify(AS)); } catch (e) {} }
@@ -299,7 +362,8 @@
       var k0 = j && j.items ? cnt(j) : { done: 0, total: 0 };
       if (j && j.kind === 'verify' && active(j)) k0 = { done: Math.min(j.idx || 0, (j.targets || []).length), total: (j.targets || []).length };
       var t1 = WHO === 'mgr' ? 'Manager CUIMS' : !active(j) ? 'JV Stock Issue' : j.kind === 'verify' ? 'Verify · ' + k0.done + '/' + k0.total : reqOf(j) + ' · ' + k0.done + '/' + k0.total;
-      var t2 = WHO === 'mgr' ? 'Live stock' : !active(j) ? (isLogin ? 'Log in' : 'Ready') : j.kind === 'verify' ? (j.paused ? 'Paused' : 'Read only') + ' · ' + j.title : (j.paused ? 'Paused' : j.phase === 'await' ? 'Ready to submit' : j.phase === 'capture' ? 'Finding Serial' : 'Filling') + ' · ' + j.store;
+      if (j && j.fun && active(j) && j.kind !== 'verify' && j.kind !== 'names') { t1 = 'Secret mission · ' + k0.done + '/' + k0.total; }
+      var t2 = WHO === 'mgr' ? 'Live stock' : (j && j.fun && active(j) && j.kind !== 'verify' && j.kind !== 'names') ? (j.paused ? 'Agent on a break' : 'Agent JV at work') : !active(j) ? (isLogin ? 'Log in' : 'Ready') : j.kind === 'verify' ? (j.paused ? 'Paused' : 'Read only') + ' · ' + j.title : (j.paused ? 'Paused' : j.phase === 'await' ? 'Ready to submit' : j.phase === 'capture' ? 'Finding Serial' : 'Filling') + ' · ' + j.store;
       bar.innerHTML = '<button type="button" data-jv="expand" aria-label="Show panel" style="display:flex;align-items:center;gap:10px;height:58px;border-radius:99px;background:' + C.ink + ';color:#fff;border:0;padding:0 16px 0 7px;cursor:pointer;box-shadow:0 14px 30px rgba(20,20,20,.3);text-align:left"><img src="' + LOGO + '" alt="" style="width:44px;height:44px;border-radius:50%"><span><b style="display:block;font:800 15px ' + F + '">' + esc(t1) + '</b><span style="display:block;font:500 12px ' + F + ';color:#B9B6C6;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(t2) + '</span></span>' + ic('up', 18, '#fff') + '</button>';
       bar.style.borderRadius = '999px'; bar.style.boxShadow = 'none'; bar.style.background = 'transparent'; return;
     }
@@ -321,16 +385,17 @@
       var v = verify(j), allOk = v.store && v.slip && v.rcv && v.type && v.rows === v.total;
       var nChecks = [v.store, v.slip, v.rcv, v.type, v.rows === v.total].filter(Boolean).length;
       h += hero((j.test ? 'Test mode · ' : '') + (j.kind === 'return' ? 'Return entry' : j.adv ? 'Advance issue' : 'Issue entry'), j.store, j, allOk ? C.ok : C.noInk);
-      var inner = statusCard(allOk ? 'ok' : 'no', allOk ? 'Ready to submit' : 'Check before SUBMIT', allOk ? 'All ' + nChecks + ' checks match the CUIMS form' : nChecks + ' of 5 checks match. See the red tiles.');
+      ui.lastAllOk = allOk;
+      var inner = (j.cuimsErr ? statusCard('no', 'CUIMS error', j.cuimsErr) : '') + statusCard(allOk ? 'ok' : 'no', allOk ? 'Ready to submit' : 'Check before SUBMIT', allOk ? 'All ' + nChecks + ' checks match the CUIMS form' : nChecks + ' of 5 checks match. See the red tiles.');
       inner += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">' + (j.kind === 'return' ? cell('By employee', 'GA' + esc(j.rcv), j.rname || '', v.rcv) + cell('Returned on', esc(v.dates || '–'), 'in every remark') + cell('Department', 'HOSTEL MESS (GA)', 'Return from Department', v.type) + cell('Type · Declaration', esc(v.paText), v.slip ? 'declaration ticked' : 'tick the declaration', v.store && v.slip) : cell('Receiver', 'GA' + esc(j.rcv), j.rname || '', v.rcv) + cell('Requested on', esc(v.dates || '–'), '') + cell('Issue type', 'Offline', 'Department', v.type) + cell('Project area', esc(v.paText || j.store), v.store ? 'matches store' : 'expected ' + j.store, v.store)) + '</div>';
       inner += secHead('Articles', v.rows + ' of ' + v.total + ' added') + itemRows(j, portal ? items : items.slice(0, 4));
       if (!portal && items.length > 4) inner += '<div style="font:600 12.5px ' + F + ';color:' + C.faint + ';text-align:center">+ ' + (items.length - 4) + ' more · turn on Big panel to see all</div>';
-      if (allOk && j.autoSubmit && !j.adv && !ui.autoStop) {
+      if (allOk && j.autoSubmit && !j.adv && !ui.autoStop && !j.cuimsErr) {
         var secs = ui.autoAt ? Math.max(0, Math.ceil((ui.autoAt - Date.now()) / 1000)) : 4;
         inner += row2('<div style="flex:1;height:52px;border-radius:99px;background:' + C.ink + ';color:#fff;display:flex;align-items:center;justify-content:center;font:700 15.5px ' + F + '">Submitting in ' + secs + ' s</div>', btn('autoStop', 'Stop', 'warn'));
         if (!ui.autoAt) { ui.autoAt = Date.now() + 4000; clearInterval(autoTimer); autoTimer = setInterval(function () {
           var jj = job(); if (!jj || jj.phase !== 'await' || ui.autoStop || !jj.autoSubmit) { clearInterval(autoTimer); ui.autoAt = 0; paint(); return; }
-          if (Date.now() >= ui.autoAt) { clearInterval(autoTimer); ui.autoAt = 0; var sb = $('ContentPlaceHolder1_btnsubmit') || document.querySelector('input[id$="btnsubmit"]'); if (sb) { toCapture(jj, 'Auto submit: SUBMIT tapped'); sb.click(); setTimeout(kick, 1500); } return; }
+          if (Date.now() >= ui.autoAt) { clearInterval(autoTimer); ui.autoAt = 0; var prm0 = window.Sys && Sys.WebForms && Sys.WebForms.PageRequestManager && Sys.WebForms.PageRequestManager.getInstance(); if (prm0 && prm0.get_isInAsyncPostBack()) { ui.autoAt = Date.now() + 800; return; } var sb = $('ContentPlaceHolder1_btnsubmit') || document.querySelector('input[id$="btnsubmit"]'); if (sb) { jj.autoTried = true; jj.subRetry = 0; toCapture(jj, 'Auto submit: SUBMIT tapped'); sb.focus(); sb.click(); setTimeout(kick, 1500); } return; }
           paint(); }, 500); }
       } else {
         inner += row2('<div style="flex:1;height:52px;border-radius:99px;background:' + (allOk ? C.ink : '#E4E1EC') + ';color:' + (allOk ? '#fff' : C.mute) + ';display:flex;align-items:center;justify-content:center;font:700 15px ' + F + ';white-space:nowrap">' + (allOk ? 'Waiting for SUBMIT' : 'Fix, then SUBMIT') + '</div>', btn('serialAsk', 'Serial', 'gold') + btn('cancel', 'Cancel', 'link'));
@@ -377,6 +442,9 @@
     if (a === 'tQueue' || a === 'tAuto') { var k = a === 'tQueue' ? 'queue' : 'autoSubmit'; var jt = job(); if (jt && jt.adv) return; if (jt) { jt[k] = !jt[k]; save(jt); ev('setPref', { key: k, val: jt[k] }); if (k === 'autoSubmit') { ui.autoStop = false; ui.autoAt = 0; } } paint(); return; }
     if (a === 'asStop') { try { B.autoStop && B.autoStop(); } catch (er) {} AUTO = null; try { localStorage.removeItem('jvAS'); } catch (er) {} B.showApp(); return; }
     if (a === 'asRetry') { AS = { run: AUTO.run, step: 'start' }; asSave(); location.href = (B.targetUrl && B.targetUrl()) || location.href; return; }
+    if (a === 'tFun') { var jf = job(); if (jf) { jf.fun = !jf.fun; save(jf); ev('setPref', { key: 'funMode', val: jf.fun }); try { B.setFun && B.setFun(jf.fun); } catch (er) {} } ui.peek = false; paint(); return; }
+    if (a === 'peek') { ui.peek = true; clearTimeout(ui.peekT); ui.peekT = setTimeout(function () { ui.peek = false; paint(); }, 10000); paint(); return; }
+    if (a === 'funSubmit') { var js = job(); var sbf = document.getElementById('ContentPlaceHolder1_btnsubmit') || document.querySelector('input[id$="btnsubmit"]'); if (js && js.phase === 'await' && sbf) { sbf.focus(); sbf.click(); } return; }
     if (a === 'tPortal') { portal = !portal; try { localStorage.setItem('jvPortal', portal ? '1' : '0'); } catch (er) {} try { B.setCover && B.setCover(portal && !mini); } catch (er) {} paint(); return; }
     if (a === 'tFull') { immersive = !immersive; try { B.setFullscreen && B.setFullscreen(immersive); } catch (er) {} paint(); return; }
     if (a === 'autoStop') { ui.autoStop = true; ui.autoAt = 0; clearInterval(autoTimer); paint(); return; }
@@ -715,7 +783,7 @@
 
   function hookSubmit() {
     var s = $('ContentPlaceHolder1_btnsubmit');
-    if (s && !s.__jv) { s.__jv = true; s.addEventListener('click', function () { var j = job(); if (j && j.phase === 'await') { j.phase = 'capture'; j.capSearched = false; j.capTries = 0; j.submitAt = Date.now(); save(j); paint(); setTimeout(kick, 1500); } }, true); }
+    if (s && !s.__jv) { s.__jv = true; s.addEventListener('click', function () { var j = job(); if (j && j.phase === 'await') { toCapture(j, 'SUBMIT tapped, finding the Serial No'); setTimeout(kick, 1500); } }, true); }
     var r = $('ContentPlaceHolder1_btnreset');
     if (r && !r.__jv) { r.__jv = true; r.addEventListener('click', function () { var j = job(); if (active(j) && ['fill', 'await'].indexOf(j.phase) >= 0) { j.phase = 'fill'; j.paused = true; j.pauseMsg = 'form was reset. Tap Resume to fill again.'; j.tries = {}; save(j); } }, true); }
   }
@@ -725,8 +793,35 @@
     var x = m.match(/(?:serial|issue)\D{0,20}(\d{4,8})/i);
     return x ? x[1] : '';
   }
+  function showErr(msg) {
+    var d = document.getElementById('jvErrDlg'); if (!d) { d = document.createElement('div'); d.id = 'jvErrDlg'; (document.body || document.documentElement).appendChild(d); }
+    d.setAttribute('style', 'position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(15,10,30,.55);font-family:' + F);
+    d.innerHTML = '<div style="width:100%;max-width:420px;background:#fff;border-radius:28px;padding:22px 20px 18px;box-shadow:0 30px 70px rgba(0,0,0,.35)">' +
+      '<div style="display:flex;align-items:center;gap:12px;margin-bottom:12px"><span style="width:48px;height:48px;border-radius:50%;background:#FFE4EA;color:#C0264A;display:flex;align-items:center;justify-content:center;font:900 26px ' + F + '">!</span><span><b style="display:block;font:800 19px ' + F + ';color:#141414">CUIMS showed an error</b><span style="font:600 13px ' + F + ';color:#6E6B7B">Nothing new was saved. Fix it, then SUBMIT again.</span></span></div>' +
+      '<div style="background:#FFF0F3;border:1.5px solid #F4C6D0;border-radius:18px;padding:14px 16px;font:600 15.5px/1.45 ' + F + ';color:#7A1230;white-space:pre-wrap;word-break:break-word;max-height:40vh;overflow:auto">' + esc(msg) + '</div>' +
+      '<div style="display:flex;gap:8px;margin-top:14px"><button type="button" id="jvErrCopy" style="flex:1;height:50px;border-radius:99px;border:1.5px solid #E2DFEA;background:#fff;font:700 15px ' + F + ';color:#141414">Copy</button><button type="button" id="jvErrOk" style="flex:2;height:50px;border-radius:99px;border:0;background:#141414;color:#fff;font:800 15px ' + F + '">OK, I will fix it</button></div></div>';
+    d.querySelector('#jvErrOk').onclick = function (e) { e.stopPropagation(); hideErr(); };
+    d.querySelector('#jvErrCopy').onclick = function (e) { e.stopPropagation(); try { navigator.clipboard.writeText(msg); this.textContent = 'Copied'; } catch (x) {} };
+  }
+  function hideErr() { var d = document.getElementById('jvErrDlg'); if (d) d.remove(); }
+  function lblMsg() { return ((document.getElementById('ContentPlaceHolder1_lblmsg') || {}).textContent || '').trim(); }
+  function backToAwait(j, msg) { j.phase = 'await'; j.paused = false; j.capSearched = false; j.capTries = 0; j.submitAt = 0; j.cuimsErr = msg; j.errAt = Date.now(); ui.autoStop = true; ui.autoAt = 0; save(j); log(j, msg, true); hookSubmit(); showErr(msg); ev('paused', { msg: msg }); paint(); return 'stop'; }
   async function stepCapture(j) {
     var ps = pageSerial(); if (ps && !j.alertSerial) { j.alertSerial = ps; save(j); }
+    if (!j.settled) {
+      var prm = window.Sys && Sys.WebForms && Sys.WebForms.PageRequestManager && Sys.WebForms.PageRequestManager.getInstance();
+      var since = Date.now() - (j.submitAt || Date.now()), busy = prm && prm.get_isInAsyncPostBack();
+      if (j.cuimsErr && j.errAt >= (j.submitAt || 0)) return backToAwait(j, j.cuimsErr);
+      var lm = lblMsg(); if (isErrMsg(lm) && !pageSerial()) return backToAwait(j, lm);
+      if (since < 2500 || (busy && since < 30000)) { await sleep(600); return 'wait'; }
+      var cleared = j.kind === 'return' ? true : formReset(j);
+      if (!cleared && !j.alertSerial && !pageSerial() && since < 9000) { await sleep(700); return 'wait'; }
+      if (!cleared && !j.alertSerial && !pageSerial()) {
+        if (j.autoTried && (j.subRetry || 0) < 1) { j.subRetry = 1; j.submitAt = Date.now(); save(j); var sb2 = document.getElementById('ContentPlaceHolder1_btnsubmit') || document.querySelector('input[id$="btnsubmit"]'); log(j, 'SUBMIT did not go through, trying once more'); if (sb2) sb2.click(); return 'wait'; }
+        return backToAwait(j, 'SUBMIT did not go through on CUIMS (the form is still filled and CUIMS gave no message). Check the form and tap SUBMIT yourself.');
+      }
+      j.settled = true; save(j); log(j, 'CUIMS finished saving, finding the Serial No');
+    }
     if (j.kind === 'return') {
       j.capAt = j.capAt || Date.now(); save(j);
       if (j.alertSerial) { j.phase = 'done'; j.serial = j.alertSerial; save(j); log(j, 'Return saved. Serial ' + j.alertSerial); ev('submitted', { serial: j.alertSerial, rname: j.rname || '', items: j.items }); return 'stop'; }
@@ -757,7 +852,7 @@
     var anyRow = (j.items || []).some(function (x) { return !x.skip && gridRow(x.code); });
     return isIssue && !anyRow && (!sb || sb.value.trim() !== j.slip);
   }
-  function toCapture(j, why) { j.phase = 'capture'; j.capSearched = false; j.capTries = 0; j.submitAt = j.submitAt || Date.now(); ui.serialBox = false; save(j); log(j, why); paint(); }
+  function toCapture(j, why) { j.phase = 'capture'; j.capSearched = false; j.capTries = 0; j.settled = false; j.cuimsErr = ''; j.submitAt = Date.now(); ui.serialBox = false; hideErr(); save(j); log(j, why); paint(); }
   document.addEventListener('click', function (e) {
     var t = e.target && e.target.closest ? e.target.closest('#ContentPlaceHolder1_btnsubmit,input[id$="btnsubmit"]') : null;
     if (!t) return; var j = job(); if (j && j.phase === 'await') { toCapture(j, 'SUBMIT tapped, finding the Serial No'); setTimeout(kick, 1500); }
@@ -766,17 +861,17 @@
     var nat = window.alert;
     window.alert = function (m) {
       var j = job();
-      if (j && (j.phase === 'capture' || j.phase === 'await')) { try { B.clearAlert && B.clearAlert(); } catch (e) {} window.__jvLastAlert = String(m || ''); if (window.JVFill && window.JVFill.onAlertMsg) window.JVFill.onAlertMsg(String(m || '')); return; }
+      if (j && active(j) && (j.phase === 'capture' || j.phase === 'await' || j.phase === 'fill')) { try { B.clearAlert && B.clearAlert(); } catch (e) {} window.__jvLastAlert = String(m || ''); if (window.JVFill && window.JVFill.onAlertMsg) window.JVFill.onAlertMsg(String(m || '')); return; }
       return nat.apply(window, arguments);
     };
   })();
   function kick() {
     var j0 = job();
-    if (!running && active(j0) && !j0.paused && j0.phase === 'await' && !ui.serialBox && formReset(j0)) toCapture(j0, 'Form cleared after SUBMIT, finding the Serial No'); var j = job(); if (!running && active(j) && !j.paused && isIssue && ['dup', 'fill', 'capture'].indexOf(j.phase) >= 0) run(); }
+    if (!running && active(j0) && !j0.paused && j0.phase === 'await' && !ui.serialBox && !j0.cuimsErr && formReset(j0)) toCapture(j0, 'Form cleared after SUBMIT, finding the Serial No'); var j = job(); if (!running && active(j) && !j.paused && isIssue && ['dup', 'fill', 'capture'].indexOf(j.phase) >= 0) run(); }
   setInterval(kick, 3000);
   async function run() {
     var ja = job();
-    if (active(ja) && ja.phase === 'await' && !ja.paused && !ui.serialBox && formReset(ja)) toCapture(ja, 'Form cleared after SUBMIT, finding the Serial No');
+    if (active(ja) && ja.phase === 'await' && !ja.paused && !ui.serialBox && !ja.cuimsErr && formReset(ja)) toCapture(ja, 'Form cleared after SUBMIT, finding the Serial No');
     if (running) return; running = true;
     try {
       for (var k = 0; k < 700; k++) {
@@ -813,8 +908,10 @@
     var msg = given != null ? given : (B.lastAlert() || ''); var j = job();
     if (!active(j)) return;
     var m = msg.match(/\b(\d{4,8})\b/);
-    if (j.phase === 'capture' || j.phase === 'await') { if (m) { j.alertSerial = m[1]; save(j); } log(j, 'CUIMS: ' + msg); setTimeout(kick, 800); return; }
-    if (j.phase === 'fill' && !j.paused) { j.paused = true; j.pauseMsg = 'CUIMS message: ' + msg; save(j); log(j, 'CUIMS: ' + msg, true); ev('paused', { msg: j.pauseMsg }); paint(); }
+    if (j.phase === 'capture' || j.phase === 'await') {
+      if (isErrMsg(msg)) { j.cuimsErr = msg; j.errAt = Date.now(); save(j); log(j, 'CUIMS error: ' + msg, true); showErr(msg); setTimeout(kick, 800); return; }
+      if (m) { j.alertSerial = m[1]; save(j); } log(j, 'CUIMS: ' + msg); setTimeout(kick, 800); return; }
+    if (j.phase === 'fill' && !j.paused) { j.paused = true; j.pauseMsg = 'CUIMS message: ' + msg; save(j); log(j, 'CUIMS: ' + msg, true); ev('paused', { msg: j.pauseMsg }); showErr(msg); paint(); }
   };
 
   /* ---------- start ---------- */
