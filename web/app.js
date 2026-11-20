@@ -2045,13 +2045,14 @@ function artsResults() {
   const allSel = L.length && L.every(x => A.sel[x.l.id]);
   let h = '<div class="row" style="align-items:center"><label class="chk" style="min-height:40px"><input type="checkbox" data-a="artsAll"' + (allSel ? ' checked' : '') + '> Select all</label><span class="note">' + groups.length + ' items · ' + L.length + ' articles</span></div>';
   if (!L.length) return h + '<div class="card pad note">No pending articles match.</div>';
-  h += '<div class="card" style="overflow:hidden">' + groups.slice(0, 200).map(g => {
+  const rowOf = g => {
     const open = !!(A.open || {})[g.code], gsel = g.xs.every(x => A.sel[x.l.id]), some = g.xs.some(x => A.sel[x.l.id]);
     const st = S.stock[g.code], short = st && st.qty < g.qty;
     let r = '<div class="agrp' + (open ? ' on' : '') + '"><div class="agh"><input type="checkbox" data-a="artsGrp" data-v="' + esc(g.code) + '"' + (gsel ? ' checked' : '') + (some && !gsel ? ' class="part"' : '') + ' aria-label="Select all ' + esc(itemName(g.code)) + '">' +
       '<button class="agm" data-a="artsGrpOpen" data-v="' + esc(g.code) + '"><span class="agn"><b>' + esc(itemName(g.code)) + '</b><span class="mono">' + esc(g.code) + ' · ' + g.xs.length + ' request' + (g.xs.length > 1 ? 's' : '') + ' · ' + g.stores + ' store' + (g.stores > 1 ? 's' : '') + '</span></span>' +
       '<span class="agq"><b>' + num(Math.round(g.qty * 1000) / 1000) + '</b><small>' + esc(itemUom(g.code)) + '</small></span>' + ico(open ? 'up' : 'down', 18) + '</button></div>' +
       '<div class="scrow" style="padding:0 16px 12px 52px">' + (g.ready ? '<span class="sc ok">' + g.ready + ' ready</span>' : '') + (g.xs.length - g.ready ? '<span class="sc ' + (short ? 'no' : 'gd') + '">' + (g.xs.length - g.ready) + ' waiting</span>' : '') + (st ? '<span class="sc ' + (short ? 'no' : 'ok') + '">stock ' + num(st.qty) + '</span>' : '<span class="sc no">not in stock</span>') + '</div>';
+    if (open && S.artsCat) r += '<div class="catmv"><span>Section</span>' + ARTS_CATS.map(([k, l, c]) => '<button data-a="artsCatMove" data-v="' + esc(g.code) + '|' + k + '" class="' + (itemCat(g.code) === k ? 'on' : '') + '" style="--c:' + c + '">' + l + '</button>').join('') + '</div>';
     if (open) r += g.xs.map(({ l, k }) => {
       const pst = k === 'later' ? pill('Scheduled', 'c-in') : k === 'issue' ? pill('Ready', 'c-ok') : k === 'short' ? pill('Short', 'c-no') : k === 'missing' ? pill('Not in stock', 'c-no') : pill('On hold', 'c-gd');
       return '<div class="art sub' + (A.sel[l.id] ? ' on' : '') + '"><input type="checkbox" data-a="artsSel" data-v="' + l.id + '"' + (A.sel[l.id] ? ' checked' : '') + ' aria-label="Select">' +
@@ -2060,8 +2061,30 @@ function artsResults() {
         '<button class="btn sm ghost" data-a="artHold" data-v="' + l.id + '">' + (S.hold[l.id] ? 'Release' : 'Hold') + '</button><button class="btn sm ghost danger-t" data-a="artDel" data-v="' + l.id + '">Remove</button></div></div></div>';
     }).join('');
     return r + '</div>';
-  }).join('') + '</div>' + (groups.length > 200 ? '<div class="note">Showing 200 items. Narrow with search or filters.</div>' : '');
+  };
+  if (S.artsCat) {
+    const C = {}; groups.forEach(g => (C[itemCat(g.code)] = C[itemCat(g.code)] || []).push(g));
+    ARTS_CATS.forEach(([k, label, col]) => { const gs = C[k]; if (!gs || !gs.length) return;
+      const op = !!(ui.artsCatOpen || {})[k], ids = gs.flatMap(g => g.xs.map(x => x.l.id)), allS = ids.every(id => A.sel[id]), someS = ids.some(id => A.sel[id]);
+      const arts = gs.reduce((n, g) => n + g.xs.length, 0), ready = gs.reduce((n, g) => n + g.ready, 0);
+      h += '<div class="card catcard" style="overflow:hidden;box-shadow:inset 5px 0 0 ' + col + '"><div class="cath"><input type="checkbox" data-a="artsCatSel" data-v="' + k + '"' + (allS ? ' checked' : '') + (someS && !allS ? ' class="part"' : '') + ' aria-label="Select all ' + esc(label) + '">' +
+        '<button class="catm" data-a="artsCatTog" data-v="' + k + '"><span class="cdot2" style="background:' + col + '"></span><span class="catn"><b>' + esc(label) + '</b><span>' + gs.length + ' item' + (gs.length > 1 ? 's' : '') + ' · ' + arts + ' article' + (arts > 1 ? 's' : '') + (ready ? ' · ' + ready + ' ready' : '') + '</span></span>' + ico(op ? 'up' : 'down', 20) + '</button></div>' +
+        (op ? gs.map(rowOf).join('') : '') + '</div>'; });
+    return h;
+  }
+  h += '<div class="card" style="overflow:hidden">' + groups.slice(0, 200).map(rowOf).join('') + '</div>' + (groups.length > 200 ? '<div class="note">Showing 200 items. Narrow with search or filters.</div>' : '');
   return h;
+}
+const ARTS_CATS = [['dairy', 'Dairy', '#5B9BFF'], ['veg', 'Vegetables', '#2BB673'], ['pulse', 'Pulses & Spices', '#FFB648'], ['misc', 'Miscellaneous / Other', '#9AA0A6']];
+function itemCat(code) {
+  const ov = (S.itemCat || {})[code]; if (ov) return ov;
+  const c = String(code || '').toUpperCase(), n = ' ' + String(itemName(code) || '').toUpperCase().replace(/[^A-Z]+/g, ' ') + ' ';
+  const has = re => re.test(n);
+  if (/^(HKG|EL|PL|ST|CR)-/.test(c) || has(/ (WASHING|DETERGENT|SURF|SOAP|PHENYL|HARPIC|VIM|BLEACH|CLEANER|BROOM|MOP|TISSUE|GLOVES|CAP|DUSTER|FOIL|WRAP|CYLINDER|LPG|GAS) /)) return 'misc';
+  if (/^VEG-/.test(c) || has(/ (POTATO|ONION|TOMATO|CAULI|CABBAGE|CARROT|CAROT|BEANS|PEAS|CAPSICUM|PUMPKIN|BRINJAL|BHINDI|OKRA|LADY FINGER|GOURD|LAUKI|TINDA|TORI|KARELA|CUCUMBER|RADISH|MOOLI|SPINACH|PALAK|SAAG|METHI GREEN|BATHU|CORIANDER|DHANIA PATTA|MINT|PUDINA|GINGER|GARLIC|GREEN CHIL|LEMON|BEETROOT|SWEET POTATO|ARBI|TARO|KACHALU|DRUMSTICK|MUSHROOM|BROCCOLI|ZUCCHINI|LETTUCE|CELERY|PARSLEY|BASIL|CURRY PATTA|CORN|JACK FRUIT|KATHAL|SPRING ONION|POKCHOY|CHINESE CABBAGE|CHERRY TOMATO|ACHARI MIRCH|COCONUT|BANANA|APPLE|ORANGE|PAPAYA|GUAVA|GRAPES|WATERMELON|MELON|FRUIT|LOKEE|SARSO|BATHUA) /)) return 'veg';
+  if (has(/ (MILK|PANEER|CURD|DAHI|BUTTER|CREAM|CHEESE|GHEE|KHOYA|KHOA|LASSI|CHHACH|BUTTERMILK|YOGURT|YOGHURT|EGG|EGGS|CHICKEN|MUTTON|FISH|AMUL|MILKMAID|CONDENSED) /)) return 'dairy';
+  if (has(/ (DAL|DHAL|RAJMA|RAJMAH|CHANA|CHOLE|MOONG|URAD|URD|MASOOR|ARHAR|TOOR|LOBIA|MOTH|ROONGI|MATAR|MUTTER|BESAN|SOYA CHUNK|SOYABEAN|MASALA|POWDER|MIRCH|HALDI|TURMERIC|JEERA|CUMIN|DHANIA|CORIANDER SEED|AJWAIN|AJWIN|HING|ASAFOETIDA|CLOVE|LAUNG|CARDAMOM|ELAICHI|CINNAMON|DALCHINI|BAY LEAF|TEJ PATTA|PEPPER|KALI MIRCH|JAVITRI|MACE|NUTMEG|JAIPHAL|STAR ANI|SAUNF|FENNEL|METHI DANA|KASOORI|KASURI|MUSTARD SEED|RAI|SARSON SEED|KALONJI|SABUT|WHOLE|CHILLI FLAKES|CHILLY FLAKES|OREGANO|ORGENO|MIX HERB|SEASONING|AMCHUR|SAFFRON|KESAR|KESHAR|TIL|SESAME|POPPY|KHUS|ANARDANA|KALA NAMAK|BLACK SALT) /)) return 'pulse';
+  return 'misc';
 }
 function vArts() {
   ui.arts = ui.arts || { q: '', store: '', st: 'all', sel: {}, day: 'all' };
@@ -2075,6 +2098,7 @@ function vArts() {
   if (A.day === 'pick') h += '<label class="f">Request date<input type="date" data-artsday="1" value="' + esc(A.dayPick || today()) + '"></label>';
   if (D0) { const W = S.lines.filter(l => l.date === D0 && l.status !== 'dropped'); const w = W.filter(l => l.status === 'waiting'); h += '<div class="daysum"><b>' + fmtLong(D0) + '</b><span>' + w.length + ' pending of ' + W.length + ' articles · ' + new Set(w.map(l => l.store)).size + ' stores · ' + new Set(w.map(l => l.req)).size + ' requests</span></div>'; }
   h += '<div class="seg">' + [['all', 'All'], ['ready', 'Ready'], ['wait', 'Short'], ['hold', 'On hold']].map(([k, l]) => '<button data-a="artsSt" data-v="' + k + '" class="' + (A.st === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>';
+  h += '<label class="chk catTog"><input type="checkbox" data-a="artsCatOn"' + (S.artsCat ? ' checked' : '') + '> Show in sections: Dairy · Vegetables · Pulses & Spices · Miscellaneous</label>';
   h += '<div class="grid2">' + pickBtn('artsStore', { title: 'Store', search: true, full: true, opts: [['', 'All stores']].concat(stores.map(x => [x, x])), val: A.store, set: v => { A.store = v; render(); } }) + sortPick('arts') + '</div>';
   h += '<div id="artsres">' + artsResults() + '</div>';
   h += '<button class="btn" data-a="artsExport">Download this list (PDF or Excel)</button>';
@@ -2689,7 +2713,7 @@ document.addEventListener('click', async ev => {
   if (a === 'lockTap') { if (ui.locked) askUnlock(); else { ui.locked = true; render(); renderSheet(); } return; }
   if (ui.locked && GUARDED.has(a)) { ev.preventDefault(); if (t.type === 'checkbox') t.checked = !t.checked; const sel = '[data-a="' + a + '"]' + (v != null ? '[data-v="' + CSS.escape(v) + '"]' : ''); askUnlock(() => { const el = document.querySelector(sel); if (el) el.click(); }); return; }
   if (a === 'bgClose') { if (ev.target === t) { ui.sheet = null; renderSheet(); } return; }
-  if (t.type === 'checkbox' && !['hold', 'queueToggle', 'regItems', 'mgrToggle', 'syncAuto', 'lockToggle', 'markPick', 'stOn', 'rpTog', 'rpCol', 'autoSubToggle', 'queuePend', 'credAuto', 'artsSel', 'artsAll', 'artsGrp', 'autoStockTog', 'mgSel', 'mgAll', 'lkOn', 'sdAddNew'].includes(a)) return;
+  if (t.type === 'checkbox' && !['hold', 'queueToggle', 'regItems', 'mgrToggle', 'syncAuto', 'lockToggle', 'markPick', 'stOn', 'rpTog', 'rpCol', 'autoSubToggle', 'queuePend', 'credAuto', 'artsSel', 'artsAll', 'artsGrp', 'autoStockTog', 'mgSel', 'mgAll', 'lkOn', 'sdAddNew', 'artsCatOn', 'artsCatSel'].includes(a)) return;
   const _busy = BUSY[a];
   if (_busy && !(ui.locked && GUARDED.has(a))) { loader(true, _busy); await new Promise(r => setTimeout(r, 40)); }
   try {
@@ -3010,6 +3034,10 @@ document.addEventListener('click', async ev => {
     case 'artsSel': if (t.checked) ui.arts.sel[v] = 1; else delete ui.arts.sel[v]; render(); break;
     case 'artsAll': { const L = artsList(); if (t.checked) L.forEach(x => ui.arts.sel[x.l.id] = 1); else L.forEach(x => delete ui.arts.sel[x.l.id]); render(); break; }
     case 'artsBClear': ui.arts.sel = {}; render(); break;
+    case 'artsCatOn': S.artsCat = t.checked; ui.artsCatOpen = {}; save(true); render(); break;
+    case 'artsCatTog': ui.artsCatOpen = ui.artsCatOpen || {}; ui.artsCatOpen[v] = !ui.artsCatOpen[v]; { const b = document.getElementById('artsres'); if (b) b.innerHTML = artsResults(); } break;
+    case 'artsCatSel': { const xs = artsList().filter(x => itemCat(x.l.code) === v); if (t.checked) xs.forEach(x => ui.arts.sel[x.l.id] = 1); else xs.forEach(x => delete ui.arts.sel[x.l.id]); render(); break; }
+    case 'artsCatMove': { const [code, to] = v.split('|'); S.itemCat = S.itemCat || {}; S.itemCat[code] = to; save(true); render(); break; }
     case 'artsGrpOpen': ui.arts.open = ui.arts.open || {}; ui.arts.open[v] = !ui.arts.open[v]; { const b = document.getElementById('artsres'); if (b) b.innerHTML = artsResults(); } break;
     case 'artsGrp': { const xs = artsList().filter(x => x.l.code === v); if (t.checked) xs.forEach(x => ui.arts.sel[x.l.id] = 1); else xs.forEach(x => delete ui.arts.sel[x.l.id]); render(); break; }
     case 'artQty': { const l = S.lines.find(x => String(x.id) === v); if (!l) break; const nv = await uiPrompt('New quantity for ' + itemName(l.code) + ' (' + l.store + ', ' + l.req + '). Now ' + num(l.qty) + ' ' + itemUom(l.code) + '.', String(l.qty), 'Save');
