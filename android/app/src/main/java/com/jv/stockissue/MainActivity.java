@@ -78,7 +78,9 @@ public class MainActivity extends AppCompatActivity {
     WebView appView, siteView, mgrView;
     android.widget.ImageView cover;
     android.widget.LinearLayout shield;
-    android.widget.TextView shieldMsg;
+    android.widget.TextView shieldMsg, shieldTitle;
+    android.widget.ImageView shieldLogo;
+    android.graphics.drawable.GradientDrawable shieldBg;
     java.util.ArrayList<android.animation.Animator> shieldAnims = new java.util.ArrayList<>();
     boolean coverMode = false;
     final java.util.HashMap<String, Boolean> painted = new java.util.HashMap<>();
@@ -198,6 +200,7 @@ public class MainActivity extends AppCompatActivity {
     void postData(String json, boolean ongoing) {
         try {
             JSONObject d = new JSONObject(json);
+            if (d.optBoolean("spy", false) || prefs.getBoolean("spy_on", false)) { if (svcOn) { stopService(new Intent(this, JobService.class)); svcOn = false; } NotificationManagerCompat.from(this).cancel(JobService.ID); return; }
             if (ongoing) {
                 if (!svcOn) { Intent si = new Intent(this, JobService.class); si.putExtra("data", json); ContextCompat.startForegroundService(this, si); svcOn = true; }
                 else NotificationManagerCompat.from(this).notify(JobService.ID, JobService.build(this, d, true));
@@ -275,7 +278,7 @@ public class MainActivity extends AppCompatActivity {
                 if (prefs.getBoolean("cover_" + who, false) && wv.getVisibility() == View.VISIBLE) {
                     boolean snap = Boolean.TRUE.equals(painted.get(who)) && wv.getWidth() > 0 && wv.getHeight() > 0;
                     painted.put(who, false);
-                    if (snap) {
+                    if (false && snap) {
                         try {
                             android.graphics.Bitmap bm = android.graphics.Bitmap.createBitmap(wv.getWidth(), wv.getHeight(), android.graphics.Bitmap.Config.RGB_565);
                             wv.draw(new android.graphics.Canvas(bm));
@@ -436,7 +439,7 @@ public class MainActivity extends AppCompatActivity {
         shield = new android.widget.LinearLayout(this);
         shield.setOrientation(android.widget.LinearLayout.VERTICAL);
         shield.setGravity(android.view.Gravity.CENTER);
-        android.graphics.drawable.GradientDrawable sg = new android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TL_BR, new int[]{0xFFE4DCFF, 0xFFF3EEFF, 0xFFFFF4E3});
+        android.graphics.drawable.GradientDrawable sg = shieldBg = new android.graphics.drawable.GradientDrawable(android.graphics.drawable.GradientDrawable.Orientation.TL_BR, new int[]{0xFFE4DCFF, 0xFFF3EEFF, 0xFFFFF4E3});
         shield.setBackground(sg);
         shield.setClickable(true);
         FrameLayout orb = new FrameLayout(this);
@@ -453,6 +456,7 @@ public class MainActivity extends AppCompatActivity {
             shieldAnims.add(an);
         }
         android.widget.ImageView lg = new android.widget.ImageView(this);
+        shieldLogo = lg;
         lg.setImageResource(R.mipmap.ic_launcher);
         lg.setElevation(dp(10));
         orb.addView(lg, new FrameLayout.LayoutParams(dp(68), dp(68), android.view.Gravity.CENTER));
@@ -464,7 +468,7 @@ public class MainActivity extends AppCompatActivity {
         shieldAnims.add(tilt);
         shield.addView(orb, new android.widget.LinearLayout.LayoutParams(dp(160), dp(160)));
         android.widget.TextView t1 = new android.widget.TextView(this);
-        t1.setText("JV Stock Issue"); t1.setTextSize(20); t1.setTypeface(android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.BOLD)); t1.setTextColor(0xFF141414);
+        shieldTitle = t1; t1.setText("JV Stock Issue"); t1.setTextSize(20); t1.setTypeface(android.graphics.Typeface.create("sans-serif", android.graphics.Typeface.BOLD)); t1.setTextColor(0xFF141414);
         t1.setGravity(android.view.Gravity.CENTER); t1.setPadding(0, dp(14), 0, 0);
         shield.addView(t1);
         shieldMsg = new android.widget.TextView(this);
@@ -485,12 +489,16 @@ public class MainActivity extends AppCompatActivity {
         shield.addView(t3);
         shield.setVisibility(View.GONE);
     }
-    static final String[] FUN_MSG = {"The penguin is fetching the next page", "Robot is juggling onions…", "Detective duck is on the case", "Cat is chasing the loading bar", "Hold tight, secret mission in progress"};
+    static final String[] FUN_MSG = {"Kitty is fetching the next page", "Kitty is chasing the loading bar", "Paws crossed, almost there", "Kitty is on a secret mission", "Hold tight, kitty is working"};
     void showShield(String msg) {
-        if (prefs.getBoolean("fun_emp", false) && msg != null) msg = FUN_MSG[(int) ((System.currentTimeMillis() / 2000) % FUN_MSG.length)];
+        boolean fun = prefs.getBoolean("fun_emp", false);
+        if (fun && msg != null) msg = FUN_MSG[(int) ((System.currentTimeMillis() / 2000) % FUN_MSG.length)];
+        if (shieldLogo != null) { shieldLogo.setImageResource(fun ? R.drawable.jv_cat_round : R.mipmap.ic_launcher); android.view.ViewGroup.LayoutParams lp = shieldLogo.getLayoutParams(); int sz = dp(fun ? 112 : 68); if (lp != null && lp.width != sz) { lp.width = sz; lp.height = sz; shieldLogo.setLayoutParams(lp); } }
+        if (shieldTitle != null) shieldTitle.setText(fun ? "Kitty Care" : "JV Stock Issue");
+        if (shieldBg != null) shieldBg.setColors(fun ? new int[]{0xFFE8E0FF, 0xFFF6F2FF, 0xFFFFE6F4} : new int[]{0xFFE4DCFF, 0xFFF3EEFF, 0xFFFFF4E3});
         if (shieldMsg != null && msg != null) shieldMsg.setText(msg);
         if (shield.getVisibility() != View.VISIBLE) {
-            shield.setAlpha(0f); shield.setVisibility(View.VISIBLE); shield.animate().alpha(1f).setDuration(160).start();
+            shield.setAlpha(1f); shield.setVisibility(View.VISIBLE);
             for (android.animation.Animator a : shieldAnims) if (!a.isStarted()) a.start();
         }
     }
@@ -571,6 +579,10 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     public void onBackPressed() {
+        if (siteView.getVisibility() == View.VISIBLE && prefs.getBoolean("spy_on", false)) {
+            authenticate(() -> { prefs.edit().putBoolean("spy_on", false).putBoolean("fun_emp", false).apply(); siteView.evaluateJavascript("window.JVFill&&window.JVFill.authOk('door')", null); backToApp(); }, () -> { });
+            return;
+        }
         if (siteView.getVisibility() == View.VISIBLE || mgrView.getVisibility() == View.VISIBLE) { backToApp(); return; }
         appView.evaluateJavascript("(window.jvBack&&window.jvBack())?'1':'0'", v -> {
             if (!"\"1\"".equals(v)) finish();
@@ -703,7 +715,17 @@ public class MainActivity extends AppCompatActivity {
             runOnUiThread(() -> { siteView.setInitialScale(0); mgrView.setInitialScale(0); });
         }
         @JavascriptInterface public void siteGo(String u) { runOnUiThread(() -> ("mgr".equals(who) ? mgrView : siteView).loadUrl(u)); }
-        @JavascriptInterface public void showApp() { runOnUiThread(MainActivity.this::backToApp); }
+        @JavascriptInterface public void showApp() { if ("emp".equals(who) && prefs.getBoolean("spy_on", false)) return; runOnUiThread(MainActivity.this::backToApp); }
+        @JavascriptInterface public void setSpy(boolean on) { prefs.edit().putBoolean("spy_on", on).putBoolean("fun_emp", on).apply(); if (on) runOnUiThread(() -> { if (svcOn) { stopService(new Intent(MainActivity.this, JobService.class)); svcOn = false; } NotificationManagerCompat.from(MainActivity.this).cancel(JobService.ID); }); }
+        @JavascriptInterface public void spyAuth(String kind) {
+            final String k = kind == null ? "peek" : kind.replaceAll("[^a-z]", "");
+            final WebView wv = "mgr".equals(who) ? mgrView : siteView;
+            runOnUiThread(() -> MainActivity.this.authenticate(() -> {
+                if ("door".equals(k) || "off".equals(k)) prefs.edit().putBoolean("spy_on", false).putBoolean("fun_emp", false).apply();
+                wv.evaluateJavascript("window.JVFill&&window.JVFill.authOk('" + k + "')", null);
+                if ("door".equals(k)) backToApp();
+            }, () -> { }));
+        }
         @JavascriptInterface public void siteEvent(String json) {
             runOnUiThread(() -> appView.evaluateJavascript("window.onSiteEvent&&window.onSiteEvent(" + JSONObject.quote(json) + ")", null));
         }

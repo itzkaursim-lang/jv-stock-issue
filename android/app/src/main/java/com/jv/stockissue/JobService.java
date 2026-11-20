@@ -75,6 +75,7 @@ public class JobService extends Service {
         sm.setTextViewText(R.id.n_ringtxt, ringTxt);
 
         RemoteViews bg = new RemoteViews(c.getPackageName(), R.layout.notif_big);
+        if (d.optBoolean("fun", false)) { bg.setImageViewResource(R.id.b_logo, R.drawable.jv_cat_round); sm.setImageViewResource(R.id.n_logo, R.drawable.jv_cat_round); }
         bg.setTextViewText(R.id.b_over, d.optString("bigOver", d.optString("over")));
         bg.setTextViewText(R.id.b_title, d.optString("title"));
         bg.setTextViewText(R.id.b_reqL, d.optString("reqL", "REQUEST"));

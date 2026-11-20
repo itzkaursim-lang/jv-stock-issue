@@ -666,7 +666,7 @@ function startJob(store, slip, rcv, lineIds, adv) {
   const job = { id: 'J' + Date.now(), fun: !!S.funMode, adv: !!adv, test: !!S.testMode, slip, rcv, store, queue: !!S.queue && !adv, next: nq ? nq.req + ' · ' + nq.store : '', autoSubmit: !!S.autoSubmit && !S.testMode && !adv, phase: 'dup', paused: false, log: [], tries: {},
     items: ls.map(l => ({ lineId: l.id, req: l.req, reqDate: l.date, code: l.code, name: itemName(l.code), uom: itemUom(l.code), qty: l.qty, remark: adv ? adv.remark : (l.remark || remarkFor(l.date)), skip: false })) };
   if (!N) { toast('Open this inside the JV Stock Issue app to fill CUIMS.'); return; }
-  N.startJob(JSON.stringify(job));
+  N.startJob(jobJson(job));
 }
 function queueList(skipIds) {
   const PL = plan(), t = today(), skip = new Set(skipIds || []);
@@ -846,6 +846,7 @@ const MON3 = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oc
 function cuimsDate(iso) { const p = String(iso || today()).split('-'); return MON3[+p[1] - 1] + ' ' + p[2] + ', ' + p[0]; }
 function retRemark(r) { return 'Returned from ' + String(r.store || '').trim() + ' on ' + cuimsDate(r.recvDate || r.date); }
 function retQueue(skipId) { return S.returns.filter(r => !r.serial && r.id !== skipId && r.store && validRcv(r.by) && r.items.length).sort((a, b) => String(a.recvDate || a.date).localeCompare(String(b.recvDate || b.date)) || String(a.no).localeCompare(String(b.no), undefined, { numeric: true })); }
+function jobJson(o) { if (o && o.fun == null) o.fun = !!S.funMode; return JSON.stringify(o); }
 function startReturnJob(r) {
   if (!r.store || !validRcv(r.by) || !r.items.length) { toast('Store, a By employee code (GA or E) and at least one item are needed.'); return; }
   const rem = retRemark(r);
@@ -853,7 +854,7 @@ function startReturnJob(r) {
   const job = { id: 'J' + Date.now(), fun: !!S.funMode, kind: 'return', retId: r.id, slip: r.no, rcv: normRcv(r.by) || r.by, rname: r.byName || rcvName(r.by), store: r.store, retDateText: cuimsDate(r.recvDate || r.date), test: !!S.testMode, queue: !!S.queue, autoSubmit: !!S.autoSubmit && !S.testMode, phase: 'fill', paused: false, log: [], tries: {}, next: nx ? nx.no + ' · ' + nx.store : '',
     items: r.items.map((i, k) => ({ lineId: 'r' + r.id + '_' + k, req: '', reqDate: '', code: i.code, name: i.name || itemName(i.code), uom: i.uom || itemUom(i.code), qty: Number(i.qty), remark: rem, skip: false })) };
   if (!N) { toast('Open this inside the JV Stock Issue app to fill CUIMS.'); return; }
-  N.startJob(JSON.stringify(job));
+  N.startJob(jobJson(job));
 }
 function retPrefix(iso) { const p = String(iso || today()).split('-'); return 'R-' + p[2] + p[1] + '-'; }
 const RET_RE = /^R-\d{4}-\d{2,3}$/i;
@@ -1028,7 +1029,7 @@ function vSet() {
   h += '<div class="pad col"><input type="text" id="newStore" list="areaList" placeholder="Add store: type or pick Project Area" autocapitalize="characters">' + areaDatalist() + '<button class="btn" data-a="addStore">+ Add store</button></div></div>';
   }
   if (pg === 'fill') {
-  h += '<div class="card pad col"><h3>Spy mode</h3><label class="chk"><input type="checkbox" data-a="funToggle"' + (S.funMode ? ' checked' : '') + '> Show funny cartoon scenes on CUIMS while entries run</label><div class="note">ON: store names, slips and items are hidden behind a cartoon mission (also in the notification). Peek shows the real panel for 10 seconds. CUIMS errors still pop up clearly. OFF: the normal professional panel.</div></div>';
+  h += '<div class="card pad col"><h3>Kitty mode (spy mode)</h3><label class="chk"><input type="checkbox" data-a="funToggle"' + (S.funMode ? ' checked' : '') + '> Hide all work behind Kitty while CUIMS runs</label><div class="note">For issues, returns, verify, linking serials and name checks. The CUIMS screen shows only a kitten game, with no words about stock or entries, and no notifications. Peek, Hide, errors and leaving need your fingerprint or phone PIN. When everything is done, Kitty waits until you tap Close the door and unlock.</div></div></div>';
   h += '<div class="card pad col"><h3>Auto submit</h3><label class="chk"><input type="checkbox" data-a="autoSubToggle"' + (S.autoSubmit ? ' checked' : '') + '> Tap SUBMIT automatically when the recheck matches 100%</label><div class="note">A 4-second countdown with a Stop button appears first. You can also switch this in the CUIMS bar.</div></div>';
   h += '<div class="card pad col"><h3>Filling</h3><label class="chk"><input type="checkbox" data-a="queueToggle"' + (S.queue ? ' checked' : '') + '> Queue mode: after each submit, fill the next request automatically</label></div>';
     h += queueBox();
@@ -2289,7 +2290,7 @@ async function startVerify(scope) {
   const job = { id: 'V' + Date.now(), kind: 'verify', phase: 'verify', slip: 'VERIFY', store: title, title, scope, targets: T, idx: 0, res: {}, log: [], tries: {}, queue: false, autoSubmit: false, items: [] };
   if (scope.type === 'day') job.day = { us: usOf(scope.id), label: fmtLong(scope.id) };
   { const I = ignList(); job.ignore = { serials: Object.keys(I.serials), people: Object.keys(I.people) }; }
-  N.startJob(JSON.stringify(job));
+  N.startJob(jobJson(job));
 }
 function ignList() { S.cuimsIgnore = S.cuimsIgnore || { serials: {}, people: {} }; return S.cuimsIgnore; }
 function personCode(txt) { const m = String(txt || '').match(/GA\d{6}/i); return m ? m[0].toUpperCase() : ''; }
@@ -2420,7 +2421,7 @@ async function startLink(auto) {
   const job = { id: 'V' + Date.now(), kind: 'verify', phase: 'verify', slip: 'LINK', store: 'Link ' + fmtShort(f.date), title: (auto ? 'Find serials · ' : 'Link serials · ') + fmtShort(f.rFrom) + (f.rTo !== f.rFrom ? ' – ' + fmtShort(f.rTo) : ''), scope: { type: auto ? 'linkday' : 'link', id: f.rFrom, from: f.rFrom, to: f.rTo, map }, targets: T, idx: 0, res: {}, log: [], tries: {}, queue: false, autoSubmit: false, items: [] };
   if (auto) job.day = { us: usOf(f.cFrom), to: usOf(f.cTo), label: fmtShort(f.cFrom) + (f.cTo !== f.cFrom ? ' – ' + fmtShort(f.cTo) : '') };
   { const I = ignList(); job.ignore = { serials: Object.keys(I.serials).concat(known), people: Object.keys(I.people) }; }
-  ui.sheet = null; renderSheet(); N.startJob(JSON.stringify(job));
+  ui.sheet = null; renderSheet(); N.startJob(jobJson(job));
 }
 function buildLinkProposal(e) {
   const scope = e.scope || {}, res = e.res || {}, map = scope.map || {}, d = scope.id;
@@ -2727,7 +2728,7 @@ document.addEventListener('click', async ev => {
     case 'openReq': { if (ui.view !== 'req') { const ids = []; document.querySelectorAll('[data-a="openReq"][data-v]').forEach(x => { if (!ids.includes(x.dataset.v)) ids.push(x.dataset.v); }); ui.reqList = ids.length > 1 ? ids : null; }
       ui.lastReq = v; ui.view = 'req'; ui.req = v; render(); window.scrollTo(0, 0); break; }
     case 'reqGo': goReq(+v); break;
-    case 'funToggle': S.funMode = t.checked; save(true); toast('Spy mode ' + (S.funMode ? 'on' : 'off') + '.'); break;
+    case 'funToggle': S.funMode = t.checked; save(true); toast('Kitty mode ' + (S.funMode ? 'on' : 'off') + '.'); break;
     case 'sdMode': ui.upload.stockMode = v; renderSheet(); break;
     case 'sdLink': ui.upload.linkBy = v; ui.upload.diff = stockDiff(ui.upload.result.stock, v); renderSheet(); break;
     case 'sdAddNew': ui.upload.addNew = t.checked; renderSheet(); break;
@@ -2782,7 +2783,7 @@ document.addEventListener('click', async ev => {
     case 'nameLookup': { const codes = v === '*' ? [...new Set([].concat(Object.values(S.stores).map(x => x.rcv), S.returns.map(r => r.by), S.entries.map(e => e.rcv)).map(normRcv).filter(Boolean))] : [normRcv(v)].filter(Boolean);
       if (!codes.length || !N) break;
       if (!(await uiConfirm('Check ' + (codes.length === 1 ? rcvLabel(codes[0]) : codes.length + ' codes') + ' on CUIMS? The app only types the code in Received By and reads the names in the list. Nothing is selected or saved on CUIMS.', 'Check names'))) break;
-      N.startJob(JSON.stringify({ id: 'N' + Date.now(), kind: 'names', phase: 'names', slip: 'NAMES', store: 'Receiver names', title: 'Receiver names from CUIMS', codes, idx: 0, names: {}, log: [], tries: {}, queue: false, autoSubmit: false, items: [] })); break; }
+      N.startJob(jobJson({ id: 'N' + Date.now(), kind: 'names', phase: 'names', slip: 'NAMES', store: 'Receiver names', title: 'Receiver names from CUIMS', codes, idx: 0, names: {}, log: [], tries: {}, queue: false, autoSubmit: false, items: [] })); break; }
     case 'vfIgnF': { const [rid, fid] = v.split('|'); const R = (S.verifyReports || []).find(r => r.id === rid); const f = R && R.findings.find(x => x.id === fid); if (!f) break;
       const note = await uiPrompt('Ignore this error in all future checks? Add a short reason (optional).', '', 'Ignore'); if (note == null) break;
       S.verifyIgnore = S.verifyIgnore || {}; S.verifyIgnore[fSig(f)] = { at: new Date().toISOString(), note: note.trim(), kind: f.kind, label: f.label || f.serial || '', code: f.code || '' }; save(); render(); break; }
