@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Kitty Care</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700;800;900&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;overflow:hidden;font-family:'Outfit',system-ui,sans-serif;color:#141414;user-select:none;-webkit-user-select:none}
+body{background:#EEE8FF}
+#bg{position:fixed;inset:0;transition:background 1s ease}
+#bg2{position:fixed;inset:0;opacity:0;transition:opacity 1s ease}
+.blob{position:absolute;border-radius:50%;filter:blur(2px);opacity:.55;animation:drift 18s ease-in-out infinite}
+.pp{position:absolute;opacity:.18;animation:floatp 14s linear infinite}
+@keyframes drift{0%,100%{transform:translate(0,0) scale(1)}33%{transform:translate(30px,-40px) scale(1.15)}66%{transform:translate(-25px,20px) scale(.9)}}
+@keyframes floatp{0%{transform:translateY(40px) rotate(0);opacity:0}15%{opacity:.18}85%{opacity:.18}100%{transform:translateY(-110vh) rotate(40deg);opacity:0}}
+#app{position:fixed;inset:0;display:flex;flex-direction:column}
+.top{display:flex;align-items:center;gap:10px;padding:18px 18px 0}
+.badge{font:800 12px 'Outfit',system-ui;letter-spacing:.08em;text-transform:uppercase;color:#6E5BD6;background:rgba(255,255,255,.8);border-radius:99px;padding:8px 13px;box-shadow:0 4px 14px rgba(110,91,214,.12)}
+.cnt{margin-left:auto;font:800 16px 'Outfit',system-ui;background:rgba(255,255,255,.85);border-radius:99px;padding:7px 15px;box-shadow:0 4px 14px rgba(110,91,214,.12);transition:transform .25s}
+.cnt.pop{transform:scale(1.18)}
+.hide{width:44px;height:44px;border-radius:50%;border:0;background:rgba(255,255,255,.9);font:800 18px 'Outfit';color:#141414;box-shadow:0 4px 14px rgba(110,91,214,.12)}
+.mid{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:0 22px;min-height:0}
+#scene{width:min(84vw,360px);height:min(84vw,360px);max-height:46vh;max-width:46vh;overflow:visible}
+.title{font:900 29px 'Outfit',system-ui;text-align:center;line-height:1.12;min-height:33px;transition:opacity .25s,transform .25s}
+.title.sw{opacity:0;transform:translateY(8px)}
+.sub{font:600 16px 'Outfit',system-ui;color:#4A4660;text-align:center;min-height:22px;transition:opacity .3s}
+.sub.sw{opacity:0}
+.prog{width:min(80vw,340px);height:12px;border-radius:99px;background:rgba(255,255,255,.85);overflow:hidden;position:relative}
+.prog i{position:absolute;left:0;top:0;bottom:0;border-radius:99px;background:linear-gradient(90deg,#B9A7FF,#F6A8EE,#FFC48A);background-size:200% 100%;animation:shine 2.4s linear infinite;transition:width .6s cubic-bezier(.3,.8,.3,1)}
+@keyframes shine{to{background-position:-200% 0}}
+.bot{padding:0 18px 24px;display:flex;flex-direction:column;gap:10px}
+.row{display:flex;gap:10px;align-items:center}
+.row>.b{flex:1}
+.b{height:54px;padding:0 18px;border-radius:999px;font:700 15.5px 'Outfit',system-ui;white-space:nowrap;display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1.5px solid #E4E1EC;background:#fff;color:#141414;transition:transform .12s}
+.b:active{transform:scale(.96)}
+.b.main{background:#141414;color:#fff;border:0;box-shadow:0 10px 20px rgba(20,20,20,.22)}
+.b.warn{background:#FFD9E3;color:#8E1B3A;border:0}
+.b.link{background:none;border:0;color:#C0264A;flex:0 0 auto}
+.chipr{display:flex;justify-content:center}
+.chip{display:inline-flex;align-items:center;gap:7px;height:38px;border-radius:99px;padding:0 14px 0 11px;border:0;font:700 13px 'Outfit',system-ui;background:#141414;color:#fff}
+.chip i{width:8px;height:8px;border-radius:50%;background:#7CF0B5}
+
+/* ---------- kitty rig ---------- */
+#scene *{transform-box:view-box}
+#cat{transform-origin:150px 290px}
+#body{transform-origin:150px 285px;animation:breathe 2.6s ease-in-out infinite}
+#head{transform-origin:150px 172px;animation:headIdle 5s ease-in-out infinite}
+#tail{transform-origin:198px 254px;animation:tail 2.8s ease-in-out infinite}
+#earL{transform-origin:112px 88px;animation:earT 6s ease-in-out infinite}
+#earR{transform-origin:188px 88px;animation:earT 7.3s ease-in-out infinite 1.2s}
+#eyesO{transform-origin:150px 124px;animation:blink 4.2s infinite}
+#pupils{transform-origin:150px 124px}
+#pawL{transform-origin:130px 276px}
+#pawR{transform-origin:170px 276px}
+#shadow{transform-origin:150px 288px}
+#mouthO,#tongue{transform-origin:150px 155px;transform:scale(0)}
+#eyesC,#eyesH,#mouthW{opacity:0}
+.prop{opacity:0;transition:opacity .5s}
+@keyframes breathe{0%,100%{transform:scale(1,1)}50%{transform:scale(1.015,1.03)}}
+@keyframes headIdle{0%,100%{transform:rotate(0)}30%{transform:rotate(-3deg)}65%{transform:rotate(2.5deg)}}
+@keyframes tail{0%,100%{transform:rotate(-8deg)}50%{transform:rotate(10deg)}}
+@keyframes tailFast{0%,100%{transform:rotate(-14deg)}50%{transform:rotate(16deg)}}
+@keyframes earT{0%,86%,100%{transform:rotate(0)}89%{transform:rotate(-12deg)}92%{transform:rotate(4deg)}95%{transform:rotate(0)}}
+@keyframes blink{0%,90%,100%{transform:scaleY(1)}94%{transform:scaleY(.08)}}
+
+/* eating */
+.st-fill #head{animation:eat 1.5s ease-in-out infinite}
+.st-fill #mouthO{animation:chew 1.5s ease-in-out infinite}
+.st-fill #tail{animation:tailFast 1.2s ease-in-out infinite}
+.st-fill .p-bowl,.st-fill .p-treat,.st-fill .p-fly{opacity:1}
+.st-fill .p-fly{animation:fly 1.5s ease-in infinite}
+.st-fill .p-fly.f2{animation-delay:.5s}.st-fill .p-fly.f3{animation-delay:1s}
+@keyframes eat{0%,100%{transform:translateY(0) rotate(0)}35%,60%{transform:translateY(22px) rotate(2deg)}48%{transform:translateY(19px) rotate(-2deg)}}
+@keyframes chew{0%,30%,100%{transform:scale(0)}40%{transform:scale(1)}48%{transform:scale(.4)}56%{transform:scale(1)}64%{transform:scale(0)}}
+@keyframes fly{0%{transform:translate(120px,-70px) rotate(0);opacity:0}15%{opacity:1}80%{transform:translate(0,0) rotate(300deg);opacity:1}100%{transform:translate(0,4px) rotate(330deg);opacity:0}}
+
+/* sleeping */
+.st-sleep #head{animation:none;transform:rotate(-13deg) translateY(10px)}
+.st-sleep #eyesO{opacity:0;animation:none}.st-sleep #eyesC{opacity:1}
+.st-sleep #body{animation:breathe 3.8s ease-in-out infinite}
+.st-sleep #tail{animation:none;transform:rotate(22deg)}
+.st-sleep #earL{animation:none;transform:rotate(-8deg)}.st-sleep #earR{animation:none;transform:rotate(8deg)}
+.st-sleep .p-zzz{opacity:1}
+.st-sleep .p-zzz text{animation:zz 3s ease-in infinite}
+.st-sleep .p-zzz text:nth-child(2){animation-delay:1s}.st-sleep .p-zzz text:nth-child(3){animation-delay:2s}
+.st-sleep #shadow{opacity:.7}
+@keyframes zz{0%{transform:translate(0,0) scale(.6);opacity:0}25%{opacity:1}100%{transform:translate(34px,-70px) scale(1.2);opacity:0}}
+
+/* worried */
+.st-no #cat{animation:shiver .16s linear infinite}
+.st-no #earL{animation:none;transform:rotate(-30deg)}.st-no #earR{animation:none;transform:rotate(30deg)}
+.st-no #pupils{transform:scale(1.14)}
+.st-no #mouth{opacity:0}.st-no #mouthW{opacity:1}
+.st-no #tail{animation:tailFast .5s ease-in-out infinite}
+.st-no .p-sweat,.st-no .p-q{opacity:1}
+.st-no .p-sweat path{animation:drop 1.4s ease-in infinite}
+.st-no .p-q{animation:qpop 1.2s ease-in-out infinite;transform-origin:236px 56px}
+@keyframes shiver{0%,100%{transform:translateX(0)}25%{transform:translateX(-2.5px)}75%{transform:translateX(2.5px)}}
+@keyframes drop{0%{transform:translateY(0);opacity:0}20%{opacity:1}100%{transform:translateY(40px);opacity:0}}
+@keyframes qpop{0%,100%{transform:scale(1) rotate(-6deg)}50%{transform:scale(1.15) rotate(6deg)}}
+
+/* happy jump */
+.st-jump #cat{animation:jump 1s cubic-bezier(.3,.7,.4,1) infinite}
+.st-jump #shadow{animation:shad 1s cubic-bezier(.3,.7,.4,1) infinite}
+.st-jump #eyesO{opacity:0;animation:none}.st-jump #eyesH{opacity:1}
+.st-jump #mouthO{transform:scale(.8)}
+.st-jump #tail{animation:tailFast .45s ease-in-out infinite}
+.st-jump #pawL{animation:wave .5s ease-in-out infinite}.st-jump #pawR{animation:wave .5s ease-in-out infinite .25s}
+.st-jump .p-heart,.st-jump .p-conf{opacity:1}
+.st-jump .p-heart path{animation:heart 2.2s ease-out infinite}
+.st-jump .p-heart path:nth-child(2){animation-delay:.7s}.st-jump .p-heart path:nth-child(3){animation-delay:1.4s}
+.st-jump .p-conf rect{animation:conf 2.6s linear infinite}
+@keyframes jump{0%,100%{transform:translateY(0) scale(1.04,.94)}12%{transform:translateY(0) scale(1,1)}45%{transform:translateY(-46px) scale(.98,1.04) rotate(-4deg)}60%{transform:translateY(-46px) rotate(4deg)}88%{transform:translateY(0) scale(1,1)}}
+@keyframes shad{0%,12%,88%,100%{transform:scale(1);opacity:1}50%{transform:scale(.6);opacity:.5}}
+@keyframes wave{0%,100%{transform:translateY(0) rotate(0)}50%{transform:translateY(-16px) rotate(-14deg)}}
+@keyframes heart{0%{transform:translate(0,0) scale(.4);opacity:0}20%{opacity:1}100%{transform:translate(0,-110px) scale(1.2);opacity:0}}
+@keyframes conf{0%{transform:translateY(-60px) rotate(0)}100%{transform:translateY(340px) rotate(720deg)}}
+
+/* ready to play */
+.st-ready #eyesO{animation:blink 3s infinite}
+.st-ready #pawR{animation:bat 1.4s ease-in-out infinite}
+.st-ready #head{animation:tiltR 2.8s ease-in-out infinite}
+.st-ready .p-yarn{opacity:1}
+.st-ready .p-yarn .ball{animation:roll 1.4s ease-in-out infinite;transform-origin:246px 266px}
+.st-ready .p-spark{opacity:1}.st-ready .p-spark path{animation:twk 1.6s ease-in-out infinite}
+.st-ready .p-spark path:nth-child(2){animation-delay:.5s}.st-ready .p-spark path:nth-child(3){animation-delay:1s}
+@keyframes bat{0%,55%,100%{transform:translate(0,0) rotate(0)}70%{transform:translate(18px,-26px) rotate(-30deg)}82%{transform:translate(30px,-6px) rotate(-10deg)}}
+@keyframes roll{0%,72%,100%{transform:translateX(0) rotate(0)}86%{transform:translateX(16px) rotate(90deg)}}
+@keyframes tiltR{0%,100%{transform:rotate(0)}50%{transform:rotate(7deg)}}
+@keyframes twk{0%,100%{transform:scale(.3);opacity:0}50%{transform:scale(1);opacity:1}}
+
+/* pounce prep */
+.st-launch #cat{animation:wiggle .28s ease-in-out infinite}
+.st-launch #body{animation:none;transform:scale(1.04,.9)}
+.st-launch #head{animation:none;transform:translateY(16px)}
+.st-launch #pupils{transform:scale(.85)}
+.st-launch #tail{animation:tailFast .3s ease-in-out infinite}
+.st-launch .p-yarn{opacity:1}
+.st-launch .p-yarn .ball{animation:shake .2s linear infinite;transform-origin:246px 266px}
+@keyframes wiggle{0%,100%{transform:rotate(-2.5deg)}50%{transform:rotate(2.5deg)}}
+@keyframes shake{0%,100%{transform:translateX(0)}50%{transform:translateX(3px)}}
+
+/* hunting */
+.st-hunt #head{animation:look 2.4s ease-in-out infinite}
+.st-hunt #pupils{animation:lookE 2.4s ease-in-out infinite}
+.st-hunt #pawR{animation:mag 2.4s ease-in-out infinite}
+.st-hunt .p-mag,.st-hunt .p-paws{opacity:1}
+.st-hunt .p-mag{animation:mag 2.4s ease-in-out infinite;transform-origin:214px 236px}
+.st-hunt .p-paws g{animation:print 2.5s linear infinite;opacity:0}
+.st-hunt .p-paws g:nth-child(2){animation-delay:.5s}.st-hunt .p-paws g:nth-child(3){animation-delay:1s}.st-hunt .p-paws g:nth-child(4){animation-delay:1.5s}.st-hunt .p-paws g:nth-child(5){animation-delay:2s}
+@keyframes look{0%,100%{transform:rotate(0) translateX(0)}25%{transform:rotate(-7deg) translateX(-8px)}75%{transform:rotate(7deg) translateX(8px)}}
+@keyframes lookE{0%,100%{transform:translateX(0)}25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}
+@keyframes mag{0%,100%{transform:rotate(0) translate(0,0)}25%{transform:rotate(-10deg) translate(-6px,-6px)}75%{transform:rotate(10deg) translate(6px,-2px)}}
+@keyframes print{0%{opacity:0}10%{opacity:.9}70%{opacity:.9}100%{opacity:0}}
+
+/* counting toys */
+.st-count #head{animation:nod .8s ease-in-out infinite}
+.st-count #pawL{animation:tap .8s ease-in-out infinite}
+.st-count .p-toys{opacity:1}
+.st-count .p-toys>g{animation:toy 2.4s ease-in-out infinite}
+.st-count .p-toys>g:nth-child(2){animation-delay:.8s}.st-count .p-toys>g:nth-child(3){animation-delay:1.6s}
+.st-count .t1{transform-origin:42px 276px}.st-count .t2{transform-origin:258px 280px}.st-count .t3{transform-origin:264px 236px}
+@keyframes nod{0%,100%{transform:rotate(0) translateY(0)}50%{transform:rotate(4deg) translateY(5px)}}
+@keyframes tap{0%,100%{transform:translateY(0)}50%{transform:translateY(-9px) rotate(-8deg)}}
+@keyframes toy{0%,30%,100%{transform:translateY(0) scale(1)}12%{transform:translateY(-22px) scale(1.15)}}
+
+/* learning */
+.st-learn #head{animation:tiltB 2.6s ease-in-out infinite}
+.st-learn .p-book{opacity:1}
+.st-learn .p-book .pg{animation:page 2.6s ease-in-out infinite;transform-origin:150px 262px}
+.st-learn #pawL,.st-learn #pawR{opacity:0}
+@keyframes tiltB{0%,100%{transform:rotate(-8deg)}50%{transform:rotate(8deg)}}
+@keyframes page{0%,40%{transform:scaleX(1)}60%,100%{transform:scaleX(-1)}}
+
+/* door / key */
+.st-key .p-key{opacity:1;animation:swing 1.6s ease-in-out infinite;transform-origin:236px 196px}
+.st-key #earL{animation:earT 2.2s ease-in-out infinite}.st-key #earR{animation:earT 2.6s ease-in-out infinite .4s}
+.st-key #head{animation:tiltR 2.4s ease-in-out infinite}
+@keyframes swing{0%,100%{transform:rotate(-16deg)}50%{transform:rotate(16deg)}}
+
+/* waking up */
+.st-wake .p-sun{opacity:1}
+.st-wake .p-sun .rays{animation:spin 8s linear infinite;transform-origin:244px 62px}
+.st-wake .p-sun{animation:rise 3.2s ease-in-out infinite alternate}
+.st-wake #mouthO{animation:yawn 3.2s ease-in-out infinite}
+.st-wake #eyesO{animation:yawnE 3.2s ease-in-out infinite}
+.st-wake #body{animation:stretch 3.2s ease-in-out infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@keyframes rise{from{transform:translateY(14px)}to{transform:translateY(-4px)}}
+@keyframes yawn{0%,20%,70%,100%{transform:scale(0)}40%,55%{transform:scale(1.7,1.9)}}
+@keyframes yawnE{0%,20%,70%,100%{transform:scaleY(1)}35%,58%{transform:scaleY(.1)}}
+@keyframes stretch{0%,20%,70%,100%{transform:scale(1,1)}45%{transform:scale(.96,1.07)}}
+
+/* licking paw (already ate) */
+.st-lick .p-bowl{opacity:1}
+.st-lick #pawR{animation:lick 1.6s ease-in-out infinite}
+.st-lick #tongue{animation:tong 1.6s ease-in-out infinite}
+.st-lick #eyesO{opacity:0;animation:none}.st-lick #eyesH{opacity:1}
+.st-lick #head{animation:none;transform:rotate(5deg)}
+@keyframes lick{0%,100%{transform:translate(0,0) rotate(0)}40%,70%{transform:translate(-6px,-92px) rotate(-25deg)}}
+@keyframes tong{0%,40%,100%{transform:scale(0)}50%,62%{transform:scale(1)}56%{transform:scale(.5)}}
+</style>
+</head>
+<body>
+<div id="bg"></div><div id="bg2"></div>
+<div id="deco"></div>
+<div id="app">
+  <div class="top"><span class="badge">🐾 Kitty Care</span><span class="cnt" id="cnt">🍪 0 / 0</span><button class="hide" data-k="kHide" aria-label="Hide">⌄</button></div>
+  <div class="mid">
+    <svg id="scene" viewBox="0 0 300 300" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <defs>
+        <radialGradient id="gFur" cx=".45" cy=".35" r=".75"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#FBE6D2"/></radialGradient>
+        <radialGradient id="gOr" cx=".4" cy=".3" r=".8"><stop offset="0" stop-color="#FFC07A"/><stop offset="1" stop-color="#EE8E43"/></radialGradient>
+        <radialGradient id="gBr" cx=".5" cy=".3" r=".8"><stop offset="0" stop-color="#A9704A"/><stop offset="1" stop-color="#6E4329"/></radialGradient>
+        <radialGradient id="gEye" cx=".45" cy=".4" r=".7"><stop offset="0" stop-color="#5B4A78"/><stop offset=".6" stop-color="#2A1F3A"/><stop offset="1" stop-color="#1A1326"/></radialGradient>
+        <linearGradient id="gBowl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9EC3FF"/><stop offset="1" stop-color="#6E9BF0"/></linearGradient>
+      </defs>
+      <!-- background props -->
+      <g class="prop p-sun"><g class="rays" stroke="#FFC84A" stroke-width="5" stroke-linecap="round"><path d="M244 26v10M244 88v10M208 62h10M270 62h10M219 37l7 7M262 80l7 7M269 37l-7 7M226 80l-7 7"/></g><circle cx="244" cy="62" r="20" fill="#FFD866"/></g>
+      <g class="prop p-paws" fill="#B6A6E8">
+        <g><ellipse cx="22" cy="292" rx="7" ry="5"/><circle cx="15" cy="284" r="2.6"/><circle cx="22" cy="282" r="2.6"/><circle cx="29" cy="284" r="2.6"/></g>
+        <g><ellipse cx="46" cy="280" rx="7" ry="5"/><circle cx="39" cy="272" r="2.6"/><circle cx="46" cy="270" r="2.6"/><circle cx="53" cy="272" r="2.6"/></g>
+        <g><ellipse cx="68" cy="293" rx="7" ry="5"/><circle cx="61" cy="285" r="2.6"/><circle cx="68" cy="283" r="2.6"/><circle cx="75" cy="285" r="2.6"/></g>
+        <g><ellipse cx="236" cy="291" rx="7" ry="5"/><circle cx="229" cy="283" r="2.6"/><circle cx="236" cy="281" r="2.6"/><circle cx="243" cy="283" r="2.6"/></g>
+        <g><ellipse cx="262" cy="279" rx="7" ry="5"/><circle cx="255" cy="271" r="2.6"/><circle cx="262" cy="269" r="2.6"/><circle cx="269" cy="271" r="2.6"/></g>
+      </g>
+      <ellipse id="shadow" cx="150" cy="288" rx="80" ry="9" fill="rgba(70,40,110,.16)"/>
+      <g class="prop p-toys">
+        <g class="t1"><circle cx="42" cy="276" r="13" fill="#FF8FA8" stroke="#D9577A" stroke-width="2.5"/><path d="M31 272q11 6 22 0M33 282q9-5 18 0" stroke="#fff" stroke-width="2" fill="none"/></g>
+        <g class="t2"><ellipse cx="258" cy="282" rx="17" ry="10" fill="#B9B4C8" stroke="#7E7891" stroke-width="2.5"/><circle cx="246" cy="273" r="5" fill="#FFB8C8" stroke="#7E7891" stroke-width="2"/><circle cx="244" cy="281" r="1.8" fill="#2A1F3A"/><path d="M275 283q12 2 14 -8" stroke="#7E7891" stroke-width="2.5" fill="none" stroke-linecap="round"/></g>
+        <g class="t3"><path d="M264 222l4.5 9 10 1.4-7.2 7 1.7 10-9-4.7-9 4.7 1.7-10-7.2-7 10-1.4z" fill="#FFD866" stroke="#E0A92A" stroke-width="2" stroke-linejoin="round"/></g>
+      </g>
+      <g id="cat">
+        <g id="tail">
+          <path d="M196 256 C 246 262, 270 226, 254 190 C 248 176, 236 172, 230 182" fill="none" stroke="#6B4A3A" stroke-width="24" stroke-linecap="round"/>
+          <path d="M196 256 C 246 262, 270 226, 254 190 C 248 176, 236 172, 230 182" fill="none" stroke="url(#gOr)" stroke-width="18" stroke-linecap="round"/>
+          <path d="M240 244 l8 -8 M254 222 l9 -3 M256 200 l9 2" stroke="#D9712C" stroke-width="4" stroke-linecap="round"/>
+        </g>
+        <g id="body">
+          <path d="M150 158 C 102 158, 90 206, 94 242 C 97 272, 118 286, 150 286 C 182 286, 203 272, 206 242 C 210 206, 198 158, 150 158 Z" fill="url(#gFur)" stroke="#6B4A3A" stroke-width="3"/>
+          <path d="M98 226 C 100 198, 116 176, 134 172 C 124 196, 122 222, 130 250 C 114 254, 100 246, 98 226 Z" fill="url(#gOr)"/>
+          <path d="M202 222 C 200 200, 190 182, 174 176 C 182 196, 184 214, 178 236 C 190 240, 200 236, 202 222 Z" fill="url(#gBr)" opacity=".9"/>
+          <ellipse cx="150" cy="236" rx="30" ry="38" fill="#fff" opacity=".85"/>
+          <ellipse cx="110" cy="280" rx="25" ry="11" fill="url(#gOr)" stroke="#6B4A3A" stroke-width="3"/>
+          <ellipse cx="190" cy="280" rx="25" ry="11" fill="#fff" stroke="#6B4A3A" stroke-width="3"/>
+        </g>
+        <g id="pawL"><ellipse cx="130" cy="276" rx="16" ry="12" fill="#fff" stroke="#6B4A3A" stroke-width="3"/><path d="M125 282v-5M131 283v-6M137 282v-5" stroke="#6B4A3A" stroke-width="2" stroke-linecap="round" opacity=".6"/></g>
+        <g id="pawR"><ellipse cx="170" cy="276" rx="16" ry="12" fill="#fff" stroke="#6B4A3A" stroke-width="3"/><path d="M163 282v-5M169 283v-6M175 282v-5" stroke="#6B4A3A" stroke-width="2" stroke-linecap="round" opacity=".6"/></g>
+        <path d="M106 172 Q150 196 194 172" stroke="#6B4A3A" stroke-width="13" fill="none" stroke-linecap="round"/>
+        <path d="M106 172 Q150 196 194 172" stroke="#F06A97" stroke-width="8" fill="none" stroke-linecap="round"/>
+        <circle cx="150" cy="190" r="9" fill="#F7C948" stroke="#B88A1E" stroke-width="2.5"/><path d="M146 192h8" stroke="#B88A1E" stroke-width="2" stroke-linecap="round"/>
+              <g id="head">
+          <g id="earL"><path d="M96 104 L 90 40 Q 92 34 98 38 L 142 72 Z" fill="url(#gOr)" stroke="#6B4A3A" stroke-width="3" stroke-linejoin="round"/><path d="M103 92 L 99 54 L 130 76 Z" fill="#FFB3C6"/></g>
+          <g id="earR"><path d="M204 104 L 210 40 Q 208 34 202 38 L 158 72 Z" fill="url(#gBr)" stroke="#6B4A3A" stroke-width="3" stroke-linejoin="round"/><path d="M197 92 L 201 54 L 170 76 Z" fill="#FFB3C6"/></g>
+          <path d="M150 60 C 208 60, 228 98, 226 128 C 224 162, 192 178, 150 178 C 108 178, 76 162, 74 128 C 72 98, 92 60, 150 60 Z" fill="url(#gFur)" stroke="#6B4A3A" stroke-width="3"/>
+          <path d="M77 118 C 78 86, 104 62, 140 62 C 132 80, 128 98, 114 112 C 102 122, 84 126, 77 118 Z" fill="url(#gOr)"/>
+          <path d="M223 118 C 222 86, 196 62, 160 62 C 168 80, 172 98, 186 112 C 198 122, 216 126, 223 118 Z" fill="url(#gBr)"/>
+          <path d="M142 66 q2 10 0 16 M150 64 q0 12 0 20 M158 66 q-2 10 0 16" stroke="#E58A44" stroke-width="3.5" stroke-linecap="round" fill="none"/>
+          <path d="M76 136 l-8 4 8 3 -7 5 9 1" fill="#fff" stroke="#6B4A3A" stroke-width="2" stroke-linejoin="round"/>
+          <path d="M224 136 l8 4 -8 3 7 5 -9 1" fill="#fff" stroke="#6B4A3A" stroke-width="2" stroke-linejoin="round"/>
+          <g id="eyesO"><g id="pupils">
+            <ellipse cx="121" cy="124" rx="16" ry="18" fill="url(#gEye)"/><circle cx="115" cy="116" r="6" fill="#fff"/><circle cx="127" cy="131" r="2.8" fill="#fff"/>
+            <ellipse cx="179" cy="124" rx="16" ry="18" fill="url(#gEye)"/><circle cx="173" cy="116" r="6" fill="#fff"/><circle cx="185" cy="131" r="2.8" fill="#fff"/>
+          </g></g>
+          <g id="eyesC" stroke="#3A2A33" stroke-width="4" stroke-linecap="round" fill="none"><path d="M106 126 Q121 136 136 126"/><path d="M164 126 Q179 136 194 126"/></g>
+          <g id="eyesH" stroke="#3A2A33" stroke-width="4.5" stroke-linecap="round" fill="none"><path d="M106 130 Q121 110 136 130"/><path d="M164 130 Q179 110 194 130"/></g>
+          <ellipse cx="102" cy="148" rx="13" ry="7.5" fill="#FF9DB5" opacity=".55"/>
+          <ellipse cx="198" cy="148" rx="13" ry="7.5" fill="#FF9DB5" opacity=".55"/>
+          <path d="M143 141 Q150 136 157 141 Q150 150 143 141 Z" fill="#F2809E" stroke="#C85D7B" stroke-width="1.5"/>
+          <path id="mouth" d="M150 147 Q150 154 142 156 M150 147 Q150 154 158 156" stroke="#6B4A3A" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+          <path id="mouthW" d="M139 158 q5.5 -6 11 0 q5.5 6 11 0" stroke="#6B4A3A" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+          <ellipse id="mouthO" cx="150" cy="157" rx="7" ry="6" fill="#C2456B" stroke="#6B4A3A" stroke-width="2"/>
+          <ellipse id="tongue" cx="150" cy="160" rx="5" ry="6" fill="#FF8FAE"/>
+          <g stroke="#6B4A3A" stroke-width="2" stroke-linecap="round" opacity=".55"><path d="M98 146 L60 138M98 152 L58 154M100 158 L64 168M202 146 L240 138M202 152 L242 154M200 158 L236 168"/></g>
+        </g>
+</g>
+      <!-- foreground props -->
+      <g class="prop p-bowl">
+        <path d="M84 266 L216 266 Q210 300 150 300 Q90 300 84 266 Z" fill="url(#gBowl)" stroke="#4E74C4" stroke-width="3"/>
+        <ellipse cx="150" cy="266" rx="66" ry="9" fill="#C9DCFF" stroke="#4E74C4" stroke-width="3"/>
+        <text x="150" y="292" text-anchor="middle" font-family="Outfit,system-ui" font-weight="800" font-size="14" fill="#fff">KITTY</text>
+      </g>
+      <g class="prop p-treat" fill="#C77B3D" stroke="#8E4F1E" stroke-width="1.5"><circle cx="124" cy="262" r="6"/><circle cx="138" cy="259" r="6.5"/><circle cx="153" cy="261" r="6"/><circle cx="167" cy="258" r="6.5"/><circle cx="180" cy="262" r="6"/></g>
+      <g class="prop p-fly f1"><circle cx="150" cy="258" r="6.5" fill="#D98A45" stroke="#8E4F1E" stroke-width="1.5"/></g>
+      <g class="prop p-fly f2"><circle cx="134" cy="258" r="6" fill="#C77B3D" stroke="#8E4F1E" stroke-width="1.5"/></g>
+      <g class="prop p-fly f3"><circle cx="166" cy="258" r="6" fill="#E09A55" stroke="#8E4F1E" stroke-width="1.5"/></g>
+      <g class="prop p-yarn"><path d="M226 272 C 210 286, 190 290, 170 292" stroke="#9C88F0" stroke-width="2.5" fill="none" stroke-linecap="round"/><g class="ball"><circle cx="246" cy="266" r="21" fill="#B9A7FF" stroke="#7C66E0" stroke-width="3"/><path d="M228 258q18 10 36 0M230 274q16-12 32 4M240 246q10 18 0 40M252 247q-8 20 4 38" stroke="#7C66E0" stroke-width="2" fill="none"/></g></g>
+      <g class="prop p-spark" fill="#FFC84A"><path d="M60 80l4 10 10 4-10 4-4 10-4-10-10-4 10-4z"/><path d="M246 96l3 7 7 3-7 3-3 7-3-7-7-3 7-3z"/><path d="M40 170l3 7 7 3-7 3-3 7-3-7-7-3 7-3z"/></g>
+      <g class="prop p-zzz" fill="#7C66E0" font-family="Outfit,system-ui" font-weight="900"><text x="200" y="80" font-size="22">z</text><text x="200" y="80" font-size="28">z</text><text x="200" y="80" font-size="34">Z</text></g>
+      <g class="prop p-sweat"><path d="M214 84 q-7 10 0 14 q7 -4 0 -14 z" fill="#8EC5FF" stroke="#4E8AD6" stroke-width="1.5"/></g>
+      <g class="prop p-q"><circle cx="236" cy="56" r="20" fill="#fff" stroke="#E0607E" stroke-width="3"/><text x="236" y="65" text-anchor="middle" font-family="Outfit,system-ui" font-weight="900" font-size="26" fill="#E0607E">?</text></g>
+      <g class="prop p-heart" fill="#FF7FA6"><path d="M70 120c-6-10-22-6-18 6 3 8 18 16 18 16s15-8 18-16c4-12-12-16-18-6z"/><path d="M232 110c-5-8-18-5-15 5 2 7 15 13 15 13s13-6 15-13c3-10-10-13-15-5z"/><path d="M150 40c-4-7-15-4-12 4 2 6 12 11 12 11s10-5 12-11c3-8-8-11-12-4z"/></g>
+      <g class="prop p-conf"><rect x="30" y="0" width="7" height="12" rx="2" fill="#B9A7FF"/><rect x="80" y="-30" width="7" height="12" rx="2" fill="#FFC48A" style="animation-delay:.6s"/><rect x="200" y="-10" width="7" height="12" rx="2" fill="#F6A8EE" style="animation-delay:1.1s"/><rect x="250" y="-40" width="7" height="12" rx="2" fill="#7CE0B5" style="animation-delay:1.7s"/><rect x="130" y="-50" width="7" height="12" rx="2" fill="#8EC5FF" style="animation-delay:2.1s"/></g>
+      <g class="prop p-mag"><circle cx="214" cy="236" r="17" fill="rgba(200,230,255,.55)" stroke="#6B4A3A" stroke-width="4"/><path d="M226 248l16 16" stroke="#6B4A3A" stroke-width="7" stroke-linecap="round"/><path d="M205 228q5-5 12-4" stroke="#fff" stroke-width="3" fill="none" stroke-linecap="round"/></g>
+      <g class="prop p-book"><path d="M150 262 L104 252 L104 284 L150 292 Z" fill="#fff" stroke="#6B4A3A" stroke-width="3" stroke-linejoin="round"/><path d="M150 262 L196 252 L196 284 L150 292 Z" fill="#FFF6E0" stroke="#6B4A3A" stroke-width="3" stroke-linejoin="round"/><path class="pg" d="M150 262 L188 255 L188 283 L150 290 Z" fill="#FFFDF7" stroke="#6B4A3A" stroke-width="2" stroke-linejoin="round"/><path d="M112 262l28 6M112 270l28 6M162 268l26-6M162 276l26-6" stroke="#C9B9F0" stroke-width="2.5" stroke-linecap="round"/></g>
+      <g class="prop p-key"><path d="M236 196v34" stroke="#C9962A" stroke-width="3"/><circle cx="236" cy="196" r="3" fill="#C9962A"/><circle cx="236" cy="240" r="12" fill="none" stroke="#E7B23A" stroke-width="6"/><path d="M236 252v22M236 264h8M236 272h6" stroke="#E7B23A" stroke-width="6" stroke-linecap="round"/></g>
+    </svg>
+    <div class="title" id="title">Kitty Care</div>
+    <div class="sub" id="sub"></div>
+    <div class="prog"><i id="bar" style="width:0%"></i></div>
+  </div>
+  <div class="bot" id="btns"></div>
+</div>
+<script>
+(function () {
+  // stage → [animation class, background gradient]
+  var LOOK = {
+    login: ['st-key', '#FFE9C9', '#FFF6EA'], check: ['st-wake', '#DCEBFF', '#FFF7E0'], fill: ['st-fill', '#E8E0FF', '#FFE6F4'],
+    ready: ['st-ready', '#D9F5E5', '#F1FBF5'], launch: ['st-launch', '#D9F5E5', '#FFF3D6'], search: ['st-hunt', '#DCEBFF', '#F2F7FF'],
+    done: ['st-jump', '#FFE6F4', '#FFF5FA'], free: ['st-jump', '#FFE0F0', '#FFF4DE'], paused: ['st-sleep', '#E6E2F2', '#F7F6FA'],
+    error: ['st-no', '#FFE1E6', '#FFF4F6'], dup: ['st-lick', '#FFE9C9', '#FFF6EA'], count: ['st-count', '#DCEBFF', '#F0EAFF'],
+    learn: ['st-learn', '#E8E0FF', '#F6F2FF'], confirm: ['st-sleep', '#ECEAF2', '#F7F6FA'], idle: ['st-ready', '#E8E0FF', '#FFE6F4']
+  };
+  var $ = function (id) { return document.getElementById(id); };
+  var bg = $('bg'), bg2 = $('bg2'), flip = false, cur = '', lastBtns = '', lastCnt = '';
+  var scene = $('scene');
+  // floating background blobs + paw prints
+  (function () {
+    var d = $('deco'), cols = ['#FFFFFF', '#F6D9FF', '#FFE7C7', '#D9E6FF', '#FFD6E7'];
+    for (var i = 0; i < 7; i++) { var b = document.createElement('div'); b.className = 'blob'; var s = 70 + Math.random() * 120; b.style.cssText = 'width:' + s + 'px;height:' + s + 'px;left:' + (Math.random() * 90) + '%;top:' + (Math.random() * 90) + '%;background:' + cols[i % cols.length] + ';animation-delay:-' + (Math.random() * 18) + 's;animation-duration:' + (14 + Math.random() * 10) + 's'; d.appendChild(b); }
+    for (var k = 0; k < 6; k++) { var p = document.createElement('div'); p.className = 'pp'; p.textContent = '🐾'; p.style.cssText = 'left:' + (8 + k * 15) + '%;bottom:-40px;font-size:' + (18 + Math.random() * 12) + 'px;animation-delay:-' + (k * 2.4) + 's;animation-duration:' + (13 + Math.random() * 6) + 's'; d.appendChild(p); }
+  })();
+  function setBg(a, b) {
+    var g = 'linear-gradient(170deg,' + a + ',' + b + ')';
+    if (flip) { bg.style.background = g; bg2.style.opacity = '0'; } else { bg2.style.background = g; bg2.style.opacity = '1'; }
+    flip = !flip;
+  }
+  function swapText(el, v) {
+    if (el.textContent === v) return;
+    if (el.getAttribute('data-stg') === cur) { el.textContent = v; return; }
+    el.classList.add('sw');
+    setTimeout(function () { el.textContent = v; el.setAttribute('data-stg', cur); el.classList.remove('sw'); }, 220);
+  }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function bt(x) { return '<button class="b ' + esc(x[2] || '') + '" data-k="' + esc(x[0]) + '">' + esc(x[1]) + '</button>'; }
+  window.K = {
+    set: function (s) {
+      if (typeof s === 'string') { try { s = JSON.parse(s); } catch (e) { return; } }
+      if (!s) return;
+      var st = LOOK[s.st] ? s.st : 'idle', L = LOOK[st];
+      if (st !== cur) { cur = st; scene.setAttribute('class', L[0]); setBg(L[1], L[2]); }
+      swapText($('title'), s.title || '');
+      swapText($('sub'), s.sub || '');
+      var c = s.cnt || '';
+      if (c !== lastCnt) { lastCnt = c; var ce = $('cnt'); ce.textContent = c; ce.style.visibility = c ? 'visible' : 'hidden'; ce.classList.add('pop'); setTimeout(function () { ce.classList.remove('pop'); }, 260); }
+      $('bar').style.width = Math.max(0, Math.min(100, Math.round((s.prog || 0) * 100))) + '%';
+      var h = '';
+      (s.rows || []).forEach(function (r) { h += '<div class="row">' + r.map(bt).join('') + '</div>'; });
+      if (s.chip) h += '<div class="chipr"><button class="chip" data-k="kOff"><i></i>🐾 Kitty mode</button></div>';
+      if (h !== lastBtns) { lastBtns = h; $('btns').innerHTML = h; }
+    }
+  };
+  document.addEventListener('click', function (e) {
+    var t = e.target.closest('[data-k]'); if (!t) return;
+    var id = t.getAttribute('data-k');
+    try { if (window.KV && KV.tap) KV.tap(id); else console.log('tap', id); } catch (er) {}
+  });
+  try { var s0 = window.KV && KV.state && KV.state(); if (s0) K.set(s0); else K.set({ st: 'check', title: 'Kitty is waking up', sub: 'Stretching paws and whiskers', cnt: '' }); } catch (e) { K.set({ st: 'check', title: 'Kitty is waking up', sub: '' }); }
+})();
+</script>
+</body>
+</html>

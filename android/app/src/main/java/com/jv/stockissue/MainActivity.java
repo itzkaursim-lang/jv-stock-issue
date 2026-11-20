@@ -83,6 +83,10 @@ public class MainActivity extends AppCompatActivity {
     android.graphics.drawable.GradientDrawable shieldBg;
     java.util.ArrayList<android.animation.Animator> shieldAnims = new java.util.ArrayList<>();
     boolean coverMode = false;
+    WebView kittyView;
+    String kittyState = "", pendingTap = null;
+    boolean kittyWant = false, kittyBundled = false;
+    static final String KITTY_START = "{\"st\":\"check\",\"title\":\"Kitty is waking up\",\"sub\":\"Stretching paws and whiskers\",\"cnt\":\"\",\"prog\":0,\"rows\":[],\"chip\":false}";
     final java.util.HashMap<String, Boolean> painted = new java.util.HashMap<>();
     final android.os.Handler h = new android.os.Handler(android.os.Looper.getMainLooper());
     final Runnable uncoverR = () -> { if (cover != null) { cover.setVisibility(View.GONE); cover.setImageBitmap(null); } if (shield != null && shield.getVisibility() == View.VISIBLE) { shield.animate().alpha(0f).setDuration(180).withEndAction(() -> { shield.setVisibility(View.GONE); shield.setAlpha(1f); for (android.animation.Animator a : shieldAnims) a.cancel(); }).start(); } };
@@ -115,6 +119,21 @@ public class MainActivity extends AppCompatActivity {
         root.addView(cover, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         buildShield();
         root.addView(shield, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        kittyView = makeView(null);
+        kittyView.setBackgroundColor(0xFFEEE8FF);
+        kittyView.getSettings().setSupportZoom(false);
+        kittyView.getSettings().setBuiltInZoomControls(false);
+        kittyView.setVerticalScrollBarEnabled(false);
+        kittyView.setHorizontalScrollBarEnabled(false);
+        kittyView.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        kittyView.addJavascriptInterface(new KittyBridge(), "KV");
+        kittyView.setWebViewClient(new WebViewClient() {
+            @Override public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) { return true; }
+            @Override public void onReceivedError(WebView v, WebResourceRequest r, WebResourceError e) { if (r.isForMainFrame() && !kittyBundled) { kittyBundled = true; v.loadUrl("file:///android_asset/www/kitty.html"); } }
+            @Override public void onReceivedHttpError(WebView v, WebResourceRequest r, WebResourceResponse resp) { if (r.isForMainFrame() && !kittyBundled && resp.getStatusCode() >= 400) { kittyBundled = true; v.loadUrl("file:///android_asset/www/kitty.html"); } }
+        });
+        root.addView(kittyView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+        kittyView.setVisibility(View.INVISIBLE);
         root.addView(mgrView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         root.addView(appView, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         siteView.setVisibility(View.GONE);
@@ -361,6 +380,37 @@ public class MainActivity extends AppCompatActivity {
         usingBundled = !"online".equals(mode()) || !online();
         if (usingBundled) appView.loadUrl(ASSET_URL);
         else appView.loadUrl(BuildConfig.PAGES_URL + "index.html?b=" + (System.currentTimeMillis() / 300000L));
+        loadKitty();
+    }
+
+    void loadKitty() {
+        if (kittyView == null) return;
+        kittyBundled = usingBundled;
+        if (kittyBundled) kittyView.loadUrl("file:///android_asset/www/kitty.html");
+        else kittyView.loadUrl(BuildConfig.PAGES_URL + "kitty.html?b=" + (System.currentTimeMillis() / 300000L));
+    }
+
+    // Kitty Care: a separate layer that never reloads, so it stays on screen while CUIMS pages change underneath
+    void kittyShow(String st) {
+        if (st != null && st.length() > 0 && !st.equals(kittyState)) { kittyState = st; kittyView.evaluateJavascript("window.K&&K.set(" + JSONObject.quote(st) + ")", null); }
+        kittyWant = true;
+        if (siteView.getVisibility() == View.VISIBLE && kittyView.getVisibility() != View.VISIBLE) { kittyView.setVisibility(View.VISIBLE); kittyView.bringToFront(); }
+        if (shield.getVisibility() == View.VISIBLE || cover.getVisibility() == View.VISIBLE) { h.removeCallbacks(uncoverR); h.postDelayed(uncoverR, 50); }
+    }
+
+    void kittyHide() { kittyWant = false; if (kittyView.getVisibility() != View.INVISIBLE) kittyView.setVisibility(View.INVISIBLE); }
+
+    class KittyBridge {
+        @JavascriptInterface public String state() { return kittyState; }
+        @JavascriptInterface public void tap(String id) {
+            if (id == null) return;
+            final String k = id.replaceAll("[^A-Za-z]", "");
+            runOnUiThread(() -> sendTap(k));
+        }
+    }
+
+    void sendTap(String k) {
+        siteView.evaluateJavascript("(window.JVFill&&window.JVFill.tap)?(window.JVFill.tap('" + k + "'),'1'):'0'", v -> { if (!"\"1\"".equals(v)) pendingTap = k; else pendingTap = null; });
     }
 
     void fetchFillScript() {
@@ -389,6 +439,7 @@ public class MainActivity extends AppCompatActivity {
     void injectFill(WebView v) {
         String src = fillSource();
         if (!src.isEmpty()) v.evaluateJavascript(src, null);
+        if (v == siteView && pendingTap != null) { final String k = pendingTap; pendingTap = null; h.postDelayed(() -> sendTap(k), 700); }
     }
 
     void loadFresh(WebView v, String who, String u) {
@@ -491,7 +542,8 @@ public class MainActivity extends AppCompatActivity {
     }
     static final String[] FUN_MSG = {"Kitty is fetching the next page", "Kitty is chasing the loading bar", "Paws crossed, almost there", "Kitty is on a secret mission", "Hold tight, kitty is working"};
     void showShield(String msg) {
-        boolean fun = prefs.getBoolean("fun_emp", false);
+        boolean fun = (prefs.getBoolean("fun_emp", false) || prefs.getBoolean("spy_on", false)) && siteView.getVisibility() == View.VISIBLE && mgrView.getVisibility() != View.VISIBLE;
+        if (fun) { kittyShow(null); return; }
         if (fun && msg != null) msg = FUN_MSG[(int) ((System.currentTimeMillis() / 2000) % FUN_MSG.length)];
         if (shieldLogo != null) { shieldLogo.setImageResource(fun ? R.drawable.jv_cat_round : R.mipmap.ic_launcher); android.view.ViewGroup.LayoutParams lp = shieldLogo.getLayoutParams(); int sz = dp(fun ? 112 : 68); if (lp != null && lp.width != sz) { lp.width = sz; lp.height = sz; shieldLogo.setLayoutParams(lp); } }
         if (shieldTitle != null) shieldTitle.setText(fun ? "Kitty Care" : "JV Stock Issue");
@@ -509,6 +561,8 @@ public class MainActivity extends AppCompatActivity {
         siteView.setVisibility("emp".equals(which) ? View.VISIBLE : View.GONE);
         mgrView.setVisibility("mgr".equals(which) ? View.VISIBLE : View.GONE);
         appView.setVisibility("app".equals(which) ? View.VISIBLE : View.GONE);
+        if ("emp".equals(which) && kittyWant) { kittyView.setVisibility(View.VISIBLE); kittyView.bringToFront(); }
+        else if (kittyView.getVisibility() != View.INVISIBLE) kittyView.setVisibility(View.INVISIBLE);
     }
 
     void backToApp() {
@@ -579,8 +633,8 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     public void onBackPressed() {
-        if (siteView.getVisibility() == View.VISIBLE && prefs.getBoolean("spy_on", false)) {
-            authenticate(() -> { prefs.edit().putBoolean("spy_on", false).putBoolean("fun_emp", false).apply(); siteView.evaluateJavascript("window.JVFill&&window.JVFill.authOk('door')", null); backToApp(); }, () -> { });
+        if (siteView.getVisibility() == View.VISIBLE && (prefs.getBoolean("spy_on", false) || kittyView.getVisibility() == View.VISIBLE)) {
+            authenticate(() -> { prefs.edit().putBoolean("spy_on", false).putBoolean("fun_emp", false).apply(); kittyHide(); siteView.evaluateJavascript("window.JVFill&&window.JVFill.authOk('door')", null); backToApp(); }, () -> { });
             return;
         }
         if (siteView.getVisibility() == View.VISIBLE || mgrView.getVisibility() == View.VISIBLE) { backToApp(); return; }
@@ -653,6 +707,7 @@ public class MainActivity extends AppCompatActivity {
         }
         @JavascriptInterface public void autoStop() { prefs.edit().putBoolean("autoStockOn", false).putBoolean("cover_mgr", false).apply(); runOnUiThread(() -> { setFull(false); coverMode = false; h.post(uncoverR); }); }
         @JavascriptInterface public void fetchStockUrl(String u) { if ("mgr".equals(who) && prefs.getBoolean("autoStockOn", false)) runOnUiThread(() -> fetchStock(u, "stock.xlsx")); }
+        @JavascriptInterface public void kitty(String json) { if (!"emp".equals(who)) return; runOnUiThread(() -> { if (json == null || json.isEmpty()) kittyHide(); else kittyShow(json); }); }
         @JavascriptInterface public void setFun(boolean on) { prefs.edit().putBoolean("fun_" + who, on).apply(); }
         @JavascriptInterface public void setCover(boolean on) { prefs.edit().putBoolean("cover_" + who, on).apply(); coverMode = on; if (!on) runOnUiThread(uncoverR); }
         @JavascriptInterface public void uncover() { painted.put(who, true); h.removeCallbacks(uncoverR); h.postDelayed(uncoverR, 60); }
@@ -686,7 +741,10 @@ public class MainActivity extends AppCompatActivity {
 
         @JavascriptInterface public void startJob(String j) {
             writeFile(jobFile, j);
-            runOnUiThread(() -> { show("emp"); if (prefs.getBoolean("cover_emp", false)) { showShield("Opening Issue CUIMS"); painted.put("emp", false); h.removeCallbacks(uncoverR); h.postDelayed(uncoverR, 15000); } loadFresh(siteView, "emp", url("emp")); });
+            boolean fj = false; try { fj = new JSONObject(j).optBoolean("fun", false); } catch (Exception ignored) { }
+            final boolean funJob = fj || prefs.getBoolean("spy_on", false);
+            prefs.edit().putBoolean("fun_emp", funJob).apply();
+            runOnUiThread(() -> { if (funJob) { kittyState = ""; kittyShow(KITTY_START); } show("emp"); if (prefs.getBoolean("cover_emp", false)) { showShield("Opening Issue CUIMS"); painted.put("emp", false); h.removeCallbacks(uncoverR); h.postDelayed(uncoverR, 15000); } loadFresh(siteView, "emp", url("emp")); });
         }
         @JavascriptInterface public void openSite() {
             runOnUiThread(() -> {
@@ -721,7 +779,7 @@ public class MainActivity extends AppCompatActivity {
             final String k = kind == null ? "peek" : kind.replaceAll("[^a-z]", "");
             final WebView wv = "mgr".equals(who) ? mgrView : siteView;
             runOnUiThread(() -> MainActivity.this.authenticate(() -> {
-                if ("door".equals(k) || "off".equals(k)) prefs.edit().putBoolean("spy_on", false).putBoolean("fun_emp", false).apply();
+                if ("door".equals(k) || "off".equals(k)) { prefs.edit().putBoolean("spy_on", false).putBoolean("fun_emp", false).apply(); kittyHide(); }
                 wv.evaluateJavascript("window.JVFill&&window.JVFill.authOk('" + k + "')", null);
                 if ("door".equals(k)) backToApp();
             }, () -> { }));
