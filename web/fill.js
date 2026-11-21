@@ -579,7 +579,7 @@
     var s = inGrid(code); if (!s) return null;
     var i = s.id.split('_').pop();
     var g = function (n) { var e = $('ContentPlaceHolder1_grdselecteditems_' + n + '_' + i); return e ? e.textContent.trim() : ''; };
-    return { code: code, qty: parseFloat(g('lblQuantity')), stock: parseFloat(g('lblStock')), bal: parseFloat(g('lblBalance')), remark: g('lblItemRemarks'), name: g('lblDescription') };
+    return { code: code, qty: parseFloat(g('lblQuantity')), stock: parseFloat(g('lblStock')), bal: parseFloat(g('lblStock')), cuimsBal: parseFloat(g('lblBalance')), remark: g('lblItemRemarks'), name: g('lblDescription') };
   }
   function findSlip(slip) {
     var sec = $('divSearchSection'); if (!sec) return null;
@@ -778,7 +778,7 @@
       for (var w = 0; w < 40 && !gridRow(next.code); w++) await sleep(250);
       var r = gridRow(next.code);
       if (r) {
-        if (r.bal < 0) pauseWith(next.code + ': balance below zero on CUIMS (stock ' + r.stock + '). Skip it or check stock.');
+        if (r.bal < 0) pauseWith(next.code + ': balance stock below zero on CUIMS (' + r.bal + '). Skip it or check stock.');
         log(job(), next.code + ' ' + (r.name || '') + ' × ' + next.qty + ' added' + (next.remark ? ', remark added' : ''));
         ev('progress', { code: next.code, stock: r.stock });
       }
