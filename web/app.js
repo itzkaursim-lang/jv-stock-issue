@@ -1907,6 +1907,7 @@ function recordSubmit(e) {
     if (nx && slip) { setTimeout(() => { toast('Queue: ' + nx.store + ', request ' + nx.req + ', Slip ' + slip); startJob(nx.store, slip, nx.rcv, nx.ids); }, 2500); return; }
     toast('Queue finished: nothing else can be issued today.');
   }
+  if (S.funMode || job.fun) return; // Kitty mode: stay on Kitty until Close the door
   setTimeout(() => { if (N) N.showApp(); }, 2500);
 }
 window.jvOnReturnFromSite = () => render();
