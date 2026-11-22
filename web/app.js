@@ -1228,7 +1228,7 @@ function pdfPending() {
 
 /* ---------------- tasks ---------------- */
 const BUILTIN_TASKS = [
-  ['count', 'Daily Count Cycle', 'Count 20 random articles'],
+  ['count', 'Daily Count Cycle', 'Count the articles in your list'],
   ['stock', 'Upload fresh stock', 'CUIMS stock report'],
   ['requests', "Upload today's requests", 'Requests sheet'],
   ['backup', 'Cloud backup', 'Back up to Google Drive']
@@ -1293,9 +1293,8 @@ function excluded(code) {
   return ex.prefixes.some(p => p && c.startsWith(p.toUpperCase())) || ex.words.some(w => w && new RegExp('\\b' + w.toUpperCase().replace(/[^A-Z0-9 ]/g, '') + '\\b').test(n));
 }
 function todayCount(create) {
-  S.counts = S.counts || [];
+  S.counts = S.counts || []; S.countMode = 'fixed';
   let c = S.counts.find(x => x.date === today() && x.status !== 'void');
-  if (c && c.status === 'open' && c.items.every(i => i.physical === '' || i.physical == null) && c.items.some(i => excluded(i.code))) { S.counts = S.counts.filter(x => x !== c); c = null; create = true; }
   if (c && c.status === 'open' && (S.countMode === 'fixed') !== (c.mode === 'fixed') && c.items.every(i => i.physical === '' || i.physical == null)) { S.counts = S.counts.filter(x => x !== c); c = null; create = true; }
   if (c && c.mode === 'fixed' && c.status === 'open' && c.items.every(i => i.physical === '' || i.physical == null) && c.listSig !== countListSig()) { S.counts = S.counts.filter(x => x !== c); c = null; create = true; }
   if (!c && create && S.countMode === 'fixed') {
@@ -1307,16 +1306,6 @@ function todayCount(create) {
       items: pick.map(k => ({ code: k, name: S.stock[k].name, uom: S.stock[k].uom, system: S.stock[k].qty, physical: '' })) };
     S.counts.push(c); save();
   }
-  if (!c && create) {
-    const recent = new Set(S.counts.filter(x => days(x.date) < 7).flatMap(x => x.items.map(i => i.code)));
-    let pool = Object.keys(S.stock).filter(k => S.stock[k].qty > 0 && !recent.has(k) && !excluded(k));
-    if (pool.length < 20) pool = Object.keys(S.stock).filter(k => S.stock[k].qty > 0 && !excluded(k));
-    if (!pool.length) { toast('Upload a stock report first.'); return null; }
-    const pick = seededPick(pool.sort(), 20, today() + '|' + (S.counts.length));
-    c = { id: nid(), date: today(), status: 'open', startedAt: new Date().toISOString(), by: meTag(), stockAt: S.stockAt,
-      items: pick.map(k => ({ code: k, name: S.stock[k].name, uom: S.stock[k].uom, system: S.stock[k].qty, physical: '' })) };
-    S.counts.push(c); save();
-  }
   return c;
 }
 function countKey(k) {
@@ -1324,7 +1313,7 @@ function countKey(k) {
   const n = String(k || '').replace(/\s+/g, '').toUpperCase(); if (!n) return k;
   return Object.keys(S.stock).find(c => String(c).replace(/\s+/g, '').toUpperCase() === n) || k;
 }
-function countOpenFail() { if (S.countMode === 'fixed') { ui.view = 'countList'; render(); window.scrollTo(0, 0); } else render(); }
+function countOpenFail() { ui.view = 'countList'; render(); window.scrollTo(0, 0); }
 function countListSig() { return (S.countList || []).join('|') + '#' + (S.countPerDay || 0); }
 function diffOf(i) { if (i.physical === '' || i.physical == null || isNaN(parseFloat(i.physical))) return null; return Math.round((parseFloat(i.physical) - i.system) * 1000) / 1000; }
 function countSummary(c) { let m = 0, ex = 0, sh = 0, left = 0; c.items.forEach(i => { const d = diffOf(i); if (d === null) left++; else if (d === 0) m++; else if (d > 0) ex++; else sh++; }); return { m, ex, sh, left }; }
@@ -1332,10 +1321,9 @@ function vCount() {
   const c = (S.counts || []).find(x => String(x.id) === String(ui.countId)) || todayCount(false);
   if (!c) { ui.view = null; return vHome(); }
   const sm = countSummary(c), open = c.status === 'open';
-  let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Daily Count Cycle</h1><div class="sub">' + fmtLong(c.date) + ' · ' + c.items.length + (c.mode === 'fixed' ? ' articles from your list' : ' random articles') + ' · system stock from ' + (c.stockAt ? fmtDT(c.stockAt) : '–') + '</div></div></header><main>';
+  let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Daily Count Cycle</h1><div class="sub">' + fmtLong(c.date) + ' · ' + c.items.length + (c.mode === 'fixed' ? ' articles from your list' : ' articles') + ' · system stock from ' + (c.stockAt ? fmtDT(c.stockAt) : '–') + '</div></div></header><main>';
   { const untouched = c.status === 'open' && c.items.every(i => i.physical === '' || i.physical == null);
-    h += '<div class="card pad col" style="gap:10px"><div class="row"><b>What to count</b><span class="note">' + (S.countList || []).length + ' in my list</span></div><div class="seg"><button data-a="cMode" data-v="random" class="' + (S.countMode !== 'fixed' ? 'on' : '') + '">20 random</button><button data-a="cMode" data-v="fixed" class="' + (S.countMode === 'fixed' ? 'on' : '') + '">My fixed list</button></div>' +
-      '<button class="btn sm" data-a="clOpen">Edit my count list</button>' + (!untouched && (S.countMode === 'fixed') !== (c.mode === 'fixed') ? '<div class="note">Counting has started, so the change applies from tomorrow.</div>' : '') + '</div>'; }
+    h += '<div class="card pad col" style="gap:10px"><div class="row"><b>My count list</b><span class="note">' + (S.countList || []).length + ' items' + (parseInt(S.countPerDay, 10) > 0 ? ' · ' + parseInt(S.countPerDay, 10) + ' a day' : '') + '</span></div><button class="btn sm" data-a="clOpen">Edit my count list</button>' + (!untouched && c.listSig !== countListSig() ? '<div class="note">Counting has started, so list changes apply from tomorrow.</div>' : '') + '</div>'; }
   h += '<div class="grid3"><div class="tile t-ok"><b>' + sm.m + '</b><span>Match</span></div><div class="tile t-in"><b>' + sm.ex + '</b><span>Excess</span></div><div class="tile t-no"><b>' + sm.sh + '</b><span>Short</span></div></div>';
   h += meta([sm.left ? sm.left + ' still to count' : 'All counted', c.status === 'done' ? 'Finished ' + fmtDT(c.doneAt) : 'In progress']);
   h += '<div class="card" style="overflow:hidden">';
@@ -1353,11 +1341,6 @@ function vCount() {
   h += '</div>';
   if (open) h += '<button class="btn main full" data-a="countDone"' + (sm.left ? ' disabled' : '') + '>' + (sm.left ? 'Count all ' + sm.left + ' remaining to finish' : 'Finish count') + '</button>';
   h += '<div class="grid2"><button class="btn" data-a="countExport" data-v="' + c.id + '">Download</button><button class="btn" data-a="countLog">Count history</button></div>';
-  const ex = countExcl(), none = c.items.every(i => i.physical === '' || i.physical == null);
-  h += '<div class="card pad col"><h3>Not counted in this cycle</h3><div class="note">Items whose code starts with these, or whose name contains these words, are never picked.</div>' +
-    '<label class="f">Code starts with (comma separated)<input type="text" data-cx="prefixes" value="' + esc(ex.prefixes.join(', ')) + '"></label>' +
-    '<label class="f">Name contains (comma separated)<input type="text" data-cx="words" value="' + esc(ex.words.join(', ')) + '"></label>' +
-    (open && none ? '<button class="btn" data-a="countRepick">Pick a new list with these rules</button>' : '') + '</div>';
   return h + '</main>';
 }
 function expDays() { return S.expiryDays || 45; }
@@ -1504,9 +1487,8 @@ function vDone() {
 function vCountList() {
   const L = S.countList = S.countList || [], q = String(ui.clq || '').trim().toUpperCase(), words = q.split(/\s+/).filter(Boolean);
   let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">My count list</h1><div class="sub">Your high-value items for the Daily Count Cycle. Batches, MFD, expiry, differences and history work the same.</div></div></header><main>';
-  if (ui.clWhy && S.countMode === 'fixed') h += '<div class="banner t-no" style="display:block"><b>Today\'s count could not start.</b> ' + (ui.clWhy === 'empty' ? 'Your count list is empty.' : 'None of the ' + L.length + ' items in your list are in the current stock report (' + esc(stockAge()) + ').') + ' Add items below, or switch to <b>20 random</b>, then open Daily Count Cycle again.</div>';
-  h += '<div class="card pad col" style="gap:10px"><div class="seg"><button data-a="cMode" data-v="random" class="' + (S.countMode !== 'fixed' ? 'on' : '') + '">20 random</button><button data-a="cMode" data-v="fixed" class="' + (S.countMode === 'fixed' ? 'on' : '') + '">Use my list</button></div>' +
-    '<label class="f">Items to count per day<input type="number" inputmode="numeric" data-cperday="1" value="' + esc(S.countPerDay || '') + '" placeholder="All ' + L.length + ' every day"></label><div class="note">Leave empty to count the whole list daily, or set a number to rotate through the list (e.g. 10 a day).</div></div>';
+  if (ui.clWhy) h += '<div class="banner t-no" style="display:block"><b>Today\'s count could not start.</b> ' + (ui.clWhy === 'empty' ? 'Your count list is empty.' : 'None of the ' + L.length + ' items in your list are in the current stock report (' + esc(stockAge()) + ').') + ' Add items below, then open Daily Count Cycle again.</div>';
+  h += '<div class="card pad col" style="gap:10px"><label class="f">Items to count per day<input type="number" inputmode="numeric" data-cperday="1" value="' + esc(S.countPerDay || '') + '" placeholder="All ' + L.length + ' every day"></label><div class="note">Leave empty to count the whole list daily, or set a number to rotate through the list (e.g. 10 a day).</div></div>';
   h += '<div class="sbox"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input type="search" data-clq="1" value="' + esc(ui.clq || '') + '" placeholder="Search stock to add an item" autocomplete="off"></div>';
   h += '<div id="clres">' + clResults() + '</div>';
   h += '<div class="shead"><div><h2>In my list · ' + L.length + '</h2><span>Counted in this order</span></div></div>';
@@ -1544,7 +1526,7 @@ function renderDrawer() {
   const item = (a, label, sub, d, v) => '<button class="ditem" data-a="' + a + '"' + (v ? ' data-v="' + v + '"' : '') + '><span class="dic"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + d + '</svg></span><span><b>' + label + '</b><span>' + sub + '</span></span></button>';
   el.innerHTML = '<div class="dbg" data-a="drawerClose"></div><aside class="dpanel" role="dialog" aria-label="Menu"><div class="dhead"><img src="icon.png" alt=""><div><b>JV Stock Issue</b><span>Built by ' + esc(S.me.builder || S.me.name || 'JV') + '</span></div></div>' +
     '<div class="dsect">Tools</div>' +
-    item('dCount', 'Daily Count Cycle', '20 random articles, physical vs system', '<path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/>') +
+    item('dCount', 'Daily Count Cycle', 'Your count list, physical vs system', '<path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/>') +
     item('zwOpen', 'Zero-stock watch', 'Order-only articles that should be zero', '<circle cx="12" cy="12" r="8"/><path d="M6.5 17.5l11-11"/>') +
     item('expOpen', 'Expiry Tracker', 'Batches expiring within ' + expDays() + ' days', '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6"/>') +
     item('doneOpen', 'Done list', 'Slips, serials and articles still left', '<path d="M4 12l5 5L20 6"/>') +
@@ -2180,14 +2162,26 @@ function artsResults() {
   h += '<div class="card" style="overflow:hidden">' + groups.slice(0, 200).map(rowOf).join('') + '</div>' + (groups.length > 200 ? '<div class="note">Showing 200 items. Narrow with search or filters.</div>' : '');
   return h;
 }
-const ARTS_CATS = [['dairy', 'Dairy', '#5B9BFF'], ['veg', 'Vegetables', '#2BB673'], ['pulse', 'Pulses & Spices', '#FFB648'], ['misc', 'Miscellaneous / Other', '#9AA0A6']];
+const ARTS_CATS = [['dairy', 'Dairy & Bakery', '#5B9BFF'], ['frozen', 'Frozen - Veg & Non-Veg', '#26B5C9'], ['veg', 'Vegetables & Fruits', '#2BB673'], ['pulse', 'Pulses & Spices', '#FFB648'], ['misc', 'Miscellaneous / Other', '#9AA0A6']];
 function itemCat(code) {
-  const ov = (S.itemCat || {})[code]; if (ov) return ov;
+  const ok = k => ARTS_CATS.some(x => x[0] === k);
+  const ov = (S.itemCat || {})[code]; if (ov && ok(ov)) return ov;
+  S.itemCatAuto = S.itemCatAuto || {};
+  const au = S.itemCatAuto[code]; if (au && ok(au)) return au;
+  if (!code) return 'misc';
+  const k = itemCatGuess(code); if (itemName(code) === 'Unknown item') return k;
+  S.itemCatAuto[code] = k;
+  clearTimeout(itemCat.t); itemCat.t = setTimeout(() => save(true), 800);
+  return k;
+}
+function itemCatGuess(code) {
   const c = String(code || '').toUpperCase(), n = ' ' + String(itemName(code) || '').toUpperCase().replace(/[^A-Z]+/g, ' ') + ' ';
   const has = re => re.test(n);
   if (/^(HKG|EL|PL|ST|CR)-/.test(c) || has(/ (WASHING|DETERGENT|SURF|SOAP|PHENYL|HARPIC|VIM|BLEACH|CLEANER|BROOM|MOP|TISSUE|GLOVES|CAP|DUSTER|FOIL|WRAP|CYLINDER|LPG|GAS) /)) return 'misc';
+  if (has(/ (FROZEN|NUGGET|NUGGETS|SAUSAGE|SAUSAGES|SALAMI|PEPPERONI|BACON|HAM|FRENCH FRIES|FRIES|SMILEY|SMILEYS|PATTY|PATTIES|SEEKH|TIKKA|CHICKEN|MUTTON|LAMB|FISH|PRAWN|PRAWNS|SHRIMP|MEAT|BASA|SURIMI|ICE CREAM) /) && !has(/ (NUTRI|SOYA|MASALA|POWDER|STOCK|CUBE) /)) return 'frozen';
+  if (has(/ (BREAD|BUN|BUNS|PAV|PAO|RUSK|CAKE|COOKIE|COOKIES|BISCUIT|BISCUITS|PITA|KULCHA|MUFFIN|CROISSANT|PIZZA BASE|BURGER|TOAST|BAGUETTE|DONUT|BROWNIE|PASTRY) /) && !has(/ (CRUMB|CRUMBS) /)) return 'dairy';
   if (/^VEG-/.test(c) || has(/ (POTATO|ONION|TOMATO|CAULI|CABBAGE|CARROT|CAROT|BEANS|PEAS|CAPSICUM|PUMPKIN|BRINJAL|BHINDI|OKRA|LADY FINGER|GOURD|LAUKI|TINDA|TORI|KARELA|CUCUMBER|RADISH|MOOLI|SPINACH|PALAK|SAAG|METHI GREEN|BATHU|CORIANDER|DHANIA PATTA|MINT|PUDINA|GINGER|GARLIC|GREEN CHIL|LEMON|BEETROOT|SWEET POTATO|ARBI|TARO|KACHALU|DRUMSTICK|MUSHROOM|BROCCOLI|ZUCCHINI|LETTUCE|CELERY|PARSLEY|BASIL|CURRY PATTA|CORN|JACK FRUIT|KATHAL|SPRING ONION|POKCHOY|CHINESE CABBAGE|CHERRY TOMATO|ACHARI MIRCH|COCONUT|BANANA|APPLE|ORANGE|PAPAYA|GUAVA|GRAPES|WATERMELON|MELON|FRUIT|LOKEE|SARSO|BATHUA) /)) return 'veg';
-  if (has(/ (MILK|PANEER|CURD|DAHI|BUTTER|CREAM|CHEESE|GHEE|KHOYA|KHOA|LASSI|CHHACH|BUTTERMILK|YOGURT|YOGHURT|EGG|EGGS|CHICKEN|MUTTON|FISH|AMUL|MILKMAID|CONDENSED) /)) return 'dairy';
+  if (has(/ (MILK|PANEER|CURD|DAHI|BUTTER|CREAM|CHEESE|GHEE|KHOYA|KHOA|LASSI|CHHACH|BUTTERMILK|YOGURT|YOGHURT|EGG|EGGS|AMUL|MILKMAID|CONDENSED) /)) return 'dairy';
   if (has(/ (DAL|DHAL|RAJMA|RAJMAH|CHANA|CHOLE|MOONG|URAD|URD|MASOOR|ARHAR|TOOR|LOBIA|MOTH|ROONGI|MATAR|MUTTER|BESAN|SOYA CHUNK|SOYABEAN|MASALA|POWDER|MIRCH|HALDI|TURMERIC|JEERA|CUMIN|DHANIA|CORIANDER SEED|AJWAIN|AJWIN|HING|ASAFOETIDA|CLOVE|LAUNG|CARDAMOM|ELAICHI|CINNAMON|DALCHINI|BAY LEAF|TEJ PATTA|PEPPER|KALI MIRCH|JAVITRI|MACE|NUTMEG|JAIPHAL|STAR ANI|SAUNF|FENNEL|METHI DANA|KASOORI|KASURI|MUSTARD SEED|RAI|SARSON SEED|KALONJI|SABUT|WHOLE|CHILLI FLAKES|CHILLY FLAKES|OREGANO|ORGENO|MIX HERB|SEASONING|AMCHUR|SAFFRON|KESAR|KESHAR|TIL|SESAME|POPPY|KHUS|ANARDANA|KALA NAMAK|BLACK SALT) /)) return 'pulse';
   return 'misc';
 }
@@ -2203,7 +2197,7 @@ function vArts() {
   if (A.day === 'pick') h += '<label class="f">Request date<input type="date" data-artsday="1" value="' + esc(A.dayPick || today()) + '"></label>';
   if (D0) { const W = S.lines.filter(l => l.date === D0 && l.status !== 'dropped'); const w = W.filter(l => l.status === 'waiting'); h += '<div class="daysum"><b>' + fmtLong(D0) + '</b><span>' + w.length + ' pending of ' + W.length + ' articles · ' + new Set(w.map(l => l.store)).size + ' stores · ' + new Set(w.map(l => l.req)).size + ' requests</span></div>'; }
   h += '<div class="seg">' + [['all', 'All'], ['ready', 'Ready'], ['wait', 'Short'], ['hold', 'On hold']].map(([k, l]) => '<button data-a="artsSt" data-v="' + k + '" class="' + (A.st === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>';
-  h += '<label class="chk catTog"><input type="checkbox" data-a="artsCatOn"' + (S.artsCat ? ' checked' : '') + '> Show in sections: Dairy · Vegetables · Pulses & Spices · Miscellaneous</label>';
+  h += '<label class="chk catTog"><input type="checkbox" data-a="artsCatOn"' + (S.artsCat ? ' checked' : '') + '> Show in sections: ' + ARTS_CATS.map(x => x[1]).join(' · ') + '</label>';
   h += '<div class="grid2">' + pickBtn('artsStore', { title: 'Store', search: true, full: true, opts: [['', 'All stores']].concat(stores.map(x => [x, x])), val: A.store, set: v => { A.store = v; render(); } }) + sortPick('arts') + '</div>';
   h += '<div id="artsres">' + artsResults() + '</div>';
   h += '<button class="btn" data-a="artsExport">Download this list (PDF or Excel)</button>';
