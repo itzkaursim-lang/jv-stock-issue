@@ -442,6 +442,7 @@ function vHome() {
     '<button class="pt blue" data-a="doneOpenDay" data-v="' + t + '"><span class="ptag">' + (isToday ? 'Today' : dl) + '</span><b>Done</b><span class="pbig">' + issuedToday + '</span><span>slips entered</span></button>' +
     '<div class="pt pink">' + qi('upload', 'Upload', '<path d="M12 21V9M7 14l5-5 5 5M4 3h16"/>') + qi('newReq', 'Add request', '<path d="M12 5v14M5 12h14"/>') + qi('batchReq', 'Batch add', '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 3v18"/>') + '</div></div>';
   h += '<div class="grid2"><button class="btn main" data-a="openSite">Issue CUIMS</button><button class="btn lav" data-a="openMgr">' + (autoStockCfg().on ? 'Update live stock' : 'Live stock') + '</button></div>';
+  h += zwHomeCard();
   const ex = expiryRows().filter(r => r.left <= expDays());
   if (ex.length) { const e0 = ex.filter(r => r.left < 0).length; h += '<button class="alertcard" data-a="expOpen"><span class="ai">' + ico('alert', 22) + '</span><span style="flex:1;min-width:0"><b>Expiry Tracker</b><span>' + ex.length + ' batches within ' + expDays() + ' days' + (e0 ? ' · ' + e0 + ' expired' : '') + '</span></span>' + ico('right', 18) + '</button>'; }
   h += tasksCard();
@@ -1363,6 +1364,98 @@ function expiryRows() {
     out.push({ code: i.code, name: i.name, uom: i.uom, qty: v.qty, mfd: v.mfd, exp: v.exp, left, countDate: c.date, cid: c.id, idx: c.items.indexOf(i), k }); }));
   return out.sort((a, b) => a.left - b.left);
 }
+/* ---------------- Zero-stock watch (order-only articles) ---------------- */
+function zwList() { S.zeroWatch = S.zeroWatch || []; return S.zeroWatch; }
+function zwWaiting(code) { return S.lines.filter(l => l.code === code && l.status === 'waiting').sort((a, b) => a.date.localeCompare(b.date)); }
+function zwRow(w) {
+  const st = S.stock[w.code], inRep = !!st, qty = inRep ? Math.round((Number(st.qty) || 0) * 1000) / 1000 : null;
+  const W = zwWaiting(w.code), need = Math.round(W.reduce((n, l) => n + (Number(l.qty) || 0), 0) * 1000) / 1000;
+  const after = qty == null ? null : Math.round((qty - need) * 1000) / 1000;
+  let k;
+  if (qty == null) k = 'missing';
+  else if (qty <= 0) k = qty < 0 ? 'neg' : 'ok';
+  else if (need > 0) k = after > 0 ? 'extra' : after < 0 ? 'short' : 'covered';
+  else k = 'extra';
+  const acked = w.ack && Number(w.ack.qty) === qty && (k === 'extra' || k === 'neg');
+  return { w, code: w.code, name: inRep ? st.name : (w.name || itemName(w.code)), uom: inRep ? st.uom : (w.uom || itemUom(w.code)), qty, need, after, W, k, acked, alert: (k === 'extra' || k === 'neg') && !acked };
+}
+function zwRows() { return zwList().map(zwRow); }
+const ZW_TAG = { ok: ['Zero · OK', 'c-ok'], extra: ['Above zero · check', 'c-no'], neg: ['Below zero · check', 'c-no'], covered: ['Covered by pending', 'c-gd'], short: ['Pending needs more', 'c-gd'], missing: ['Not in stock report', 'c-gy'] };
+function zwHomeCard() {
+  if (!zwList().length) return '';
+  const R = zwRows(), al = R.filter(r => r.alert), cov = R.filter(r => r.k === 'covered' || r.k === 'short');
+  if (!al.length && !cov.length) return '';
+  const names = (al.length ? al : cov).slice(0, 3).map(r => r.name).join(', ') + ((al.length ? al : cov).length > 3 ? '…' : '');
+  return '<button class="alertcard' + (al.length ? '' : ' soft') + '" data-a="zwOpen"><span class="ai">' + ico('alert', 22) + '</span><span style="flex:1;min-width:0"><b>Zero-stock watch</b><span>' +
+    (al.length ? al.length + ' order-only article' + (al.length === 1 ? '' : 's') + ' not zero' : 'All clear after pending requests') + (al.length && cov.length ? ' · ' + cov.length + ' covered by pending' : !al.length ? ' · ' + cov.length + ' in stock for pending' : '') + '</span><span style="font-weight:600;opacity:.75;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block">' + esc(names) + '</span></span>' + ico('right', 18) + '</button>';
+}
+function vZeroWatch() {
+  ui.zw = ui.zw || { f: 'all', q: '', open: null, sel: null };
+  const Z = ui.zw, R = zwRows();
+  const n = k => R.filter(r => k(r)).length;
+  let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Zero-stock watch</h1><div class="sub">Order-only articles. They are not kept in the store, so their stock should be zero. Anything above zero needs a check.</div></div></header><main>';
+  h += stockCard();
+  h += '<div class="grid3"><div class="tile t-in"><b>' + R.length + '</b><span>Watching</span></div><div class="tile t-no"><b>' + n(r => r.alert) + '</b><span>Need a check</span></div><div class="tile t-ok"><b>' + n(r => r.k === 'ok') + '</b><span>Zero · OK</span></div></div>';
+  h += '<div class="grid3"><div class="tile t-pt"><b>' + n(r => r.W.length) + '</b><span>With pending</span></div><div class="tile t-pt"><b>' + n(r => r.k === 'covered') + '</b><span>Zero after issue</span></div><div class="tile"><b>' + n(r => r.acked || r.k === 'missing') + '</b><span>Checked / not found</span></div></div>';
+  h += '<div class="grid2"><button class="btn main" data-a="zwAdd">+ Add articles</button><button class="btn" data-a="zwExport"' + (R.length ? '' : ' disabled') + '>Download</button></div>';
+  if (!R.length) return h + '<div class="card pad note">No articles yet. Tap <b>Add articles</b> and pick them from your stock report by name or item code.</div></main>';
+  h += '<div class="seg">' + [['all', 'All'], ['alert', 'Check'], ['ok', 'Zero'], ['pend', 'Pending']].map(([k, l]) => '<button data-a="zwF" data-v="' + k + '" class="' + (Z.f === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>';
+  h += '<div class="sbox"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input type="search" data-zw="q" value="' + esc(Z.q) + '" placeholder="Search watched articles" autocomplete="off"></div>';
+  h += '<div class="row" style="justify-content:space-between"><span class="note">' + (Z.sel ? Z.sel.length + ' selected' : 'Tap an article for details') + '</span>' + (Z.sel ? '<span class="row" style="gap:8px"><button class="btn sm danger-t" data-a="zwBDel"' + (Z.sel.length ? '' : ' disabled') + '>Remove</button><button class="btn sm ghost" data-a="zwSel">Done</button></span>' : '<button class="btn sm ghost" data-a="zwSel">Select</button>') + '</div>';
+  h += '<div id="zwres">' + zwResults() + '</div>';
+  return h + '</main>';
+}
+function zwResults() {
+  const Z = ui.zw, q = String(Z.q || '').trim().toUpperCase(), words = q.split(/\s+/).filter(Boolean);
+  const rank = { extra: 0, neg: 1, short: 2, covered: 3, missing: 4, ok: 5 };
+  let R = zwRows();
+  if (words.length) R = R.filter(r => words.every(w => r.code.toUpperCase().includes(w) || String(r.name).toUpperCase().includes(w)));
+  if (Z.f === 'alert') R = R.filter(r => r.alert); else if (Z.f === 'ok') R = R.filter(r => r.k === 'ok'); else if (Z.f === 'pend') R = R.filter(r => r.W.length);
+  R.sort((a, b) => (a.alert ? 0 : 1) - (b.alert ? 0 : 1) || rank[a.k] - rank[b.k] || String(a.name).localeCompare(String(b.name)));
+  if (!R.length) return '<div class="card pad note">Nothing here.</div>';
+  return '<div class="card" style="overflow:hidden">' + R.map(r => {
+    const open = Z.open === r.code, sel = Z.sel && Z.sel.includes(r.code), T = ZW_TAG[r.k];
+    let x = '<div class="stkitem' + (open ? ' on' : '') + '"><button class="stkrow" data-a="' + (Z.sel ? 'zwPick' : 'zwOpenRow') + '" data-v="' + esc(r.code) + '">' + (Z.sel ? '<span class="zwck' + (sel ? ' on' : '') + '">' + (sel ? '✓' : '') + '</span>' : '') +
+      '<span class="sn"><b>' + esc(r.name) + '</b><span class="mono">' + esc(r.code) + '</span></span><span class="sq"><b' + (r.alert ? ' style="color:#C0264A"' : '') + '>' + (r.qty == null ? '–' : num(r.qty)) + '</b><small>' + esc(r.uom || '') + '</small></span></button>';
+    x += '<div class="scrow" style="padding:0 18px 12px">' + pill(r.acked ? 'Checked · ' + num(r.qty) : T[0], r.acked ? 'c-gy' : T[1]) +
+      (r.W.length ? '<span class="sc gd">pending ' + num(r.need) + ' · ' + r.W.length + ' request' + (r.W.length === 1 ? '' : 's') + '</span><span class="sc ' + (r.after === 0 ? 'ok' : 'no') + '">after issue ' + (r.after == null ? '–' : num(r.after)) + '</span>' : '') +
+      (r.w.note ? '<span class="sc">' + esc(r.w.note) + '</span>' : '') + '</div>';
+    if (open && !Z.sel) {
+      x += '<div class="leftbox"><div class="zwnums"><div><span>Real stock now</span><b>' + (r.qty == null ? '–' : num(r.qty)) + ' <small>' + esc(r.uom || '') + '</small></b></div><div><span>Pending requests</span><b>' + num(r.need) + '</b></div><div><span>After all issued</span><b' + (r.after != null && r.after !== 0 ? ' style="color:#C0264A"' : '') + '>' + (r.after == null ? '–' : num(r.after)) + '</b></div></div>' +
+        '<div class="note" style="margin:6px 0 8px">' + esc(stockAge()) + (r.k === 'missing' ? '. This item code is not in the stock report.' : r.k === 'covered' ? '. Stock is there only for pending requests. It will be zero once they are issued.' : r.k === 'short' ? '. Pending requests need ' + num(-r.after) + ' more than the stock.' : r.k === 'extra' ? '. ' + num(r.W.length ? r.after : r.qty) + ' extra that no request needs.' : '') + '</div>' +
+        '<div class="lefthead">Pending for it · ' + r.W.length + '</div>' + (r.W.length ? r.W.map(l => '<div class="leftrow"><span><b><span class="reqno sm" data-req="' + esc(l.req) + '">' + esc(l.req) + '</span> ' + esc(l.store) + '</b><span>' + fmtShort(l.date) + (l.date > today() ? ' · scheduled' : '') + '</span></span><b class="qty">' + num(l.qty) + '</b></div>').join('') : '<div class="note">No pending request.</div>') +
+        (r.w.ack ? '<div class="note" style="margin-top:8px">Checked by ' + esc(r.w.ack.by || 'you') + ' at ' + num(r.w.ack.qty) + ' · ' + esc(fmtDT(r.w.ack.at)) + '. Alerts again if the stock changes.</div>' : '') +
+        '<div class="rqbtns" style="margin-top:10px;grid-template-columns:1fr 1fr 1fr">' + ((r.k === 'extra' || r.k === 'neg') ? '<button class="btn sm main" data-a="zwAck" data-v="' + esc(r.code) + '">' + (r.acked ? 'Undo checked' : 'I checked it') + '</button>' : '<button class="btn sm" data-a="stockOpenCode" data-v="' + esc(r.code) + '">Live stock</button>') +
+        '<button class="btn sm" data-a="zwNote" data-v="' + esc(r.code) + '">Note</button><button class="btn sm danger-t" data-a="zwDel" data-v="' + esc(r.code) + '">Remove</button></div></div>';
+    }
+    return x + '</div>';
+  }).join('') + '</div>';
+}
+function shZwAdd() {
+  const Z = ui.sheet, q = String(Z.q || '').trim().toUpperCase(), words = q.split(/\s+/).filter(Boolean), have = new Set(zwList().map(w => w.code));
+  let h = '<div class="row"><h2>Add articles</h2><button class="btn sm ghost" data-a="closeSheet">Close</button></div>';
+  h += '<div class="note">Pick from your stock report by name or item code. ' + esc(stockAge()) + '.</div>';
+  h += '<div class="seg">' + [['both', 'Name or code'], ['code', 'Item code'], ['name', 'Exact name']].map(([k, l]) => '<button data-a="zwBy" data-v="' + k + '" class="' + ((Z.by || 'both') === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>';
+  h += '<div class="sbox"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input type="search" data-zwadd="q" value="' + esc(Z.q || '') + '" placeholder="' + (Z.by === 'code' ? 'Item code' : Z.by === 'name' ? 'Full item name' : 'Item name or code') + '" autocomplete="off"></div>';
+  h += '<div id="zwaddres">' + zwAddResults() + '</div>';
+  h += '<button class="btn main full" data-a="zwAddSave"' + (Z.sel.length ? '' : ' disabled') + '>' + (Z.sel.length ? 'Add ' + Z.sel.length + ' article' + (Z.sel.length === 1 ? '' : 's') : 'Select articles') + '</button>';
+  return h;
+}
+function zwAddResults() {
+  const Z = ui.sheet, by = Z.by || 'both', q = String(Z.q || '').trim().toUpperCase(), words = q.split(/\s+/).filter(Boolean), have = new Set(zwList().map(w => w.code));
+  let L = Object.entries(S.stock).map(([c, v]) => ({ c, v }));
+  if (by === 'code') L = q ? L.filter(x => x.c.toUpperCase().includes(q)) : [];
+  else if (by === 'name') L = q ? L.filter(x => String(x.v.name).trim().toUpperCase() === q) : [];
+  else if (words.length) L = L.filter(x => words.every(w => x.c.toUpperCase().includes(w) || String(x.v.name).toUpperCase().includes(w)));
+  L.sort((a, b) => (Z.sel.includes(b.c) ? 1 : 0) - (Z.sel.includes(a.c) ? 1 : 0) || String(a.v.name).localeCompare(String(b.v.name)));
+  let h = '';
+  if (Z.sel.length) h += '<div class="note" style="padding:0 4px">Selected: ' + Z.sel.map(c => esc((S.stock[c] || {}).name || c)).join(', ') + '</div>';
+  if (!Object.keys(S.stock).length) return h + '<div class="card pad note">No stock report yet. Upload one or update live stock first.</div>';
+  if (!L.length) return h + '<div class="card pad note">' + (q ? (by === 'name' ? 'No item has exactly this name.' : 'No item matches.') : 'Type to search the stock report.') + '</div>';
+  return h + '<div class="card" style="overflow:hidden;max-height:46vh;overflow-y:auto">' + L.slice(0, 80).map(x => { const on = Z.sel.includes(x.c), had = have.has(x.c);
+    return '<button class="stkrow" data-a="zwAddPick" data-v="' + esc(x.c) + '"' + (had ? ' disabled style="opacity:.55"' : '') + '><span class="zwck' + (on ? ' on' : '') + '">' + (on || had ? '✓' : '') + '</span><span class="sn"><b>' + esc(x.v.name) + '</b><span class="mono">' + esc(x.c) + (had ? ' · already watched' : '') + '</span></span><span class="sq"><b>' + num(x.v.qty) + '</b><small>' + esc(x.v.uom) + '</small></span></button>'; }).join('') + '</div>' +
+    (L.length > 80 ? '<div class="note" style="padding:0 4px">Showing 80 of ' + L.length + '. Type more to narrow.</div>' : '');
+}
 function vExpiry() {
   const all = expiryRows(), lim = expDays();
   const due = all.filter(r => r.left <= lim);
@@ -1444,6 +1537,7 @@ function renderDrawer() {
   el.innerHTML = '<div class="dbg" data-a="drawerClose"></div><aside class="dpanel" role="dialog" aria-label="Menu"><div class="dhead"><img src="icon.png" alt=""><div><b>JV Stock Issue</b><span>Built by ' + esc(S.me.builder || S.me.name || 'JV') + '</span></div></div>' +
     '<div class="dsect">Tools</div>' +
     item('dCount', 'Daily Count Cycle', '20 random articles, physical vs system', '<path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/>') +
+    item('zwOpen', 'Zero-stock watch', 'Order-only articles that should be zero', '<circle cx="12" cy="12" r="8"/><path d="M6.5 17.5l11-11"/>') +
     item('expOpen', 'Expiry Tracker', 'Batches expiring within ' + expDays() + ' days', '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6"/>') +
     item('doneOpen', 'Done list', 'Slips, serials and articles still left', '<path d="M4 12l5 5L20 6"/>') +
     item('newReq', 'Add store request', 'Type a request directly in the app', '<path d="M12 5v14M5 12h14"/>') +
@@ -1475,7 +1569,7 @@ const REPORTS = {
   ret: { name: 'Daily Return Register', pdf: true, landscape: false, dated: 'reg', details: true, sorts: true },
   pending: { name: 'Pending Report', pdf: true, landscape: true, sorts: true },
   requests: { name: 'Requests Register' }, entries: { name: 'Entries Log' }, items: { name: 'Entry Items' },
-  stock: { name: 'Stock Now' }, returns: { name: 'Returns (all)' }, search: { name: 'Search Results' }, counts: { name: 'Daily Count Cycle', pdf: true, landscape: true }, expiry: { name: 'Expiry Tracker', pdf: true, landscape: false }, done: { name: 'Done List', pdf: true, landscape: false }, cons: { name: 'Store-wise Consumption', pdf: true, landscape: false }, verify: { name: 'CUIMS Verification', pdf: true, landscape: false }, verifyItems: { name: 'CUIMS Verification · Articles', pdf: true, landscape: true }, arts: { name: 'Pending Articles', pdf: true, landscape: false }
+  stock: { name: 'Stock Now' }, returns: { name: 'Returns (all)' }, search: { name: 'Search Results' }, counts: { name: 'Daily Count Cycle', pdf: true, landscape: true }, expiry: { name: 'Expiry Tracker', pdf: true, landscape: false }, zwatch: { name: 'Zero-stock Watch', pdf: true, landscape: false }, done: { name: 'Done List', pdf: true, landscape: false }, cons: { name: 'Store-wise Consumption', pdf: true, landscape: false }, verify: { name: 'CUIMS Verification', pdf: true, landscape: false }, verifyItems: { name: 'CUIMS Verification · Articles', pdf: true, landscape: true }, arts: { name: 'Pending Articles', pdf: true, landscape: false }
 };
 function rptPref(type) {
   S.rp = S.rp || {};
@@ -1507,7 +1601,7 @@ function reportDef(type) {
       detail: list.map(r => ({ head: r.no + '   ·   ' + r.store + '   ·   Returned by ' + rcvLabel(r.by) + '   ·   Serial ' + (r.serial || '____'), cols: ['S.No', 'Item code', 'Item', 'UOM', 'Qty', 'Item remarks'], rows: r.items.map((x, i) => [i + 1, x.code, x.name || itemName(x.code), x.uom || itemUom(x.code), num(x.qty), x.remark || '–']) })),
       file: 'Return-Register-' + d, sub2: 'Return · Department · Against Issue No 1111' };
   }
-  const objRows = type === 'pending' ? sortBy(rowsPending(), ['custom', 'az', 'time'].includes(p.sort) ? 'reqdate' : p.sort, r => ({ req: r['Request No'], store: r.Store, date: r['_date'] || '' })) : type === 'requests' ? rowsRequests() : type === 'entries' ? rowsEntries() : type === 'items' ? rowsItems() : type === 'stock' ? rowsStock() : type === 'returns' ? rowsReturns() : type === 'search' ? searchRows() : type === 'arts' ? artsList().sort((a, b) => byStore(a.l.store, b.l.store) || String(a.l.req).localeCompare(String(b.l.req), undefined, { numeric: true })).map(({ l, k }) => ({ Store: l.store, 'Request No': l.req, 'Requested on': fmtLong(l.date), Item: itemName(l.code), 'Item code': l.code, Qty: l.qty, UOM: itemUom(l.code), Status: k === 'issue' ? 'Ready' : k === 'later' ? 'Scheduled' : k === 'hold' ? 'On hold' : k === 'missing' ? 'Not in stock' : 'Short' })) : type === 'verifyItems' ? (() => { const R = (S.verifyReports || []).find(r => r.id === ui.vrep) || (S.verifyReports || [])[0] || {}; const out = []; Object.values(R.details || {}).forEach(D => { D.items.forEach(i => out.push({ Serial: D.serial, Slip: D.slip, 'Project Area': D.pa, 'Received by': D.rcv ? rcvLabel(D.rcv) : '', Code: i.code, Item: i.name, 'CUIMS qty': i.qty, 'App qty': i.app == null ? 'not in app' : i.app, Remarks: i.remark || '' })); D.missing.forEach(m => out.push({ Serial: D.serial, Slip: D.slip, 'Project Area': D.pa, 'Received by': D.rcv ? rcvLabel(D.rcv) : '', Code: m.code, Item: itemName(m.code), 'CUIMS qty': 'missing', 'App qty': m.qty, Remarks: '' })); }); return out; })() : type === 'verify' ? (((S.verifyReports || []).find(r => r.id === ui.vrep) || (S.verifyReports || [])[0] || { findings: [] }).findings.map(f => ({ Entry: f.label || (f.serial ? 'Serial ' + f.serial : ''), Result: { ok: 'All good', notFound: 'Not found on CUIMS', serial: 'Serial missing in app', multi: 'Slip used more than once', store: 'Store differs', rcv: 'Receiver differs', type: 'Not a return', missing: 'Missing on CUIMS', qty: 'Qty differs', remark: 'Remark differs', extra: 'Extra on CUIMS', notInApp: 'On CUIMS, not in app' }[f.kind] || f.kind, Item: f.code ? itemName(f.code) + ' (' + f.code + ')' : '', App: f.app != null ? String(f.app) : (f.qty != null ? String(f.qty) : ''), CUIMS: f.cuims != null ? String(f.cuims) : (f.val || f.serial || ''), Status: f.fixed ? 'Fixed in app' : (f.kind === 'ok' ? '' : 'Open') }))) : type === 'cons' ? consRows() : type === 'done' ? doneRows() : type === 'expiry' ? expiryRows().filter(r => r.left <= expDays()).map(r => ({ Item: r.name, Code: r.code, Qty: r.qty, UOM: r.uom, MFD: r.mfd ? fmtLong(r.mfd) : '', Expiry: fmtLong(r.exp), 'Days left': r.left, Status: r.left < 0 ? 'Expired' : r.left <= 15 ? 'Within 15 days' : 'Within ' + expDays() + ' days', 'Counted on': fmtLong(r.countDate) })) : type === 'counts' ? countRows((S.counts || []).filter(c => !ui.countExportId || String(c.id) === String(ui.countExportId))) : [];
+  const objRows = type === 'zwatch' ? zwRows().map(r => ({ 'Item code': r.code, Item: r.name, UOM: r.uom || '', 'Stock now': r.qty == null ? 'Not in report' : r.qty, 'Pending qty': r.need, 'Pending requests': r.W.map(l => l.req + ' ' + l.store + ' (' + num(l.qty) + ')'), 'After all issued': r.after == null ? '–' : r.after, Status: r.acked ? 'Checked' : ZW_TAG[r.k][0], Note: r.w.note || '' })) : type === 'pending' ? sortBy(rowsPending(), ['custom', 'az', 'time'].includes(p.sort) ? 'reqdate' : p.sort, r => ({ req: r['Request No'], store: r.Store, date: r['_date'] || '' })) : type === 'requests' ? rowsRequests() : type === 'entries' ? rowsEntries() : type === 'items' ? rowsItems() : type === 'stock' ? rowsStock() : type === 'returns' ? rowsReturns() : type === 'search' ? searchRows() : type === 'arts' ? artsList().sort((a, b) => byStore(a.l.store, b.l.store) || String(a.l.req).localeCompare(String(b.l.req), undefined, { numeric: true })).map(({ l, k }) => ({ Store: l.store, 'Request No': l.req, 'Requested on': fmtLong(l.date), Item: itemName(l.code), 'Item code': l.code, Qty: l.qty, UOM: itemUom(l.code), Status: k === 'issue' ? 'Ready' : k === 'later' ? 'Scheduled' : k === 'hold' ? 'On hold' : k === 'missing' ? 'Not in stock' : 'Short' })) : type === 'verifyItems' ? (() => { const R = (S.verifyReports || []).find(r => r.id === ui.vrep) || (S.verifyReports || [])[0] || {}; const out = []; Object.values(R.details || {}).forEach(D => { D.items.forEach(i => out.push({ Serial: D.serial, Slip: D.slip, 'Project Area': D.pa, 'Received by': D.rcv ? rcvLabel(D.rcv) : '', Code: i.code, Item: i.name, 'CUIMS qty': i.qty, 'App qty': i.app == null ? 'not in app' : i.app, Remarks: i.remark || '' })); D.missing.forEach(m => out.push({ Serial: D.serial, Slip: D.slip, 'Project Area': D.pa, 'Received by': D.rcv ? rcvLabel(D.rcv) : '', Code: m.code, Item: itemName(m.code), 'CUIMS qty': 'missing', 'App qty': m.qty, Remarks: '' })); }); return out; })() : type === 'verify' ? (((S.verifyReports || []).find(r => r.id === ui.vrep) || (S.verifyReports || [])[0] || { findings: [] }).findings.map(f => ({ Entry: f.label || (f.serial ? 'Serial ' + f.serial : ''), Result: { ok: 'All good', notFound: 'Not found on CUIMS', serial: 'Serial missing in app', multi: 'Slip used more than once', store: 'Store differs', rcv: 'Receiver differs', type: 'Not a return', missing: 'Missing on CUIMS', qty: 'Qty differs', remark: 'Remark differs', extra: 'Extra on CUIMS', notInApp: 'On CUIMS, not in app' }[f.kind] || f.kind, Item: f.code ? itemName(f.code) + ' (' + f.code + ')' : '', App: f.app != null ? String(f.app) : (f.qty != null ? String(f.qty) : ''), CUIMS: f.cuims != null ? String(f.cuims) : (f.val || f.serial || ''), Status: f.fixed ? 'Fixed in app' : (f.kind === 'ok' ? '' : 'Open') }))) : type === 'cons' ? consRows() : type === 'done' ? doneRows() : type === 'expiry' ? expiryRows().filter(r => r.left <= expDays()).map(r => ({ Item: r.name, Code: r.code, Qty: r.qty, UOM: r.uom, MFD: r.mfd ? fmtLong(r.mfd) : '', Expiry: fmtLong(r.exp), 'Days left': r.left, Status: r.left < 0 ? 'Expired' : r.left <= 15 ? 'Within 15 days' : 'Within ' + expDays() + ' days', 'Counted on': fmtLong(r.countDate) })) : type === 'counts' ? countRows((S.counts || []).filter(c => !ui.countExportId || String(c.id) === String(ui.countExportId))) : [];
   const keys = objRows.length ? Object.keys(objRows[0]) : [];
   const chips = type === 'pending' ? [['Date', fmtLong(today())], ['Stores', new Set(objRows.map(r => r.Store)).size], ['Articles', objRows.length]] : [['Date', fmtLong(today())], ['Rows', objRows.length]];
   return { cols: keys.map(k => [k, k]), rows: objRows, chips, file: REPORTS[type].name.replace(/[^A-Za-z]+/g, '-') + '-' + today(), sub2: '' };
@@ -1925,7 +2019,7 @@ window.jvBack = () => {
 function render() {
   const app = document.getElementById('app');
   const y = window.scrollY;
-  app.innerHTML = appBar() + (S.testMode ? '<div class="testbar"><span><b>TEST MODE</b> · your real data is safe and hidden. Cloud backup is paused. Entries submitted on CUIMS are still real.</span><button class="btn sm" data-a="testToggle">Exit</button></div>' : '') + (ui.view === 'linkReview' ? vLinkReview() : ui.view === 'vreport' ? vReport() : ui.view === 'vreports' ? vReportList() : ui.view === 'countList' ? vCountList() : ui.view === 'manage' ? vManage() : ui.view === 'stock' ? vStock() : ui.view === 'cons' ? vCons() : ui.view === 'arts' ? vArts() : ui.view === 'check' ? vCheck() : ui.view === 'done' ? vDone() : ui.view === 'expiry' ? vExpiry() : ui.view === 'count' ? vCount() : ui.view === 'countLog' ? vCountLog() : ui.view === 'taskLog' ? vTaskLog() : ui.view === 'req' ? vReq() : ({ home: vHome, pend: vPend, reg: vReg, find: vFind, set: vSet })[ui.tab]());
+  app.innerHTML = appBar() + (S.testMode ? '<div class="testbar"><span><b>TEST MODE</b> · your real data is safe and hidden. Cloud backup is paused. Entries submitted on CUIMS are still real.</span><button class="btn sm" data-a="testToggle">Exit</button></div>' : '') + (ui.view === 'linkReview' ? vLinkReview() : ui.view === 'vreport' ? vReport() : ui.view === 'vreports' ? vReportList() : ui.view === 'countList' ? vCountList() : ui.view === 'manage' ? vManage() : ui.view === 'stock' ? vStock() : ui.view === 'cons' ? vCons() : ui.view === 'arts' ? vArts() : ui.view === 'check' ? vCheck() : ui.view === 'done' ? vDone() : ui.view === 'expiry' ? vExpiry() : ui.view === 'zwatch' ? vZeroWatch() : ui.view === 'count' ? vCount() : ui.view === 'countLog' ? vCountLog() : ui.view === 'taskLog' ? vTaskLog() : ui.view === 'req' ? vReq() : ({ home: vHome, pend: vPend, reg: vReg, find: vFind, set: vSet })[ui.tab]());
   document.querySelector('#tabs .in').innerHTML = TABS.map(([k, l]) => '<button data-a="tab" data-v="' + k + '" class="' + (ui.tab === k && !ui.view ? 'on' : '') + '" aria-label="' + l + '"><span class="nic">' + ICON[k] + '</span><span class="nl">' + l + '</span></button>').join('');
   renderDrawer();
   paintSync();
@@ -1938,7 +2032,7 @@ function renderSheet() {
   const el = document.getElementById('sheet');
   if (!ui.sheet) { el.innerHTML = ''; return; }
   const k = ui.sheet.kind;
-  const body = k === 'link' ? shLink() : k === 'retBatch' ? shRetBatch() : k === 'paperDay' ? shPaperDay() : k === 'manReq' ? shManReq() : k === 'mslips' ? shMslips() : k === 'reqStatus' ? shReqStatus() : k === 'corr' ? shCorr() : k === 'batch' ? shBatch() : k === 'newReq' ? shNewReq() : k === 'export' ? shExport() : k === 'crop' ? shCrop() : k === 'backups' ? shBackups() : k === 'start' ? shStart() : k === 'upload' ? shUpload() : k === 'entry' ? shEntry() : k === 'return' ? shReturn() : k === 'editReq' ? shEditReq() : k === 'bulk' ? shBulk() : k === 'mark' ? shMark() : '';
+  const body = k === 'zwAdd' ? shZwAdd() : k === 'link' ? shLink() : k === 'retBatch' ? shRetBatch() : k === 'paperDay' ? shPaperDay() : k === 'manReq' ? shManReq() : k === 'mslips' ? shMslips() : k === 'reqStatus' ? shReqStatus() : k === 'corr' ? shCorr() : k === 'batch' ? shBatch() : k === 'newReq' ? shNewReq() : k === 'export' ? shExport() : k === 'crop' ? shCrop() : k === 'backups' ? shBackups() : k === 'start' ? shStart() : k === 'upload' ? shUpload() : k === 'entry' ? shEntry() : k === 'return' ? shReturn() : k === 'editReq' ? shEditReq() : k === 'bulk' ? shBulk() : k === 'mark' ? shMark() : '';
   const sc = el.querySelector('.sheet') ? el.querySelector('.sheet').scrollTop : 0;
   el.innerHTML = '<div class="sheetbg" data-a="bgClose"><div class="sheet" role="dialog" aria-modal="true">' + body + '</div></div>';
   el.querySelector('.sheet').scrollTop = sc;
@@ -2132,6 +2226,7 @@ function stockResults() {
       const W = S.lines.filter(l => l.code === x.c && l.status === 'waiting').sort((a, b) => a.date.localeCompare(b.date));
       const I = []; S.entries.slice().reverse().some(e => { e.items.forEach(i => { if (i.code === x.c && I.length < 6) I.push({ e, i }); }); return I.length >= 6; });
       row += '<div class="rqbtns" style="padding:0 18px 12px;grid-template-columns:1fr 1fr 1fr"><button class="btn sm main" data-a="stkEdit" data-v="' + esc(x.c) + '">Edit qty</button><button class="btn sm" data-a="stkRen" data-v="' + esc(x.c) + '">Name / UOM</button><button class="btn sm danger-t" data-a="stkDel" data-v="' + esc(x.c) + '">Delete</button></div>' +
+        '<div style="padding:0 18px 10px"><button class="btn sm ' + (zwList().some(w => w.code === x.c) ? 'ghost' : '') + '" data-a="zwToggle" data-v="' + esc(x.c) + '" style="width:100%">' + (zwList().some(w => w.code === x.c) ? '✓ In Zero-stock watch · remove' : '+ Add to Zero-stock watch') + '</button></div>' +
         (ed ? '<div class="note" style="padding:0 18px 10px">Changed by ' + esc(ed.by || 'you') + ' from ' + num(ed.from) + ' to ' + num(ed.to) + ' · ' + esc(fmtDT(ed.at)) + '. The next stock upload replaces it.</div>' : '');
       row += '<div class="leftbox"><div class="lefthead">Waiting for it · ' + W.length + '</div>' + (W.length ? W.map(l => '<div class="leftrow"><span><b><span class="reqno sm" data-req="' + esc(l.req) + '">' + esc(l.req) + '</span> ' + esc(l.store) + '</b><span>' + fmtShort(l.date) + (l.date > today() ? ' · scheduled' : '') + '</span></span><b class="qty">' + num(l.qty) + '</b></div>').join('') : '<div class="note">No open request needs it.</div>') +
         '<div class="lefthead" style="margin-top:10px">Recent issues</div>' + (I.length ? I.map(o => '<div class="leftrow"><span><b>' + esc(o.e.store) + '</b><span>' + esc(o.e.slip) + ' · #' + esc(o.e.serial || '–') + ' · ' + fmtShort(entryDate(o.e)) + '</span></span><b class="qty">' + num(o.i.qty) + '</b></div>').join('') : '<div class="note">Not issued yet.</div>') + '</div>';
@@ -2513,8 +2608,8 @@ function renumberReq(from, to) {
   if (ui.lastReq === from) ui.lastReq = to;
   return true;
 }
-const UNDO_KEYS = ['lines', 'entries', 'returns', 'hold', 'corrections', 'audit', 'manReqs', 'paper', 'verifyReports'];
-const UNDOABLE = { artQty: 'Quantity changed', artHold: 'Hold changed', artDel: 'Article removed', artsBHold: 'Articles put on hold', artsBRel: 'Articles released', artsBDel: 'Articles removed', dropReq: 'Request removed', dropStore: 'Store pending removed',
+const UNDO_KEYS = ['zeroWatch', 'lines', 'entries', 'returns', 'hold', 'corrections', 'audit', 'manReqs', 'paper', 'verifyReports'];
+const UNDOABLE = { zwDel: 'Removed from watch', zwBDel: 'Removed from watch', zwAddSave: 'Added to watch', artQty: 'Quantity changed', artHold: 'Hold changed', artDel: 'Article removed', artsBHold: 'Articles put on hold', artsBRel: 'Articles released', artsBDel: 'Articles removed', dropReq: 'Request removed', dropStore: 'Store pending removed',
   renumReq: 'Request renumbered', dcRenum: 'Request renumbered', impRenum: 'Request renumbered', impDrop: "App's request removed", corrSave: 'Correction saved', markSave: 'Slip added', dcMerge: 'Items merged', dcKeepFirst: 'Duplicate removed', dcDate: 'Date changed', dcBad: 'Incomplete removed',
   bulkSave: 'Requests edited', lkSave: 'CUIMS serials saved', vfFix: 'Fixed in app', dcRetFmt: 'Returns renumbered', dcRetFix: 'Return renumbered', clAdd: 'Count list changed', clDel: 'Count list changed', retBatchSave: 'Returns saved', stkEdit: 'Stock changed', stkRen: 'Item renamed', stkDel: 'Item deleted', stkAdd: 'Item added', mgDone: 'Requests completed', mgPend: 'Pending cleared', mgDel: 'Deleted', mgDelSlipPend: 'Slips deleted, articles pending again', delEntry: 'Entry deleted', delReturn: 'Return deleted', rsClose: 'Article closed', rsOpen: 'Article made pending', rsAll: 'Request completed', rsAdd: 'Article added', saveReq: 'Request edited', saveEntry: 'Entry saved', uploadOk: 'Import done', btSave: 'Batch saved', nrSave: 'Request added', hold: 'Hold changed' };
 const UNDO_STOCK = new Set(['lkSave', 'vfFix', 'stkEdit', 'markSave', 'delEntry', 'saveEntry', 'uploadOk', 'mgDelSlipPend']);
@@ -3104,6 +3199,24 @@ document.addEventListener('click', async ev => {
     case 'countExportAll': ui.countExportId = null; openExport('counts'); break;
     case 'varAdd': { const c = curCount(); if (!c) break; const it = c.items[+v]; it.variants = it.variants || []; if (!it.variants.length && it.physical !== '' && it.physical != null) it.variants.push({ qty: it.physical, mfd: '', exp: '' }); else it.variants.push({ qty: '', mfd: '', exp: '' }); syncPhysical(it); save(); render(); break; }
     case 'varDel': { const c = curCount(); if (!c) break; const [a1, k] = v.split('|').map(Number); const it = c.items[a1]; it.variants.splice(k, 1); syncPhysical(it); if (!it.variants.length) it.physical = ''; save(); render(); break; }
+    case 'zwOpen': ui.drawer = false; ui.view = 'zwatch'; ui.zw = ui.zw || { f: 'all', q: '', open: null, sel: null }; render(); window.scrollTo(0, 0); break;
+    case 'zwF': ui.zw.f = v; render(); break;
+    case 'zwOpenRow': ui.zw.open = ui.zw.open === v ? null : v; { const b = document.getElementById('zwres'); if (b) b.innerHTML = zwResults(); } break;
+    case 'zwSel': ui.zw.sel = ui.zw.sel ? null : []; ui.zw.open = null; render(); break;
+    case 'zwPick': { const i = ui.zw.sel.indexOf(v); if (i < 0) ui.zw.sel.push(v); else ui.zw.sel.splice(i, 1); render(); } break;
+    case 'zwBDel': { const L = ui.zw.sel.slice(); if (!L.length) break; if (!(await uiConfirm('Remove ' + L.length + ' article' + (L.length === 1 ? '' : 's') + ' from Zero-stock watch? Stock and requests are not changed.', 'Remove', true))) { ui.pendUndo = null; break; }
+      S.zeroWatch = zwList().filter(w => !L.includes(w.code)); ui.zw.sel = null; save(); render(); } break;
+    case 'zwDel': { if (!(await uiConfirm('Remove ' + itemName(v) + ' from Zero-stock watch?', 'Remove', true))) { ui.pendUndo = null; break; } S.zeroWatch = zwList().filter(w => w.code !== v); ui.zw.open = null; save(); render(); } break;
+    case 'zwAck': { const w = zwList().find(x => x.code === v); if (!w) break; const r = zwRow(w); if (r.acked) delete w.ack; else w.ack = { qty: r.qty, at: new Date().toISOString(), by: S.me.name || '' }; save(); render(); } break;
+    case 'zwNote': { const w = zwList().find(x => x.code === v); if (!w) break; const t = await uiPrompt('Note for ' + itemName(v) + ' (for example: comes only for Event orders)', w.note || '', 'Save'); if (t === null) break; w.note = t; save(); render(); } break;
+    case 'zwExport': openExport('zwatch'); break;
+    case 'zwAdd': ui.sheet = { kind: 'zwAdd', q: '', by: 'both', sel: [] }; renderSheet(); setTimeout(() => { const i = document.querySelector('[data-zwadd]'); if (i) i.focus(); }, 60); break;
+    case 'zwBy': ui.sheet.by = v; ui.sheet.q = ''; renderSheet(); break;
+    case 'zwAddPick': { const L = ui.sheet.sel, i = L.indexOf(v); if (i < 0) L.push(v); else L.splice(i, 1); const b = document.getElementById('zwaddres'); if (b) b.innerHTML = zwAddResults(); const sb = document.querySelector('[data-a="zwAddSave"]'); if (sb) { sb.disabled = !L.length; sb.textContent = L.length ? 'Add ' + L.length + ' article' + (L.length === 1 ? '' : 's') : 'Select articles'; } } break;
+    case 'zwAddSave': { const L = ui.sheet.sel.filter(c => !zwList().some(w => w.code === c)); L.forEach(c => zwList().push({ code: c, name: (S.stock[c] || {}).name || '', uom: (S.stock[c] || {}).uom || '', at: new Date().toISOString(), by: S.me.name || '' }));
+      ui.sheet = null; renderSheet(); save(); render(); toast(L.length + ' article' + (L.length === 1 ? '' : 's') + ' added to Zero-stock watch.'); } break;
+    case 'zwToggle': { const i = zwList().findIndex(w => w.code === v); if (i >= 0) zwList().splice(i, 1); else zwList().push({ code: v, name: itemName(v), uom: itemUom(v), at: new Date().toISOString(), by: S.me.name || '' }); save(); toast(i >= 0 ? 'Removed from Zero-stock watch.' : 'Added to Zero-stock watch.'); { const b = document.getElementById('stkres'); if (b) b.innerHTML = stockResults(); } } break;
+    case 'stockOpenCode': ui.view = 'stock'; ui.stk = { q: v, f: 'all', open: v }; render(); window.scrollTo(0, 0); break;
     case 'expOpen': ui.drawer = false; ui.view = 'expiry'; render(); window.scrollTo(0, 0); break;
     case 'expExport': openExport('expiry'); break;
     case 'expClear': { const [cid, idx, k] = v.split('|'); const c = (S.counts || []).find(x => String(x.id) === cid); if (c && await uiConfirm('Mark this batch as cleared (used, issued or removed)? It leaves the tracker.')) { c.items[+idx].variants[+k].cleared = true; save(); render(); } break; }
@@ -3244,6 +3357,8 @@ document.addEventListener('input', ev => {
   if (el.dataset.corr != null) { ui.form.rows[+el.dataset.corr].final = el.value; return; }
   if (el.dataset.cadd) { ui.form[el.dataset.cadd === 'code' ? 'addCode' : 'addQty'] = el.value; return; }
   if (el.dataset.cons) { ui.cons[el.dataset.cons] = el.value; render(); return; }
+  if (el.dataset.zw) { ui.zw.q = el.value; clearTimeout(ui.kT); ui.kT = setTimeout(() => { const b = document.getElementById('zwres'); if (b) b.innerHTML = zwResults(); }, 120); return; }
+  if (el.dataset.zwadd) { ui.sheet.q = el.value; clearTimeout(ui.kT); ui.kT = setTimeout(() => { const b = document.getElementById('zwaddres'); if (b) b.innerHTML = zwAddResults(); }, 120); return; }
   if (el.dataset.stk) { ui.stk.q = el.value; clearTimeout(ui.kT); ui.kT = setTimeout(() => { const b = document.getElementById('stkres'); if (b) b.innerHTML = stockResults(); }, 120); return; }
   if (el.dataset.retno) { ui.form._autoNo = false; ui.form.no = el.value.toUpperCase(); const sp = el.parentNode.querySelector('.rcvname'); if (sp) { const d = S.returns.some(x => String(x.no).toUpperCase() === el.value.trim().toUpperCase() && x.id !== ui.form.id); sp.className = 'rcvname ' + (d ? 'new' : 'ok'); sp.textContent = d ? 'Already used. Next free: ' + nextReturnNo(ui.form.recvDate || today()) : RET_RE.test(el.value.trim()) ? 'Free to use' : 'Format R-DDMM-NN'; } return; }
   if (el.dataset.f === 'recvDate' && ui.sheet && ui.sheet.kind === 'return') { ui.form.recvDate = el.value; renderSheet(); return; }
