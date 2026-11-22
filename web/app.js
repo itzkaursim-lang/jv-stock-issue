@@ -1299,7 +1299,8 @@ function todayCount(create) {
   if (c && c.status === 'open' && (S.countMode === 'fixed') !== (c.mode === 'fixed') && c.items.every(i => i.physical === '' || i.physical == null)) { S.counts = S.counts.filter(x => x !== c); c = null; create = true; }
   if (c && c.mode === 'fixed' && c.status === 'open' && c.items.every(i => i.physical === '' || i.physical == null) && c.listSig !== countListSig()) { S.counts = S.counts.filter(x => x !== c); c = null; create = true; }
   if (!c && create && S.countMode === 'fixed') {
-    const L = (S.countList || []).filter(k => S.stock[k]); if (!L.length) { toast('Add items to your count list first.'); return null; }
+    S.countList = (S.countList || []).map(countKey); const L = S.countList.filter(k => S.stock[k]);
+    if (!L.length) { ui.clWhy = (S.countList || []).length ? 'none' : 'empty'; return null; }
     const per = Math.max(0, parseInt(S.countPerDay, 10) || 0); let pick = L;
     if (per && per < L.length) { const done = S.counts.filter(x => x.mode === 'fixed' && x.date < today()).length; const st = (done * per) % L.length; pick = L.slice(st).concat(L.slice(0, st)).slice(0, per); }
     c = { id: nid(), date: today(), status: 'open', mode: 'fixed', listSig: countListSig(), startedAt: new Date().toISOString(), by: meTag(), stockAt: S.stockAt,
@@ -1318,6 +1319,12 @@ function todayCount(create) {
   }
   return c;
 }
+function countKey(k) {
+  if (S.stock[k]) return k;
+  const n = String(k || '').replace(/\s+/g, '').toUpperCase(); if (!n) return k;
+  return Object.keys(S.stock).find(c => String(c).replace(/\s+/g, '').toUpperCase() === n) || k;
+}
+function countOpenFail() { if (S.countMode === 'fixed') { ui.view = 'countList'; render(); window.scrollTo(0, 0); } else render(); }
 function countListSig() { return (S.countList || []).join('|') + '#' + (S.countPerDay || 0); }
 function diffOf(i) { if (i.physical === '' || i.physical == null || isNaN(parseFloat(i.physical))) return null; return Math.round((parseFloat(i.physical) - i.system) * 1000) / 1000; }
 function countSummary(c) { let m = 0, ex = 0, sh = 0, left = 0; c.items.forEach(i => { const d = diffOf(i); if (d === null) left++; else if (d === 0) m++; else if (d > 0) ex++; else sh++; }); return { m, ex, sh, left }; }
@@ -1497,6 +1504,7 @@ function vDone() {
 function vCountList() {
   const L = S.countList = S.countList || [], q = String(ui.clq || '').trim().toUpperCase(), words = q.split(/\s+/).filter(Boolean);
   let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">My count list</h1><div class="sub">Your high-value items for the Daily Count Cycle. Batches, MFD, expiry, differences and history work the same.</div></div></header><main>';
+  if (ui.clWhy && S.countMode === 'fixed') h += '<div class="banner t-no" style="display:block"><b>Today\'s count could not start.</b> ' + (ui.clWhy === 'empty' ? 'Your count list is empty.' : 'None of the ' + L.length + ' items in your list are in the current stock report (' + esc(stockAge()) + ').') + ' Add items below, or switch to <b>20 random</b>, then open Daily Count Cycle again.</div>';
   h += '<div class="card pad col" style="gap:10px"><div class="seg"><button data-a="cMode" data-v="random" class="' + (S.countMode !== 'fixed' ? 'on' : '') + '">20 random</button><button data-a="cMode" data-v="fixed" class="' + (S.countMode === 'fixed' ? 'on' : '') + '">Use my list</button></div>' +
     '<label class="f">Items to count per day<input type="number" inputmode="numeric" data-cperday="1" value="' + esc(S.countPerDay || '') + '" placeholder="All ' + L.length + ' every day"></label><div class="note">Leave empty to count the whole list daily, or set a number to rotate through the list (e.g. 10 a day).</div></div>';
   h += '<div class="sbox"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg><input type="search" data-clq="1" value="' + esc(ui.clq || '') + '" placeholder="Search stock to add an item" autocomplete="off"></div>';
@@ -3179,7 +3187,7 @@ document.addEventListener('click', async ev => {
     case 'sRdClear': ui.search.rd = ''; render(); break;
     case 'drawer': ui.drawer = true; renderDrawer(); break;
     case 'drawerClose': ui.drawer = false; renderDrawer(); break;
-    case 'dCount': ui.drawer = false; if (todayCount(true)) { ui.countId = todayCount(false).id; ui.view = 'count'; } render(); window.scrollTo(0, 0); break;
+    case 'dCount': ui.drawer = false; ui.clWhy = null; if (todayCount(true)) { ui.countId = todayCount(false).id; ui.view = 'count'; render(); window.scrollTo(0, 0); } else countOpenFail(); break;
     case 'countLog': ui.drawer = false; ui.view = 'countLog'; render(); window.scrollTo(0, 0); break;
     case 'countOpen': ui.countId = v; ui.view = 'count'; render(); window.scrollTo(0, 0); break;
     case 'taskLog': ui.drawer = false; ui.view = 'taskLog'; render(); window.scrollTo(0, 0); break;
@@ -3189,7 +3197,7 @@ document.addEventListener('click', async ev => {
     case 'dMgr': ui.drawer = false; renderDrawer(); openLiveStock(); break;
     case 'dBackup': ui.drawer = false; renderDrawer(); if (S.sync.url) { ui.sheet = { kind: 'backups' }; loadBackups(); } else { ui.tab = 'set'; ui.setPage = 'cloud'; ui.view = null; render(); } break;
     case 'dData': ui.drawer = false; ui.tab = 'set'; ui.setPage = 'data'; ui.view = null; render(); window.scrollTo(0, 0); break;
-    case 'taskOpen': if (v === 'count') { if (todayCount(true)) { ui.countId = todayCount(false).id; ui.view = 'count'; render(); window.scrollTo(0, 0); } } else if (v === 'stock' || v === 'requests') { ui.upload = null; ui.sheet = { kind: 'upload' }; renderSheet(); } else if (v === 'backup') { if (S.sync.url) syncNow(false); else { ui.tab = 'set'; ui.setPage = 'cloud'; render(); } } break;
+    case 'taskOpen': if (v === 'count') { ui.clWhy = null; if (todayCount(true)) { ui.countId = todayCount(false).id; ui.view = 'count'; render(); window.scrollTo(0, 0); } else countOpenFail(); } else if (v === 'stock' || v === 'requests') { ui.upload = null; ui.sheet = { kind: 'upload' }; renderSheet(); } else if (v === 'backup') { if (S.sync.url) syncNow(false); else { ui.tab = 'set'; ui.setPage = 'cloud'; render(); } } break;
     case 'taskTog': { const d = today(); S.taskLog = S.taskLog || {}; S.taskLog[d] = S.taskLog[d] || {}; const cur = taskStatus(v, d);
       S.taskLog[d][v] = cur === 'done' ? { status: 'pending', at: new Date().toISOString(), by: S.me.name || '' } : { status: 'done', at: new Date().toISOString(), by: S.me.name || '' }; save(); render(); break; }
     case 'taskAdd': { const tt = String(ui.newTask || '').trim(); if (!tt) break; S.customTasks = S.customTasks || []; S.customTasks.push({ id: 'c' + nid(), title: tt }); ui.newTask = ''; save(); render(); break; }
