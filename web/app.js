@@ -1338,7 +1338,7 @@ function newCount(from) {
       if (o) { it.physical = o.physical == null ? '' : o.physical; if (o.variants && o.variants.length) it.variants = JSON.parse(JSON.stringify(o.variants)); }
       return it; }) };
   if (src) src.items.forEach(o => { if (!c.items.some(i => i.code === o.code) && S.stock[o.code]) c.items.push({ code: o.code, name: S.stock[o.code].name, uom: S.stock[o.code].uom, system: S.stock[o.code].qty, physical: o.physical, variants: o.variants ? JSON.parse(JSON.stringify(o.variants)) : undefined }); });
-  S.counts.push(c); save(); return c;
+  S.counts = S.counts || []; S.counts.push(c); save(); return c;
 }
 function countLive(c) {
   if (!c || countLocked(c)) return;
@@ -1392,7 +1392,7 @@ function vCount() {
   const sm = countSummary(c), open = !countLocked(c);
   let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">' + (c.mode === 'emp' ? 'Employee count' : 'Daily Count Cycle') + '</h1><div class="sub">' + (c.mode === 'emp' ? 'Round ' + ((EMP().sessions.find(k => String(k.id) === String(c.emp)) || {}).round || '') + ' · ' : '') + (open ? 'Draft · started ' + esc(fmtDT(c.startedAt)) + (c.fill === 'recent' ? ' · recent values copied' : c.fill === 'copy' ? ' · copied from a saved count' : c.fill === 'emp' ? ' · from employee sheets' : ' · blank values') : 'Saved ' + esc(fmtDT(c.doneAt || c.startedAt)) + ' · locked') + ' · ' + c.items.length + ' articles · system stock from ' + (c.stockAt ? fmtDT(c.stockAt) : '–') + '</div></div></header><main>';
   if (open) { h += stockCard();
-    h += '<button class="btn full" data-a="countSys">Update system stock</button><div class="grid2"><button class="btn" data-a="countDraftSave">Save draft</button><button class="btn danger-t" data-a="countClear">Clear this cycle</button></div>'; }
+    h += '<button class="btn full" data-a="countSys">Update system stock</button><div class="grid2"><button class="btn" data-a="countDraftSave">Save draft</button><button class="btn danger-t" data-a="countClear">' + (c.mode === 'emp' ? 'Back to entry' : 'Clear this cycle') + '</button></div>'; }
   else if (c.status === 'old') h += '<div class="banner t-in" style="display:block"><b>Old random count.</b> Made before you switched to your own list. It is read only and never opens as your draft.<div style="margin-top:8px"><button class="btn sm danger-t" data-a="countDelOld" data-v="' + c.id + '">Delete it</button></div></div>';
   else h += '<div class="banner t-ok" style="display:block"><b>Saved and locked.</b> System and counted values are fixed as they were at ' + esc(fmtDT(c.doneAt || c.startedAt)) + '. For a correction, start a new count.</div>';
   h += '<div class="grid3"><div class="tile t-ok"><b>' + sm.m + '</b><span>Match</span></div><div class="tile t-in"><b>' + sm.ex + '</b><span>Excess</span></div><div class="tile t-no"><b>' + sm.sh + '</b><span>Short</span></div></div>';
@@ -1415,6 +1415,8 @@ function vCount() {
   h += '</div>';
   if (open) h += '<button class="btn main full" data-a="countDone">Save &amp; generate report</button><div class="note" style="text-align:center">After saving, the system and counted values are locked and cannot be changed.</div>';
   else if (c.mode === 'emp') h += '<div class="grid2"><button class="btn main" data-a="empResult" data-v="' + c.id + '">Report</button><button class="btn" data-a="empOpen">Employee Cycle Count</button></div>';
+  if (c.mode === 'emp' && open) h += '<div class="grid2"><button class="btn" data-a="empResult" data-v="' + c.id + '">Preview report</button><button class="btn" data-a="empLog">Count history</button></div><button class="btn ghost danger-t full" data-a="empDiscard" data-v="' + c.emp + '">Discard whole cycle</button>';
+  if (c.mode === 'emp' && !open) h += '<button class="btn full" data-a="empLog">Count history</button>';
   else if (c.status === 'done') h += '<div class="grid2"><button class="btn main" data-a="countExport" data-v="' + c.id + '">Report</button><button class="btn" data-a="countNew" data-v="' + c.id + '">New count from this</button></div>';
   if (c.mode !== 'emp') h += '<div class="grid2">' + (open ? '<button class="btn" data-a="countExport" data-v="' + c.id + '">Preview report</button>' : '<button class="btn" data-a="countStart">Start a new count</button>') + '<button class="btn" data-a="countLog">Count history</button></div>';
   return h + '</main>';
@@ -1467,8 +1469,10 @@ function vEmp() {
   const E = EMP(), st = empStat(), sel = empSel(), n = empHow(), sizes = sel.length ? empSplitSizes(n, sel.length) : [], act = empActive();
   let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Employee Cycle Count</h1><div class="sub">Articles for your staff to count on paper. Your own count list and the ignore list are never included.</div></div></header><main>';
   act.forEach(x => { const a = x.people.reduce((t, q) => t + q.codes.length, 0);
-    h += '<button class="card pad tap col" style="gap:6px;border:2px solid #B9A7FF" data-a="empOpenSess" data-v="' + x.id + '"><div class="row"><b class="ttl">Round ' + x.round + ' · ' + a + ' articles</b>' + pill(x.status === 'print' ? 'Counting on paper' : x.status === 'entry' ? 'Entering results' : 'Draft to review', 'c-gd') + '</div>' + meta(['Printed ' + esc(hrsDT(x.createdAt)), x.people.map(q => esc(q.name.split(' ')[0])).join(', ')]) + '</button>'; });
+    h += '<div class="card pad col" style="gap:10px;border:2px solid #B9A7FF"><button class="tap col" style="all:unset;display:flex;flex-direction:column;gap:6px;cursor:pointer" data-a="empOpenSess" data-v="' + x.id + '"><div class="row"><b class="ttl">Round ' + x.round + ' · ' + a + ' articles</b>' + pill(EMP_ST[x.status][0], EMP_ST[x.status][1]) + '</div>' + meta(['Printed ' + esc(hrsDT(x.createdAt)), x.people.map(q => esc(q.name.split(' ')[0])).join(', ')]) + '</button>' +
+      '<div class="grid2"><button class="btn sm main" data-a="empOpenSess" data-v="' + x.id + '">Continue</button><button class="btn sm danger-t" data-a="empDiscard" data-v="' + x.id + '">Discard this cycle</button></div></div>'; });
   h += stockCard();
+  h += '<button class="btn full" data-a="empSys">Update system stock</button><div class="grid2"><button class="btn" data-a="empLog">Count history</button><button class="btn danger-t" data-a="empFresh">Start a fresh round</button></div>';
   h += '<div class="card pad col" style="gap:10px"><div class="row"><b style="font-size:17px">Round ' + E.round.n + '</b>' + pill('started ' + fmtShort(String(E.round.start).slice(0, 10)), 'c-in') + '</div>' +
     '<div style="height:12px;border-radius:99px;background:#EEEAFB;overflow:hidden"><i style="display:block;height:100%;width:' + (st.total ? Math.round(st.counted / st.total * 100) : 0) + '%;background:linear-gradient(90deg,#B9A7FF,#F6A8EE)"></i></div>' +
     '<div class="grid3"><div class="tile t-ok"><b>' + st.counted + '</b><span>Counted</span></div><div class="tile t-pt"><b>' + st.left + '</b><span>Left in round</span></div><div class="tile t-no"><b>' + st.missed + '</b><span>Missed before</span></div></div>' +
@@ -1535,12 +1539,13 @@ function vEmpSess() {
   h += '<div class="card" style="overflow:hidden">' + x.people.map(q => '<div class="stkrow"><span class="sn"><b>' + esc(q.name) + '</b><span class="mono">' + esc([q.code, q.desig].filter(Boolean).join(' · ')) + '</span></span>' + pill(q.codes.length + ' articles', 'c-ok') + '</div>').join('') + '</div>';
   h += '<button class="btn main full" data-a="empPrint">Preview &amp; print sheets (PDF)</button>';
   h += '<div class="banner t-in" style="display:block"><b>Staff are counting on paper.</b> When the signed sheets come back, continue below. You can close the app; this round waits for you.</div>';
-  h += '<button class="btn main full" data-a="empPhysDone">✓ Physical count done · enter results</button><button class="btn ghost danger-t full" data-a="empCancel">Cancel these sheets</button>';
+  h += '<button class="btn main full" data-a="empPhysDone">✓ Physical count done · enter results</button><div class="grid2"><button class="btn" data-a="empSys">Update system stock</button><button class="btn danger-t" data-a="empDiscard" data-v="' + x.id + '">Discard this cycle</button></div>';
   return h + '</main>';
 }
 function vEmpEntry(x) {
   const pi = Math.min(ui.empTab || 0, x.people.length - 1), q = x.people[pi];
-  let h = '<header class="top"><div><button class="btn sm ghost" data-a="empHome">‹ Back</button><h1 style="margin-top:10px">Enter results</h1><div class="sub">Type the counts from each sheet. The photo stays above for checking.</div></div></header><main>';
+  let h = '<header class="top"><div><button class="btn sm ghost" data-a="empHome">‹ Back</button><h1 style="margin-top:10px">Enter results</h1><div class="sub">Round ' + x.round + ' · ' + (x.draftAt ? 'draft saved ' + esc(fmtDT(x.draftAt)) : 'not saved as draft yet') + '. Type the counts from each sheet. The photo stays above for checking.</div></div></header><main>';
+  h += stockCard() + '<button class="btn full" data-a="empSys">Update system stock</button><div class="grid2"><button class="btn" data-a="empDraftSave">Save draft</button><button class="btn danger-t" data-a="empDiscard" data-v="' + x.id + '">Discard this cycle</button></div>';
   h += '<div class="seg">' + x.people.map((p, i) => { const f = p.codes.filter(c => p.vals[c] && p.vals[c].cnt !== '' && p.vals[c].cnt != null).length; return '<button data-a="empTab" data-v="' + i + '" class="' + (i === pi ? 'on' : '') + '">' + esc(p.name.split(' ')[0]) + (f === p.codes.length ? ' ✓' : ' ' + f + '/' + p.codes.length) + '</button>'; }).join('') + '</div>';
   h += '<div class="card pad col" style="gap:8px"><div class="row"><b>Signed sheet photos · ' + q.photos.length + '</b><button class="btn sm" data-a="empPhoto" data-v="' + pi + '">+ Add photo</button></div>' +
     (q.photos.length ? '<div class="wrap" style="gap:8px">' + q.photos.map((ph, k) => '<span style="position:relative;display:inline-block"><img src="' + esc(paperSrc(ph.id)) + '" data-a="empZoom" data-v="' + esc(ph.id) + '" style="width:96px;height:128px;object-fit:cover;border-radius:12px;border:1px solid #E4E1EC"><button class="xbtn" data-a="empPhotoDel" data-v="' + pi + '|' + k + '" style="position:absolute;top:4px;right:4px;background:#fff">×</button></span>').join('') + '</div>' : '<div class="note">Add a photo of the signed sheet. It is printed at the end of the result PDF.</div>') + '</div>';
@@ -1556,13 +1561,27 @@ function vEmpEntry(x) {
   h += '<button class="btn ghost full" data-a="empBackPrint">Back to the printed sheets</button>';
   return h + '</main>';
 }
+function empDiscard(x) {
+  if (!x) return; if (x.countId) S.counts = (S.counts || []).filter(c => String(c.id) !== String(x.countId));
+  x.status = 'void'; x.discardedAt = new Date().toISOString(); delete x.countId;
+}
+const EMP_ST = { print: ['Counting on paper', 'c-gd'], entry: ['Entering results', 'c-gd'], draft: ['Draft to review', 'c-in'], done: ['Saved · locked', 'c-ok'], void: ['Discarded', 'c-gy'] };
+function vEmpLog() {
+  const L = EMP().sessions.slice().reverse();
+  let h = '<header class="top"><div><button class="btn sm ghost" data-a="empHome">‹ Back</button><h1 style="margin-top:10px">Employee count history</h1><div class="sub">Every employee cycle: on paper, being entered, draft, saved or discarded.</div></div></header><main>';
+  if (!L.length) h += '<div class="card pad note">No employee cycles yet.</div>';
+  L.forEach(x => { const a = x.people.reduce((t, q) => t + q.codes.length, 0), c = x.countId ? (S.counts || []).find(k => String(k.id) === String(x.countId)) : null, sm = c && c.status === 'done' ? countSummary(c) : null, T = EMP_ST[x.status] || ['', 'c-gy'];
+    h += '<button class="card pad tap col" style="gap:6px' + (x.status === 'void' ? ';opacity:.7' : '') + '" data-a="' + (x.status === 'void' ? 'empLogNo' : 'empOpenSess') + '" data-v="' + x.id + '"><div class="row"><b class="ttl">Round ' + x.round + ' · ' + esc(hrsDT(x.lockedAt || x.discardedAt || x.createdAt)) + '</b>' + pill(T[0], T[1]) + '</div>' +
+      meta([a + ' articles', x.people.map(q => esc(q.name.split(' ')[0])).join(', '), sm ? sm.m + ' match · ' + sm.ex + ' excess · ' + sm.sh + ' short' : '']) + '</button>'; });
+  return h + '</main>';
+}
 function empMakeDraft(x) {
   const c = { id: nid(), date: today(), status: 'draft', mode: 'emp', emp: x.id, startedAt: new Date().toISOString(), by: meTag(), stockAt: S.stockAt, fill: 'emp', items: [] };
   x.people.forEach((q, pi) => q.codes.forEach(code => { const st = S.stock[code] || {}, v = q.vals[code] || {}, cnt = v.cnt == null ? '' : String(v.cnt);
     const it = { code, name: st.name || itemName(code), uom: st.uom || itemUom(code), system: st.qty || 0, physical: cnt, by: pi, rem: v.rem || '' };
     if ((v.mfd || v.exp) && cnt !== '') it.variants = [{ qty: cnt, mfd: v.mfd || '', exp: v.exp || '' }];
     c.items.push(it); }));
-  S.counts.push(c); x.status = 'draft'; x.countId = c.id; save(); return c;
+  S.counts = S.counts || []; S.counts.push(c); x.status = 'draft'; x.countId = c.id; save(); return c;
 }
 function empLock(c) {
   const x = EMP().sessions.find(k => String(k.id) === String(c.emp)); if (!x) return;
@@ -2465,7 +2484,7 @@ window.jvBack = () => {
 function render() {
   const app = document.getElementById('app');
   const y = window.scrollY;
-  app.innerHTML = appBar() + (S.testMode ? '<div class="testbar"><span><b>TEST MODE</b> · your real data is safe and hidden. Cloud backup is paused. Entries submitted on CUIMS are still real.</span><button class="btn sm" data-a="testToggle">Exit</button></div>' : '') + (ui.view === 'linkReview' ? vLinkReview() : ui.view === 'vreport' ? vReport() : ui.view === 'vreports' ? vReportList() : ui.view === 'countList' ? vCountList() : ui.view === 'manage' ? vManage() : ui.view === 'stock' ? vStock() : ui.view === 'cons' ? vCons() : ui.view === 'arts' ? vArts() : ui.view === 'check' ? vCheck() : ui.view === 'done' ? vDone() : ui.view === 'expiry' ? vExpiry() : ui.view === 'zwatch' ? vZeroWatch() : ui.view === 'countStart' ? vCountStart() : ui.view === 'emp' ? vEmp() : ui.view === 'empStaff' ? vEmpStaff() : ui.view === 'empIgnore' ? vEmpIgnore() : ui.view === 'empSess' ? vEmpSess() : ui.view === 'count' ? vCount() : ui.view === 'countLog' ? vCountLog() : ui.view === 'taskLog' ? vTaskLog() : ui.view === 'req' ? vReq() : ({ home: vHome, pend: vPend, reg: vReg, find: vFind, set: vSet })[ui.tab]());
+  app.innerHTML = appBar() + (S.testMode ? '<div class="testbar"><span><b>TEST MODE</b> · your real data is safe and hidden. Cloud backup is paused. Entries submitted on CUIMS are still real.</span><button class="btn sm" data-a="testToggle">Exit</button></div>' : '') + (ui.view === 'linkReview' ? vLinkReview() : ui.view === 'vreport' ? vReport() : ui.view === 'vreports' ? vReportList() : ui.view === 'countList' ? vCountList() : ui.view === 'manage' ? vManage() : ui.view === 'stock' ? vStock() : ui.view === 'cons' ? vCons() : ui.view === 'arts' ? vArts() : ui.view === 'check' ? vCheck() : ui.view === 'done' ? vDone() : ui.view === 'expiry' ? vExpiry() : ui.view === 'zwatch' ? vZeroWatch() : ui.view === 'countStart' ? vCountStart() : ui.view === 'emp' ? vEmp() : ui.view === 'empStaff' ? vEmpStaff() : ui.view === 'empIgnore' ? vEmpIgnore() : ui.view === 'empSess' ? vEmpSess() : ui.view === 'empLog' ? vEmpLog() : ui.view === 'count' ? vCount() : ui.view === 'countLog' ? vCountLog() : ui.view === 'taskLog' ? vTaskLog() : ui.view === 'req' ? vReq() : ({ home: vHome, pend: vPend, reg: vReg, find: vFind, set: vSet })[ui.tab]());
   document.querySelector('#tabs .in').innerHTML = TABS.map(([k, l]) => '<button data-a="tab" data-v="' + k + '" class="' + (ui.tab === k && !ui.view ? 'on' : '') + '" aria-label="' + l + '"><span class="nic">' + ICON[k] + '</span><span class="nl">' + l + '</span></button>').join('');
   renderDrawer();
   paintSync();
@@ -3067,7 +3086,7 @@ function renumberReq(from, to) {
   return true;
 }
 const UNDO_KEYS = ['emp', 'counts', 'zeroWatch', 'lines', 'entries', 'returns', 'hold', 'corrections', 'audit', 'manReqs', 'paper', 'verifyReports'];
-const UNDOABLE = { empDelP: 'Employee removed', eigDel: 'Rule removed', eigItemDel: 'Removed from rule', empPhotoDel: 'Photo removed', countDelOld: 'Old count deleted', cpRemove: 'Removed from count', cpRemoveAll: 'Removed from count', countClear: 'Count cycle cleared', zwDel: 'Removed from watch', zwBDel: 'Removed from watch', zwAddSave: 'Added to watch', artQty: 'Quantity changed', artHold: 'Hold changed', artDel: 'Article removed', artsBHold: 'Articles put on hold', artsBRel: 'Articles released', artsBDel: 'Articles removed', dropReq: 'Request removed', dropStore: 'Store pending removed',
+const UNDOABLE = { empDiscard: 'Cycle discarded', empFresh: 'Fresh round started', empDelP: 'Employee removed', eigDel: 'Rule removed', eigItemDel: 'Removed from rule', empPhotoDel: 'Photo removed', countDelOld: 'Old count deleted', cpRemove: 'Removed from count', cpRemoveAll: 'Removed from count', countClear: 'Count cycle cleared', zwDel: 'Removed from watch', zwBDel: 'Removed from watch', zwAddSave: 'Added to watch', artQty: 'Quantity changed', artHold: 'Hold changed', artDel: 'Article removed', artsBHold: 'Articles put on hold', artsBRel: 'Articles released', artsBDel: 'Articles removed', dropReq: 'Request removed', dropStore: 'Store pending removed',
   renumReq: 'Request renumbered', dcRenum: 'Request renumbered', impRenum: 'Request renumbered', impDrop: "App's request removed", corrSave: 'Correction saved', markSave: 'Slip added', dcMerge: 'Items merged', dcKeepFirst: 'Duplicate removed', dcDate: 'Date changed', dcBad: 'Incomplete removed',
   bulkSave: 'Requests edited', lkSave: 'CUIMS serials saved', vfFix: 'Fixed in app', dcRetFmt: 'Returns renumbered', dcRetFix: 'Return renumbered', clAdd: 'Count list changed', clDel: 'Count list changed', retBatchSave: 'Returns saved', stkEdit: 'Stock changed', stkRen: 'Item renamed', stkDel: 'Item deleted', stkAdd: 'Item added', mgDone: 'Requests completed', mgPend: 'Pending cleared', mgDel: 'Deleted', mgDelSlipPend: 'Slips deleted, articles pending again', delEntry: 'Entry deleted', delReturn: 'Return deleted', rsClose: 'Article closed', rsOpen: 'Article made pending', rsAll: 'Request completed', rsAdd: 'Article added', saveReq: 'Request edited', saveEntry: 'Entry saved', uploadOk: 'Import done', btSave: 'Batch saved', nrSave: 'Request added', hold: 'Hold changed' };
 const UNDO_STOCK = new Set(['lkSave', 'vfFix', 'stkEdit', 'markSave', 'delEntry', 'saveEntry', 'uploadOk', 'mgDelSlipPend']);
@@ -3111,7 +3130,7 @@ function openLiveStock() {
   if (c.on && N && N.openMgrAuto) { N.openMgrAuto(JSON.stringify({ run: Date.now(), store: c.store || 'Ration Store', fy: c.fy || curFY() })); return; }
   if (N && N.openMgr) N.openMgr(); else toast('Update the app (Settings > App and updates) to use Manager CUIMS.');
 }
-window.jvStockFile = (b64, name) => { loader(true, 'Reading the stock file'); setTimeout(() => { try { jvStockFile2(b64, name); } finally { loader(false); } }, 60); };
+window.jvStockFile = (b64, name) => { loader(true, 'Reading the stock file'); let n = 0; const go = () => { if (!window.XLSX && n++ < 40) { setTimeout(go, 500); return; } try { jvStockFile2(b64, name); } finally { loader(false); } }; setTimeout(go, 60); };
 function jvStockFile2(b64, name) {
   try {
     if (!window.XLSX) { toast('Excel tools not loaded yet. Check internet and try again.'); return; }
@@ -3664,6 +3683,16 @@ document.addEventListener('click', async ev => {
     case 'empPrint': ui.sheet = null; openExport('empSheet'); break;
     case 'empPhysDone': { const x = empCur(); if (!x) break; x.status = 'entry'; ui.empTab = 0; save(); render(); window.scrollTo(0, 0); break; }
     case 'empBackPrint': { const x = empCur(); if (!x) break; x.status = 'print'; save(); render(); window.scrollTo(0, 0); break; }
+    case 'empSys': openLiveStock(); break;
+    case 'empLog': ui.view = 'empLog'; render(); window.scrollTo(0, 0); break;
+    case 'empLogNo': toast('This cycle was discarded.'); break;
+    case 'empDraftSave': { const x = empCur(); if (!x) break; x.draftAt = new Date().toISOString(); save(); render(); toast('Draft saved.'); break; }
+    case 'empDiscard': { const x = EMP().sessions.find(k => String(k.id) === String(v)); if (!x) break; const a = x.people.reduce((t, q) => t + q.codes.length, 0);
+      if (!(await uiConfirm('Discard this employee cycle? Its ' + a + ' articles go back into the round' + (x.status !== 'print' ? ', and the values typed so far are removed' : '') + '. It stays in Count history as Discarded.', 'Discard', true))) { ui.pendUndo = null; break; }
+      empDiscard(x); save(); ui.view = 'emp'; render(); window.scrollTo(0, 0); break; }
+    case 'empFresh': { const E = EMP(), act = empActive(), st = empStat();
+      if (!(await uiConfirm('Start a fresh round? Round ' + E.round.n + ' progress (' + st.counted + ' counted, ' + st.left + ' left) is cleared and all articles can be given out again.' + (act.length ? ' ' + act.length + ' open cycle' + (act.length === 1 ? ' is' : 's are') + ' discarded too.' : '') + ' Saved results are kept.', 'Start fresh', true))) { ui.pendUndo = null; break; }
+      act.forEach(empDiscard); E.round = { n: E.round.n + 1, start: new Date().toISOString(), counted: {}, missed: {} }; save(); render(); toast('Round ' + E.round.n + ' started.'); break; }
     case 'empCancel': { const x = empCur(); if (!x) break; if (!(await uiConfirm('Cancel these sheets? Their articles go back into the round.', 'Cancel sheets', true))) break; x.status = 'void'; save(); ui.view = 'emp'; render(); window.scrollTo(0, 0); break; }
     case 'empTab': ui.empTab = +v; render(); window.scrollTo(0, 0); break;
     case 'empDates': { ui.empDates = ui.empDates || {}; ui.empDates[v] = 1; render(); break; }
@@ -3706,7 +3735,7 @@ document.addEventListener('click', async ev => {
     case 'cpRemoveAll': { const c = curCount(); if (!c || countLocked(c)) break; const PO = countPendOpen(c); if (!PO.length) break; if (!(await uiConfirm('Remove ' + PO.length + ' pending article' + (PO.length === 1 ? '' : 's') + ' from this count?', 'Remove', true))) { ui.pendUndo = null; break; } const del = new Set(PO.map(x => x.i)); c.items = c.items.filter(i => !del.has(i)); save(); render(); break; }
     case 'countDraftSave': { const c = curCount(); if (!c || countLocked(c)) break; countLive(c); c.draftAt = new Date().toISOString(); save(); render(); toast('Draft saved.'); break; }
     case 'countClear': { const c = curCount(); if (!c || countLocked(c)) break;
-      if (c.mode === 'emp') { if (!(await uiConfirm('Clear this draft? The values typed from the sheets are kept, so you can fix them and make the draft again.', 'Clear', true))) { ui.pendUndo = null; break; } const x = EMP().sessions.find(k => String(k.id) === String(c.emp)); S.counts = S.counts.filter(k => k !== c); if (x) { x.status = 'entry'; delete x.countId; ui.empId = x.id; } save(); ui.view = 'empSess'; render(); window.scrollTo(0, 0); break; }
+      if (c.mode === 'emp') { if (!(await uiConfirm('Go back to entering results? This draft is removed, but the values typed from the sheets are kept so you can fix them and make the draft again.', 'Back to entry'))) { ui.pendUndo = null; break; } const x = EMP().sessions.find(k => String(k.id) === String(c.emp)); S.counts = S.counts.filter(k => k !== c); if (x) { x.status = 'entry'; delete x.countId; ui.empId = x.id; } save(); ui.view = 'empSess'; render(); window.scrollTo(0, 0); break; }
       if (!(await uiConfirm('Clear this count cycle? All values entered in this draft will be removed.', 'Clear', true))) { ui.pendUndo = null; break; } S.counts = S.counts.filter(x => x !== c); ui.countId = null; save(); ui.view = 'countStart'; render(); window.scrollTo(0, 0); break; }
     case 'countExport': ui.countExportId = v; openExport('counts'); break;
     case 'rpRowF': { const p = rptPref('counts'); p.rowF = v; save(true); renderSheet(); break; }
@@ -3999,7 +4028,7 @@ function doImport() {
     if (u.addNew) D.fresh.forEach(x => { if (!/^#NOCODE/.test(x.code)) S.stock[x.code] = Object.assign({}, x.v); });
     S.stockAt = new Date().toISOString(); S.stockSrc = u.auto ? 'auto' : 'file';
     S.stockLog = (S.stockLog || []).concat([{ at: S.stockAt, src: S.stockSrc, mode: 'update', n: D.code.length + D.name.length, up: D.up.length, down: D.down.length, added: u.addNew ? D.fresh.length : 0, by: S.me.name || '' }]).slice(-60);
-    save(); toast('Closing updated for ' + (D.code.length + D.name.length) + ' items' + (u.addNew && D.fresh.length ? ', ' + D.fresh.length + ' added' : '') + '. Everything re-planned.'); return; }
+    save(); ui.upload = null; ui.sheet = null; renderSheet(); render(); toast('Closing updated for ' + (D.code.length + D.name.length) + ' items' + (u.addNew && D.fresh.length ? ', ' + D.fresh.length + ' added' : '') + '. Everything re-planned.'); return; }
   if (u.kind === 'stock' && r.noCode) { toast('This report has no Item Codes, so it cannot replace your stock.'); return; }
   if (u.kind === 'stock') { S.stock = r.stock; S.stockEdits = {}; S.stockAt = new Date().toISOString(); S.stockSrc = u.auto ? 'auto' : 'file'; S.stockLog = (S.stockLog || []).concat([{ at: S.stockAt, src: S.stockSrc, n: r.count, by: S.me.name || '' }]).slice(-60); save(); toast('Stock replaced: ' + r.count + ' items. Everything re-planned.'); }
   else {

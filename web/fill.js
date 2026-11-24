@@ -352,21 +352,32 @@
   }
   function vis(x) { return x && x.offsetParent !== null; }
   function setSel(sel, re) { for (var i = 0; i < sel.options.length; i++) if (re.test(sel.options[i].text.trim())) { if (sel.selectedIndex !== i) { sel.selectedIndex = i; fire(sel, 'change'); return 'changed'; } return 'ok'; } return 'missing'; }
-  function reportReady() {
-    var aw = [].slice.call(document.querySelectorAll('[id$="AsyncWait"],[id*="AsyncWait_Wait"]')).some(function (x) { return x.offsetParent !== null && getComputedStyle(x).display !== 'none' && getComputedStyle(x).visibility !== 'hidden'; });
-    if (aw) return 0;
-    var tds = [].slice.call(document.querySelectorAll('td,div')).filter(function (x) { return x.children.length === 0 && /^UOM$/i.test((x.textContent || '').trim()); });
-    if (!tds.length) return 0;
-    var rows = [].slice.call(document.querySelectorAll('td')).filter(function (x) { return x.children.length <= 1 && /^[A-Z]{1,5}-\d+$/.test((x.textContent || '').trim()); }).length;
-    return rows;
+  function busyNow() {
+    var aw = [].slice.call(document.querySelectorAll('[id$="AsyncWait"],[id*="AsyncWait_Wait"],[id*="AsyncWait"]')).some(function (x) { var cs = getComputedStyle(x); return x.offsetParent !== null && cs.display !== 'none' && cs.visibility !== 'hidden'; });
+    var prm = false; try { prm = !!(window.Sys && Sys.WebForms && Sys.WebForms.PageRequestManager.getInstance().get_isInAsyncPostBack()); } catch (e) {}
+    return aw || prm;
+  }
+  // rows of the report table (works with or without item codes)
+  function reportRows() {
+    var hd = [].slice.call(document.querySelectorAll('td,div,th')).filter(function (x) { return x.children.length === 0 && /^(UOM|Item Name|Closing( Qty| Stock)?|Unit)$/i.test((x.textContent || '').trim()); })[0];
+    if (!hd) return 0;
+    var tb = hd.closest('table'); while (tb && tb.parentElement && tb.parentElement.closest('table') && tb.querySelectorAll('tr').length < 3) tb = tb.parentElement.closest('table');
+    if (!tb) return 0;
+    return [].slice.call(tb.querySelectorAll('tr')).filter(function (tr) { var c = [].slice.call(tr.children).filter(function (td) { return (td.textContent || '').trim() !== ''; }); return c.length >= 3 && c.some(function (td) { return /^-?[\d,]+(\.\d+)?$/.test((td.textContent || '').trim()); }); }).length;
+  }
+  function saveBtn() {
+    return [].slice.call(document.querySelectorAll('a,input,img,div,span,button')).filter(function (x) { return vis(x) && /export|save/i.test((x.title || '') + ' ' + (x.alt || '') + ' ' + (x.id || '') + ' ' + (x.getAttribute && x.getAttribute('aria-label') || '')) && !/menu/i.test(x.id || ''); })[0] || null;
+  }
+  function exportMenuFirst() {
+    var items = [].slice.call(document.querySelectorAll('[role="menuitem"],a,div,span,li')).filter(function (x) { return vis(x) && x.children.length <= 1 && /^(excel|word|pdf|csv|xml|tiff|mhtml|powerpoint)/i.test((x.textContent || '').trim()); });
+    if (!items.length) return null;
+    return items.filter(function (x) { return /^excel/i.test((x.textContent || '').trim()); })[0] || items[0];
   }
   function doExport() {
-    try { if (window.Sys && Sys.Application && Sys.Application.getComponents) { var cs = Sys.Application.getComponents(); for (var i = 0; i < cs.length; i++) if (typeof cs[i].exportReport === 'function') { try { cs[i].exportReport('EXCELOPENXML'); } catch (e) { cs[i].exportReport('EXCEL'); } return true; } } } catch (e) {}
-    var fl = [].slice.call(document.querySelectorAll('a,input,img,div,span,button')).filter(function (x) { return vis(x) && /export/i.test((x.title || '') + ' ' + (x.alt || '') + ' ' + (x.id || '')); })[0];
-    if (fl) fl.click();
-    var ex = [].slice.call(document.querySelectorAll('a,div,span,li')).filter(function (x) { return x.children.length === 0 && /^excel$/i.test((x.textContent || '').trim()); })[0];
-    if (ex) { ex.click(); return true; }
-    return false;
+    try { if (window.Sys && Sys.Application && Sys.Application.getComponents) { var cs = Sys.Application.getComponents(); for (var i = 0; i < cs.length; i++) if (typeof cs[i].exportReport === 'function') { try { cs[i].exportReport('EXCELOPENXML'); } catch (e) { cs[i].exportReport('EXCEL'); } return 'api'; } } } catch (e) {}
+    var m = exportMenuFirst(); if (m) { m.click(); return 'menu'; }
+    var fl = saveBtn(); if (fl) { fl.click(); return 'opened'; }
+    return '';
   }
   function asStep() {
     if (!AUTO) return;
@@ -374,7 +385,7 @@
     var now = Date.now();
     if (isLogin) { AS.step = 'login'; AS.note = 'Logging in with your saved manager ID'; asSave(); paint(); return; }
     if (AS.step === 'start' || AS.step === 'login') { AS.step = 'store'; AS.t0 = now; }
-    if (AS.t0 && now - AS.t0 > 240000) { AS.err = 'This took longer than 4 minutes. Check the page, then Try again.'; asSave(); paint(); return; }
+    if (AS.t0 && now - AS.t0 > 600000) { AS.err = 'This took longer than 10 minutes. Check the page, then Try again.'; asSave(); paint(); return; }
     var sels = [].slice.call(document.querySelectorAll('select')).filter(vis);
     var storeSel = sels.filter(function (x) { return [].some.call(x.options, function (o) { return /store/i.test(o.text) || new RegExp(AUTO.store, 'i').test(o.text); }); })[0];
     if (AS.step === 'store') {
@@ -396,18 +407,20 @@
       AS.step = 'loaded'; AS.showAt = now; AS.note = 'Loading the stock report'; asSave(); paint(); sb.click(); return;
     }
     if (AS.step === 'loaded') {
-      var rows = reportReady();
-      if (!rows) { AS.readyAt = 0; AS.note = 'Loading the stock report'; if (now - AS.showAt > 120000) AS.err = 'The report did not load in 2 minutes.'; asSave(); paint(); return; }
-      if (!AS.readyAt) { AS.readyAt = now; AS.rows = rows; AS.note = 'Report shown. Letting it finish loading'; asSave(); paint(); return; }
-      if (now - AS.readyAt < 5000) { AS.rows = rows; asSave(); paint(); return; }
-      AS.step = 'export'; AS.expAt = 0; asSave();
+      var rows = busyNow() ? 0 : reportRows(), sb2 = saveBtn(), sbOff = sb2 && (sb2.disabled || /disabled/i.test(sb2.className || '') || sb2.getAttribute('aria-disabled') === 'true');
+      if (!rows || sbOff) { AS.stableAt = 0; AS.lastRows = rows; AS.note = rows ? 'Report loading · ' + rows + ' rows so far' : 'Waiting for the portal to load the report'; if (now - AS.showAt > 420000) AS.err = 'The report did not load in 7 minutes. Check the page, then Try again.'; asSave(); paint(); return; }
+      if (rows !== AS.lastRows || !AS.stableAt) { AS.lastRows = rows; AS.rows = rows; AS.stableAt = now; AS.note = 'Report loading · ' + rows + ' rows'; asSave(); paint(); return; }
+      if (now - AS.stableAt < 4000) { AS.note = 'Report fetched · ' + rows + ' rows · checking it is complete'; asSave(); paint(); return; }
+      AS.step = 'export'; AS.expAt = 0; AS.expTries = 0; AS.note = 'Report fully loaded · ' + rows + ' rows'; asSave();
     }
     if (AS.step === 'export') {
-      if (AS.expAt && now - AS.expAt < 25000) { AS.note = 'Exporting to Excel'; paint(); return; }
-      if ((AS.expTries || 0) >= 2) { AS.err = 'Excel export did not start. Tap the floppy → Excel yourself, or Try again.'; asSave(); paint(); return; }
-      AS.expTries = (AS.expTries || 0) + 1; AS.expAt = now; AS.note = 'Exporting to Excel'; asSave(); paint();
-      if (!doExport()) { AS.expAt = now - 20000; asSave(); }
-      return;
+      if (AS.menuAt && now - AS.menuAt < 8000) { var mi = exportMenuFirst(); if (mi) { AS.menuAt = 0; AS.expAt = now; AS.note = 'Excel chosen · downloading'; asSave(); paint(); mi.click(); return; } AS.note = 'Opening the save menu'; paint(); return; }
+      if (AS.expAt && now - AS.expAt < 30000) { AS.note = 'Downloading Excel'; paint(); return; }
+      if ((AS.expTries || 0) >= 3) { AS.err = 'Excel download did not start. Tap the floppy (save) → Excel yourself, or Try again.'; asSave(); paint(); return; }
+      AS.expTries = (AS.expTries || 0) + 1; AS.note = 'Tapping save → Excel'; asSave(); paint();
+      var how = doExport();
+      if (how === 'opened') { AS.menuAt = now; } else if (how) { AS.expAt = now; } else { AS.expAt = now - 25000; }
+      asSave(); return;
     }
   }
   if (WHO === 'mgr') {
