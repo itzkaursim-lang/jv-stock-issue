@@ -1442,8 +1442,10 @@ function EMP() {
 const EMP_RULE = { code: 'Exact code', pre: 'Code starts with', name: 'Name contains' };
 function ruleHit(r, code) { const v = String(r.v || '').trim().toUpperCase(); if (!v) return false; const c = String(code).toUpperCase(), nm = String((S.stock[code] || {}).name || '').toUpperCase();
   return r.t === 'code' ? c === v : r.t === 'pre' ? c.startsWith(v) : nm.includes(v); }
-function ruleCodes(r) { return Object.keys(S.stock).filter(c => ruleHit(r, c)); }
-function empIgnored(code) { return EMP().ignore.some(r => ruleHit(r, code)); }
+const posStock = c => (Number((S.stock[c] || {}).qty) || 0) > 0;
+function ruleAll(r) { return Object.keys(S.stock).filter(c => posStock(c) && ruleHit(r, c)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })); }
+function ruleCodes(r) { const ex = new Set(r.ex || []); return ruleAll(r).filter(c => !ex.has(c)); }
+function empIgnored(code) { if (!posStock(code)) return false; return EMP().ignore.some(r => ruleHit(r, code) && !(r.ex || []).includes(code)); }
 function empMine() { return new Set((S.countList || []).map(countKey)); }
 function empStockOk(c) { const q = Number((S.stock[c] || {}).qty) || 0; return EMP().stockF === 'pos' ? q > 0 : q !== 0; }
 function empEligible() { const mine = empMine(); return Object.keys(S.stock).filter(c => empStockOk(c) && !mine.has(c) && !empIgnored(c)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })); }
@@ -1498,19 +1500,32 @@ function vEmpStaff() {
   return h + '</main>';
 }
 function vEmpIgnore() {
-  const E = EMP(), F = ui.ign = ui.ign || { t: 'pre', v: '' };
-  let h = '<header class="top"><div><button class="btn sm ghost" data-a="empHome">‹ Back</button><h1 style="margin-top:10px">Ignore list</h1><div class="sub">Articles here are never given to employees.</div></div></header><main>';
-  h += '<div class="card pad col" style="gap:10px"><b>Add a rule</b><div class="seg">' + Object.entries(EMP_RULE).map(([k, l]) => '<button data-a="ignT" data-v="' + k + '" class="' + (F.t === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>' +
+  const E = EMP(), F = ui.ign = ui.ign || { t: 'pre', v: '', off: {} };
+  let h = '<header class="top"><div><button class="btn sm ghost" data-a="empHome">‹ Back</button><h1 style="margin-top:10px">Ignore list</h1><div class="sub">Articles here are never given to employees. Only articles with stock above zero in your latest stock report are listed.</div></div></header><main>';
+  h += stockCard();
+  const tot = Object.keys(S.stock).filter(empIgnored).length;
+  h += '<div class="grid2"><div class="tile t-pt"><b>' + E.ignore.length + '</b><span>Rules</span></div><div class="tile t-in"><b>' + tot + '</b><span>Articles ignored</span></div></div>';
+  h += '<div class="card pad col" style="gap:10px"><b>Add a rule</b><div class="seg">' + Object.entries(EMP_RULE).map(([k, l]) => '<button data-a="eigT" data-v="' + k + '" class="' + (F.t === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>' +
     '<label class="f">' + EMP_RULE[F.t] + '<input type="text" data-ign="v" value="' + esc(F.v) + '" autocomplete="off"></label><div id="ignprev">' + ignPreview() + '</div></div>';
-  h += '<div class="card pad col" style="gap:8px"><b>Saved rules · ' + E.ignore.length + '</b>' + (E.ignore.length ? E.ignore.map((r, i) => { const L = ruleCodes(r);
-    return '<div class="stkrow"><span class="sn"><b>' + EMP_RULE[r.t] + ' ' + esc(r.v) + '</b><span class="mono">' + (L.length === 1 ? esc(itemName(L[0])) : L.length + ' articles') + '</span></span><button class="btn sm danger-t" data-a="ignDel" data-v="' + i + '">Remove</button></div>'; }).join('') : '<div class="note">No rules yet.</div>') + '</div>';
+  h += '<div class="shead"><div><h2>Saved rules</h2><span>Tap a rule to see all its articles</span></div></div>';
+  if (!E.ignore.length) h += '<div class="card pad note">No rules yet.</div>';
+  E.ignore.forEach((r, i) => { const L = ruleCodes(r), ex = (r.ex || []).filter(c => S.stock[c]), op = ui.ignOpen === i;
+    h += '<div class="card" style="overflow:hidden"><button class="stkrow" data-a="eigOpen" data-v="' + i + '"><span class="sn"><b>' + EMP_RULE[r.t] + ' "' + esc(r.v) + '"</b><span class="mono">' + L.length + ' article' + (L.length === 1 ? '' : 's') + ' ignored' + (ex.length ? ' · ' + ex.length + ' removed from rule' : '') + '</span></span>' + ico(op ? 'up' : 'down', 18) + '</button>';
+    if (op) {
+      h += L.length ? L.map(c => '<div class="stkrow"><span class="sn"><b>' + esc(itemName(c)) + '</b><span class="mono">' + esc(c) + ' · stock ' + num(S.stock[c].qty) + ' ' + esc(S.stock[c].uom || '') + '</span></span><button class="btn sm danger-t" data-a="eigItemDel" data-v="' + i + '|' + esc(c) + '">Remove</button></div>').join('') : '<div class="pad note">No article with stock above zero matches this rule right now.</div>';
+      if (ex.length) h += '<div class="note" style="padding:10px 16px 4px;font-weight:700">Removed from this rule · ' + ex.length + '</div>' + ex.map(c => '<div class="stkrow"><span class="sn"><b>' + esc(itemName(c)) + '</b><span class="mono">' + esc(c) + ' · can be given to employees</span></span><button class="btn sm" data-a="eigItemBack" data-v="' + i + '|' + esc(c) + '">Put back</button></div>').join('');
+      h += '<div class="pad"><button class="btn danger-t full" data-a="eigDel" data-v="' + i + '">Remove whole rule</button></div>';
+    }
+    h += '</div>'; });
   return h + '</main>';
 }
 function ignPreview() {
-  const F = ui.ign; if (!String(F.v || '').trim()) return '<div class="note">Type to see which articles match.</div>';
-  const L = ruleCodes(F), mine = empMine();
-  return '<div class="note"><b>Preview · ' + L.length + ' article' + (L.length === 1 ? '' : 's') + ' match</b></div>' + L.slice(0, 30).map(c => '<div class="stkrow"><span class="sn"><b>' + esc(itemName(c)) + '</b><span class="mono">' + esc(c) + (mine.has(c) ? ' · already in your count list' : '') + '</span></span></div>').join('') +
-    (L.length > 30 ? '<div class="note">…and ' + (L.length - 30) + ' more</div>' : '') + '<button class="btn main full" data-a="ignSave"' + (L.length ? '' : ' disabled') + '>Save rule · ignore ' + L.length + ' article' + (L.length === 1 ? '' : 's') + '</button>';
+  const F = ui.ign; F.off = F.off || {}; if (!String(F.v || '').trim()) return '<div class="note">Type to see which articles match.</div>';
+  const L = ruleAll(F), mine = empMine(), on = L.filter(c => !F.off[c]);
+  if (!L.length) return '<div class="note">No article with stock above zero matches.</div>';
+  return '<div class="row"><span class="note"><b>' + on.length + ' of ' + L.length + ' article' + (L.length === 1 ? '' : 's') + ' selected</b></span><span class="row" style="gap:6px"><button class="btn sm ghost" data-a="eigPrevAll" data-v="on">All</button><button class="btn sm ghost" data-a="eigPrevAll" data-v="off">None</button></span></div>' +
+    '<div style="max-height:46vh;overflow-y:auto;border:1px solid #EEECF3;border-radius:16px">' + L.map(c => '<button class="stkrow" data-a="eigPrev" data-v="' + esc(c) + '"><span class="zwck' + (F.off[c] ? '' : ' on') + '">' + (F.off[c] ? '' : '✓') + '</span><span class="sn"><b>' + esc(itemName(c)) + '</b><span class="mono">' + esc(c) + ' · stock ' + num(S.stock[c].qty) + (mine.has(c) ? ' · in your count list' : '') + '</span></span></button>').join('') + '</div>' +
+    '<button class="btn main full" data-a="eigSave"' + (on.length ? '' : ' disabled') + '>Save rule · ignore ' + on.length + ' article' + (on.length === 1 ? '' : 's') + '</button>';
 }
 function vEmpSess() {
   const x = empCur(); if (!x) { ui.view = 'emp'; return vEmp(); }
@@ -3052,7 +3067,7 @@ function renumberReq(from, to) {
   return true;
 }
 const UNDO_KEYS = ['emp', 'counts', 'zeroWatch', 'lines', 'entries', 'returns', 'hold', 'corrections', 'audit', 'manReqs', 'paper', 'verifyReports'];
-const UNDOABLE = { empDelP: 'Employee removed', ignDel: 'Rule removed', empPhotoDel: 'Photo removed', countDelOld: 'Old count deleted', cpRemove: 'Removed from count', cpRemoveAll: 'Removed from count', countClear: 'Count cycle cleared', zwDel: 'Removed from watch', zwBDel: 'Removed from watch', zwAddSave: 'Added to watch', artQty: 'Quantity changed', artHold: 'Hold changed', artDel: 'Article removed', artsBHold: 'Articles put on hold', artsBRel: 'Articles released', artsBDel: 'Articles removed', dropReq: 'Request removed', dropStore: 'Store pending removed',
+const UNDOABLE = { empDelP: 'Employee removed', eigDel: 'Rule removed', eigItemDel: 'Removed from rule', empPhotoDel: 'Photo removed', countDelOld: 'Old count deleted', cpRemove: 'Removed from count', cpRemoveAll: 'Removed from count', countClear: 'Count cycle cleared', zwDel: 'Removed from watch', zwBDel: 'Removed from watch', zwAddSave: 'Added to watch', artQty: 'Quantity changed', artHold: 'Hold changed', artDel: 'Article removed', artsBHold: 'Articles put on hold', artsBRel: 'Articles released', artsBDel: 'Articles removed', dropReq: 'Request removed', dropStore: 'Store pending removed',
   renumReq: 'Request renumbered', dcRenum: 'Request renumbered', impRenum: 'Request renumbered', impDrop: "App's request removed", corrSave: 'Correction saved', markSave: 'Slip added', dcMerge: 'Items merged', dcKeepFirst: 'Duplicate removed', dcDate: 'Date changed', dcBad: 'Incomplete removed',
   bulkSave: 'Requests edited', lkSave: 'CUIMS serials saved', vfFix: 'Fixed in app', dcRetFmt: 'Returns renumbered', dcRetFix: 'Return renumbered', clAdd: 'Count list changed', clDel: 'Count list changed', retBatchSave: 'Returns saved', stkEdit: 'Stock changed', stkRen: 'Item renamed', stkDel: 'Item deleted', stkAdd: 'Item added', mgDone: 'Requests completed', mgPend: 'Pending cleared', mgDel: 'Deleted', mgDelSlipPend: 'Slips deleted, articles pending again', delEntry: 'Entry deleted', delReturn: 'Return deleted', rsClose: 'Article closed', rsOpen: 'Article made pending', rsAll: 'Request completed', rsAdd: 'Article added', saveReq: 'Request edited', saveEntry: 'Entry saved', uploadOk: 'Import done', btSave: 'Batch saved', nrSave: 'Request added', hold: 'Hold changed' };
 const UNDO_STOCK = new Set(['lkSave', 'vfFix', 'stkEdit', 'markSave', 'delEntry', 'saveEntry', 'uploadOk', 'mgDelSlipPend']);
@@ -3632,10 +3647,15 @@ document.addEventListener('click', async ev => {
     case 'empAddP': { const F = ui.empNew || {}; if (!String(F.name || '').trim()) { toast('Type the name first.'); break; } EMP().staff.push({ id: nid(), name: F.name.trim(), code: String(F.code || '').trim().toUpperCase(), desig: String(F.desig || '').trim() }); ui.empNew = { name: '', code: '', desig: '' }; save(); render(); toast('Employee added.'); break; }
     case 'empEditP': { const x = EMP().staff.find(k => String(k.id) === String(v)); if (!x) break; const nm = await uiPrompt('Name', x.name, 'Next'); if (nm === null) break; const cd = await uiPrompt('Employee code', x.code || '', 'Next'); if (cd === null) break; const dg = await uiPrompt('Designation', x.desig || '', 'Save'); if (dg === null) break; x.name = nm.trim() || x.name; x.code = cd.trim().toUpperCase(); x.desig = dg.trim(); save(); render(); break; }
     case 'empDelP': { const x = EMP().staff.find(k => String(k.id) === String(v)); if (!x) break; if (!(await uiConfirm('Remove ' + x.name + '? Old results keep their name.', 'Remove', true))) { ui.pendUndo = null; break; } const E = EMP(); E.staff = E.staff.filter(k => k !== x); E.pick = E.pick.filter(k => String(k) !== String(v)); save(); render(); break; }
-    case 'empIgnore': ui.view = 'empIgnore'; ui.ign = { t: 'pre', v: '' }; render(); window.scrollTo(0, 0); break;
-    case 'ignT': ui.ign.t = v; render(); break;
-    case 'ignSave': { const F = ui.ign, L = ruleCodes(F); if (!String(F.v || '').trim() || !L.length) break; EMP().ignore.push({ t: F.t, v: String(F.v).trim(), at: new Date().toISOString() }); ui.ign = { t: F.t, v: '' }; save(); render(); toast(L.length + ' article' + (L.length === 1 ? '' : 's') + ' added to the ignore list.'); break; }
-    case 'ignDel': { const E = EMP(), r = E.ignore[+v]; if (!r) break; if (!(await uiConfirm('Remove the rule "' + EMP_RULE[r.t] + ' ' + r.v + '"? Its articles can be given to employees again.', 'Remove', true))) { ui.pendUndo = null; break; } E.ignore.splice(+v, 1); save(); render(); break; }
+    case 'empIgnore': ui.view = 'empIgnore'; ui.ign = { t: 'pre', v: '', off: {} }; ui.ignOpen = null; render(); window.scrollTo(0, 0); break;
+    case 'eigT': ui.ign.t = v; ui.ign.off = {}; render(); break;
+    case 'eigOpen': ui.ignOpen = ui.ignOpen === +v ? null : +v; render(); break;
+    case 'eigPrev': { const o = ui.ign.off = ui.ign.off || {}; if (o[v]) delete o[v]; else o[v] = 1; const b = document.getElementById('ignprev'); if (b) b.innerHTML = ignPreview(); break; }
+    case 'eigPrevAll': { const o = ui.ign.off = {}; if (v === 'off') ruleAll(ui.ign).forEach(c => o[c] = 1); const b = document.getElementById('ignprev'); if (b) b.innerHTML = ignPreview(); break; }
+    case 'eigItemDel': { const [ri, ...rest] = v.split('|'), code = rest.join('|'), r = EMP().ignore[+ri]; if (!r) break; r.ex = r.ex || []; if (!r.ex.includes(code)) r.ex.push(code); save(); render(); toast(itemName(code) + ' removed from this rule.'); break; }
+    case 'eigItemBack': { const [ri, ...rest] = v.split('|'), code = rest.join('|'), r = EMP().ignore[+ri]; if (!r) break; r.ex = (r.ex || []).filter(c => c !== code); save(); render(); break; }
+    case 'eigSave': { const F = ui.ign, A = ruleAll(F), L = A.filter(c => !(F.off || {})[c]); if (!String(F.v || '').trim() || !L.length) break; EMP().ignore.push({ t: F.t, v: String(F.v).trim(), ex: A.filter(c => (F.off || {})[c]), at: new Date().toISOString() }); ui.ign = { t: F.t, v: '', off: {} }; ui.ignOpen = EMP().ignore.length - 1; save(); render(); toast(L.length + ' article' + (L.length === 1 ? '' : 's') + ' added to the ignore list.'); break; }
+    case 'eigDel': { const E = EMP(), r = E.ignore[+v]; if (!r) break; if (!(await uiConfirm('Remove the whole rule "' + EMP_RULE[r.t] + ' ' + r.v + '"? Its ' + ruleCodes(r).length + ' articles can be given to employees again.', 'Remove rule', true))) { ui.pendUndo = null; break; } E.ignore.splice(+v, 1); ui.ignOpen = null; save(); render(); break; }
     case 'empMake': { const E = EMP(), sel = empSel(), n = empHow(); if (!sel.length || !n) break; const codes = empPick(n); if (!codes.length) { toast('No articles left to give out.'); break; }
       const sz = empSplitSizes(codes.length, sel.length); let k = 0;
       const x = { id: nid(), round: E.round.n, createdAt: new Date().toISOString(), status: 'print', by: meTag(), people: sel.map((q, i) => { const cs = codes.slice(k, k + sz[i]); k += sz[i]; return { sid: q.id, name: q.name, code: q.code, desig: q.desig, codes: cs, vals: {}, photos: [], subDate: '', subTime: '' }; }).filter(q => q.codes.length) };
