@@ -6,10 +6,10 @@
 <title>JV Stock Issue</title>
 <link rel="icon" href="icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <style>
 :root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);
 --bg:#F4F6FB;--card:#FFFFFF;--line:#E6E9F2;--soft:#F8FAFD;--ink:#0F1629;--mute:#5E6A82;--ink2:#2B3550;
@@ -602,6 +602,6 @@ textarea{width:100%;border-radius:16px;border:1.5px solid #E2DFEA;padding:12px;f
 <input type="file" id="photoIn" accept="image/*" class="hidden">
 <input type="file" id="paperIn" accept="image/*" capture="environment" class="hidden">
 <input type="file" id="empPhotoIn" accept="image/*" class="hidden">
-<script src="app.js?v=33.0.0"></script>
+<script src="app.js?v=33.2.0"></script>
 </body>
 </html>

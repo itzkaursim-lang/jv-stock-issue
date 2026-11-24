@@ -26,11 +26,15 @@ function normCodes() {
   (S.lines || []).forEach(l => { if (l.rcv) l.rcv = f(l.rcv); }); (S.entries || []).forEach(e => { if (e.rcv) e.rcv = f(e.rcv); }); (S.returns || []).forEach(r => { if (r.by) r.by = f(r.by); });
   Object.values(S.stores || {}).forEach(x => { if (x.rcv) x.rcv = f(x.rcv); }); Object.values(S.manReqs || {}).forEach(x => { if (x.rcv) x.rcv = f(x.rcv); });
 }
+let saveT = null;
+function flushLocal() { if (!saveT) return; clearTimeout(saveT); saveT = null; try { normCodes(); } catch (e) {} writeLocal(); }
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushLocal(); });
+window.addEventListener('pagehide', flushLocal); window.addEventListener('beforeunload', flushLocal);
 function save(noSync) {
-  try { normCodes(); } catch (e) {}
   if (!noSync && ui.pendUndo) undoFire();
   S.sync.dirty = true; S.sync.changedAt = new Date().toISOString();
-  writeLocal();
+  try { DATAVER++; } catch (e) {}
+  clearTimeout(saveT); saveT = setTimeout(() => { saveT = null; try { normCodes(); } catch (e) {} writeLocal(); }, 400);
   if (!S.sync.firstDirty) S.sync.firstDirty = Date.now();
   paintSync();
 }
@@ -847,7 +851,7 @@ const MON3 = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oc
 function cuimsDate(iso) { const p = String(iso || today()).split('-'); return MON3[+p[1] - 1] + ' ' + p[2] + ', ' + p[0]; }
 function retRemark(r) { return 'Returned from ' + String(r.store || '').trim() + ' on ' + cuimsDate(r.recvDate || r.date); }
 function retQueue(skipId) { return S.returns.filter(r => !r.serial && r.id !== skipId && r.store && validRcv(r.by) && r.items.length).sort((a, b) => String(a.recvDate || a.date).localeCompare(String(b.recvDate || b.date)) || String(a.no).localeCompare(String(b.no), undefined, { numeric: true })); }
-function jobJson(o) { if (o && o.fun == null) o.fun = !!S.funMode; return JSON.stringify(o); }
+function jobJson(o) { flushLocal(); if (o && o.fun == null) o.fun = !!S.funMode; return JSON.stringify(o); }
 function startReturnJob(r) {
   if (!r.store || !validRcv(r.by) || !r.items.length) { toast('Store, a By employee code (GA or E) and at least one item are needed.'); return; }
   const rem = retRemark(r);
@@ -1011,7 +1015,13 @@ function vSet() {
     h += '<div class="card pad col"><h3>Desktop view and zoom</h3><div class="note">CUIMS always opens in desktop view. Your zoom level is remembered after reloads. Pinch to set it once.</div><button class="btn" data-a="resetZoom">Reset zoom to default</button></div>';
   }
   if (pg === 'pdf') {
-    h += '<div class="card pad col"><label class="f">Store name (PDF title)<input type="text" data-set="me.storeName" value="' + esc(S.me.storeName) + '"></label></div>';
+    { const PT = Object.keys(REPORTS).filter(t => REPORTS[t].pdf);
+    h += '<div class="card pad col" style="gap:10px"><h3>PDF reports</h3><div class="note">Headings and store name printed at the top of every PDF. You can still change them for one report in its options.</div>' +
+      '<label class="f">Store name (all PDFs)<input type="text" data-pdfall="sub" value="' + esc(S.pdfStore != null ? S.pdfStore : (rptPref('counts').sub || S.me.storeName || '')) + '" placeholder="e.g. Ration Store"></label>' +
+      PT.map(t => '<label class="f">Heading · ' + esc(REPORTS[t].name) + '<input type="text" data-pdfhead="' + t + '" value="' + esc(rptPref(t).title) + '"></label>').join('') +
+      '<label class="chk"><input type="checkbox" data-a="pdfSignAll" data-k="sign"' + (S.pdfSign !== false ? ' checked' : '') + '> My signature box (Prepared & checked / Received & reported) on all PDFs</label>' +
+      '<label class="chk"><input type="checkbox" data-a="pdfSignAll" data-k="mgr"' + (S.pdfMgr ? ' checked' : '') + '> Manager signature box on all PDFs</label></div>'; }
+
   h += '<div class="card pad col"><h3>Manager signature on PDFs</h3><label class="chk"><input type="checkbox" data-a="mgrToggle"' + (S.mgr.on ? ' checked' : '') + '> Add manager signature line</label>' +
     (S.mgr.on ? '<div class="grid2"><label class="f">Manager name<input type="text" data-set="mgr.name" value="' + esc(S.mgr.name) + '"></label><label class="f">Emp code<input type="text" data-set="mgr.emp" value="' + esc(S.mgr.emp || '') + '" autocapitalize="characters"></label></div><label class="f">Designation<input type="text" data-set="mgr.desig" value="' + esc(S.mgr.desig) + '"></label>' : '') + '</div>';
   }
@@ -1426,7 +1436,7 @@ function EMP() {
   E.staff = E.staff || []; E.ignore = E.ignore || []; E.sessions = E.sessions || []; E.pick = E.pick || [];
   E.round = E.round || { n: 1, start: new Date().toISOString(), counted: {}, missed: {} };
   if (E.title == null) E.title = 'JV Daily Cycle Count'; if (E.store == null) E.store = 'Ration Store';
-  if (!E.per) E.per = 80; if (!E.how) E.how = 'n';
+  if (!E.per) E.per = 80; if (!E.how) E.how = 'n'; if (!E.stockF) E.stockF = 'nz';
   return E;
 }
 const EMP_RULE = { code: 'Exact code', pre: 'Code starts with', name: 'Name contains' };
@@ -1435,7 +1445,8 @@ function ruleHit(r, code) { const v = String(r.v || '').trim().toUpperCase(); if
 function ruleCodes(r) { return Object.keys(S.stock).filter(c => ruleHit(r, c)); }
 function empIgnored(code) { return EMP().ignore.some(r => ruleHit(r, code)); }
 function empMine() { return new Set((S.countList || []).map(countKey)); }
-function empEligible() { const mine = empMine(); return Object.keys(S.stock).filter(c => !mine.has(c) && !empIgnored(c)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })); }
+function empStockOk(c) { const q = Number((S.stock[c] || {}).qty) || 0; return EMP().stockF === 'pos' ? q > 0 : q !== 0; }
+function empEligible() { const mine = empMine(); return Object.keys(S.stock).filter(c => empStockOk(c) && !mine.has(c) && !empIgnored(c)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })); }
 function empActive() { return EMP().sessions.filter(x => x.status === 'print' || x.status === 'entry' || x.status === 'draft'); }
 function empReserved() { const r = new Set(); empActive().forEach(x => x.people.forEach(q => q.codes.forEach(c => r.add(c)))); return r; }
 function empStat() { const E = EMP(), el = empEligible(), R = E.round, counted = el.filter(c => R.counted[c]).length;
@@ -1460,6 +1471,10 @@ function vEmp() {
     '<div style="height:12px;border-radius:99px;background:#EEEAFB;overflow:hidden"><i style="display:block;height:100%;width:' + (st.total ? Math.round(st.counted / st.total * 100) : 0) + '%;background:linear-gradient(90deg,#B9A7FF,#F6A8EE)"></i></div>' +
     '<div class="grid3"><div class="tile t-ok"><b>' + st.counted + '</b><span>Counted</span></div><div class="tile t-pt"><b>' + st.left + '</b><span>Left in round</span></div><div class="tile t-no"><b>' + st.missed + '</b><span>Missed before</span></div></div>' +
     '<div class="note">' + st.total + ' articles in this round. Missed ones are given first. When all are counted, the next round starts by itself.</div></div>';
+  { const mine = empMine(), base = Object.keys(S.stock).filter(c => !mine.has(c) && !empIgnored(c)), nz = base.filter(c => (Number(S.stock[c].qty) || 0) !== 0).length, pos = base.filter(c => (Number(S.stock[c].qty) || 0) > 0).length, zero = base.length - nz, neg = nz - pos;
+    h += '<div class="card pad col" style="gap:10px"><b>Articles to include</b>' +
+      '<button class="stkrow" data-a="empStockF" data-v="nz"><span class="zwck' + (E.stockF !== 'pos' ? ' on' : '') + '">' + (E.stockF !== 'pos' ? '✓' : '') + '</span><span class="sn"><b>All articles · not zero</b><span class="mono">Stock above zero or below zero · ' + zero + ' at zero skipped</span></span>' + pill(String(nz), 'c-gy') + '</button>' +
+      '<button class="stkrow" data-a="empStockF" data-v="pos"><span class="zwck' + (E.stockF === 'pos' ? ' on' : '') + '">' + (E.stockF === 'pos' ? '✓' : '') + '</span><span class="sn"><b>Above zero only</b><span class="mono">No zero and no negative · ' + (zero + neg) + ' skipped</span></span>' + pill(String(pos), 'c-gy') + '</button></div>'; }
   h += '<div class="card pad col" style="gap:10px"><b>How many articles today?</b><div class="seg"><button data-a="empHow" data-v="n" class="' + (E.how !== 'all' ? 'on' : '') + '">Number</button><button data-a="empHow" data-v="all" class="' + (E.how === 'all' ? 'on' : '') + '">All left</button></div>' +
     (E.how !== 'all' ? '<label class="f">Articles to count<input type="number" inputmode="numeric" data-emp="per" value="' + esc(E.per) + '"></label>' : '') + '<div class="note">' + n + ' articles will be given out.</div></div>';
   h += '<div class="card pad col" style="gap:8px"><div class="row"><b>Who is counting?</b><button class="btn sm ghost" data-a="empStaff">Manage</button></div>' +
@@ -1620,7 +1635,11 @@ async function empResultPdf(p, D) {
 }
 /* ---------------- Zero-stock watch (order-only articles) ---------------- */
 function zwList() { S.zeroWatch = S.zeroWatch || []; return S.zeroWatch; }
-function zwWaiting(code) { return S.lines.filter(l => l.code === code && l.status === 'waiting' && !S.hold[l.id]).sort((a, b) => a.date.localeCompare(b.date)); }
+let ZWI = null, ZWV = -1;
+function zwWaiting(code) {
+  if (!ZWI || ZWV !== DATAVER || ZWI._n !== S.lines.length) { ZWI = { _n: S.lines.length }; S.lines.forEach(l => { if (l.status === 'waiting' && !S.hold[l.id]) (ZWI[l.code] = ZWI[l.code] || []).push(l); }); ZWV = DATAVER; Object.keys(ZWI).forEach(k => { if (k !== '_n') ZWI[k].sort((a, b) => a.date.localeCompare(b.date)); }); }
+  return (ZWI[code] || []).slice();
+}
 function zwRow(w) {
   const st = S.stock[w.code], inRep = !!st, qty = inRep ? Math.round((Number(st.qty) || 0) * 1000) / 1000 : null;
   const W = zwWaiting(w.code), need = Math.round(W.reduce((n, l) => n + (Number(l.qty) || 0), 0) * 1000) / 1000;
@@ -1851,6 +1870,23 @@ function expiryPdf2(p, D) {
   if (B.length) { let sy = doc.lastAutoTable.finalY + 10; if (sy + 30 > H - 14) { doc.addPage(); sy = 20; } signBoxes(doc, sy, B, true); }
   cleanFoot(doc); pdfSave(doc, 'Expiry-Tracker-' + isoOf(new Date()) + '.pdf');
 }
+function zwPdf2(p, D) {
+  const doc = pdfDoc(p.orient === 'l'); if (!doc) return;
+  const H = doc.internal.pageSize.getHeight(), fs = p.font === 's' ? 7.5 : p.font === 'b' ? 10 : 8.4, now = new Date().toISOString();
+  const RED = [191, 38, 59], GRN = [26, 128, 69], AMB = [179, 107, 0], GRY = [107, 111, 118];
+  const col = st => /check/.test(st) ? RED : /^Zero/.test(st) ? GRN : /pending|Pending/.test(st) ? AMB : GRY;
+  cleanHead(doc, p.title || 'Zero-stock Watch', p.sub, now);
+  const R = zwRows(), y = cleanTiles(doc, 29, [['Watching', R.length], ['Need a check', R.filter(r => r.alert).length], ['Zero · OK', R.filter(r => r.k === 'ok').length], ['Covered by pending', R.filter(r => r.k === 'covered' || r.k === 'short').length]], { 'Need a check': RED, 'Zero · OK': GRN, 'Covered by pending': AMB });
+  const cols = orderedCols(p, D).filter(c => colOn(p, c[0])), AL = { UOM: 'center', 'Stock now': 'right', 'Pending qty': 'right', 'After all issued': 'right', Status: 'center' };
+  doc.autoTable({ startY: y, margin: { left: 12, right: 12, bottom: 16 }, head: [cols.map(c => c[1])], body: D.rows.map(r => cols.map(c => cellText(r[c[0]], '\n'))),
+    headStyles: { fillColor: [44, 46, 51], textColor: 255, fontStyle: 'bold', fontSize: fs, cellPadding: { top: 2.4, bottom: 2.4, left: 1.8, right: 1.8 } },
+    styles: { fontSize: fs, textColor: INK, lineColor: [214, 214, 219], lineWidth: { bottom: 0.2 }, cellPadding: { top: 2.2, bottom: 2.2, left: 1.8, right: 1.8 }, valign: 'middle' }, alternateRowStyles: { fillColor: [249, 249, 250] },
+    didParseCell: d => { const k = cols[d.column.index][0]; d.cell.styles.halign = AL[k] || 'left'; if (d.section !== 'body') return; const st = String(D.rows[d.row.index].Status || '');
+      if (k === 'Item') d.cell.styles.fontStyle = 'bold'; if (k === 'Status' || (k === 'Stock now' && !/^Zero/.test(st))) { d.cell.styles.fontStyle = 'bold'; d.cell.styles.textColor = col(st); } if (k === 'Stock now' && /^Zero/.test(st)) d.cell.styles.fontStyle = 'bold'; } });
+  const B = []; if (p.sign) B.push(meBox('Prepared & checked by')); if (p.mgr) B.push(mgrBox());
+  if (B.length) { let sy = doc.lastAutoTable.finalY + 10; if (sy + 30 > H - 14) { doc.addPage(); sy = 20; } signBoxes(doc, sy, B, true); }
+  cleanFoot(doc); pdfSave(doc, 'Zero-stock-Watch-' + isoOf(new Date()) + '.pdf');
+}
 function countPdf2(p, D) {
   const doc = pdfDoc(p.orient === 'l'); if (!doc) return;
   const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), fs = p.font === 's' ? 7.5 : p.font === 'b' ? 10 : 8.5;
@@ -1934,6 +1970,7 @@ function rptPref(type) {
   const d = { title: R.name, sub: S.me.storeName || '', orient: R.landscape ? 'l' : 'p', font: 'n', details: !!R.details && type === 'ret', sign: true, mgr: S.mgr.on, sort: 'reqdate', cols: {} };
   const p = S.rp[type] = S.rp[type] || {};
   for (const k in d) if (!(k in p)) p[k] = d[k];
+  if (type === 'zwatch' && !p.v2) { p.v2 = 1; p.title = 'Zero-stock Watch'; if (!p.sub) p.sub = S.me.storeName || 'Ration Store'; p.orient = 'p'; p.order = []; p.cols = { 'Pending requests': false }; }
   if (type === 'expiry' && !p.v2) { p.v2 = 1; p.title = 'Expiry Tracker'; if (!p.sub) p.sub = S.me.storeName || 'Ration Store'; }
   if (type === 'empSheet' && !p.v2) { p.v2 = 1; p.title = EMP().title; p.sub = EMP().store; p.orient = 'p'; p.order = []; p.cols = { UOM: false }; p.sign = true; }
   if (type === 'empResult' && !p.v2) { p.v2 = 1; p.title = EMP().title; p.sub = EMP().store; p.orient = 'p'; p.order = []; p.cols = { 'Mfg. Date': false, 'Expiry Date': false }; p.sign = true; p.photos = true; }
@@ -1965,7 +2002,7 @@ function reportDef(type) {
       detail: list.map(r => ({ head: r.no + '   ·   ' + r.store + '   ·   Returned by ' + rcvLabel(r.by) + '   ·   Serial ' + (r.serial || '____'), cols: ['S.No', 'Item code', 'Item', 'UOM', 'Qty', 'Item remarks'], rows: r.items.map((x, i) => [i + 1, x.code, x.name || itemName(x.code), x.uom || itemUom(x.code), num(x.qty), x.remark || '–']) })),
       file: 'Return-Register-' + d, sub2: 'Return · Department · Against Issue No 1111' };
   }
-  const objRows = type === 'zwatch' ? zwRows().map(r => ({ 'Item code': r.code, Item: r.name, UOM: r.uom || '', 'Stock now': r.qty == null ? 'Not in report' : r.qty, 'Pending qty': r.need, 'Pending requests': r.W.map(l => l.req + ' ' + l.store + ' (' + num(l.qty) + ')'), 'After all issued': r.after == null ? '–' : r.after, Status: r.acked ? 'Checked' : ZW_TAG[r.k][0], Note: r.w.note || '' })) : type === 'pending' ? sortBy(rowsPending(), ['custom', 'az', 'time'].includes(p.sort) ? 'reqdate' : p.sort, r => ({ req: r['Request No'], store: r.Store, date: r['_date'] || '' })) : type === 'requests' ? rowsRequests() : type === 'entries' ? rowsEntries() : type === 'items' ? rowsItems() : type === 'stock' ? rowsStock() : type === 'returns' ? rowsReturns() : type === 'search' ? searchRows() : type === 'arts' ? artsList().sort((a, b) => byStore(a.l.store, b.l.store) || String(a.l.req).localeCompare(String(b.l.req), undefined, { numeric: true })).map(({ l, k }) => ({ Store: l.store, 'Request No': l.req, 'Requested on': fmtLong(l.date), Item: itemName(l.code), 'Item code': l.code, Qty: l.qty, UOM: itemUom(l.code), Status: k === 'issue' ? 'Ready' : k === 'later' ? 'Scheduled' : k === 'hold' ? 'On hold' : k === 'missing' ? 'Not in stock' : 'Short' })) : type === 'verifyItems' ? (() => { const R = (S.verifyReports || []).find(r => r.id === ui.vrep) || (S.verifyReports || [])[0] || {}; const out = []; Object.values(R.details || {}).forEach(D => { D.items.forEach(i => out.push({ Serial: D.serial, Slip: D.slip, 'Project Area': D.pa, 'Received by': D.rcv ? rcvLabel(D.rcv) : '', Code: i.code, Item: i.name, 'CUIMS qty': i.qty, 'App qty': i.app == null ? 'not in app' : i.app, Remarks: i.remark || '' })); D.missing.forEach(m => out.push({ Serial: D.serial, Slip: D.slip, 'Project Area': D.pa, 'Received by': D.rcv ? rcvLabel(D.rcv) : '', Code: m.code, Item: itemName(m.code), 'CUIMS qty': 'missing', 'App qty': m.qty, Remarks: '' })); }); return out; })() : type === 'verify' ? (((S.verifyReports || []).find(r => r.id === ui.vrep) || (S.verifyReports || [])[0] || { findings: [] }).findings.map(f => ({ Entry: f.label || (f.serial ? 'Serial ' + f.serial : ''), Result: { ok: 'All good', notFound: 'Not found on CUIMS', serial: 'Serial missing in app', multi: 'Slip used more than once', store: 'Store differs', rcv: 'Receiver differs', type: 'Not a return', missing: 'Missing on CUIMS', qty: 'Qty differs', remark: 'Remark differs', extra: 'Extra on CUIMS', notInApp: 'On CUIMS, not in app' }[f.kind] || f.kind, Item: f.code ? itemName(f.code) + ' (' + f.code + ')' : '', App: f.app != null ? String(f.app) : (f.qty != null ? String(f.qty) : ''), CUIMS: f.cuims != null ? String(f.cuims) : (f.val || f.serial || ''), Status: f.fixed ? 'Fixed in app' : (f.kind === 'ok' ? '' : 'Open') }))) : type === 'cons' ? consRows() : type === 'done' ? doneRows() : type === 'expiry' ? expiryRows().filter(r => r.left <= expDays()).map(r => ({ Item: r.name, Code: r.code, Qty: r.qty, UOM: r.uom, MFD: r.mfd ? fmtLong(r.mfd) : '', Expiry: fmtLong(r.exp), 'Days left': r.left, Status: r.left < 0 ? 'Expired' : r.left <= 15 ? 'Within 15 days' : 'Within ' + expDays() + ' days', 'Counted on': fmtLong(r.countDate) })) : type === 'counts' ? countRows((S.counts || []).filter(c => !ui.countExportId || String(c.id) === String(ui.countExportId))) : [];
+  const objRows = type === 'zwatch' ? zwRows().map(r => ({ 'Item code': r.code, Item: r.name, UOM: r.uom || '', 'Stock now': r.qty == null ? 'Not in report' : r.qty, 'Pending qty': r.need, 'Pending requests': r.W.map(l => l.req + ' ' + l.store + ' (' + num(l.qty) + ')'), 'After all issued': r.after == null ? '–' : r.after, Status: r.acked ? 'Checked · ' + num(r.qty) : ZW_TAG[r.k][0], Note: r.w.note || '–' })) : type === 'pending' ? sortBy(rowsPending(), ['custom', 'az', 'time'].includes(p.sort) ? 'reqdate' : p.sort, r => ({ req: r['Request No'], store: r.Store, date: r['_date'] || '' })) : type === 'requests' ? rowsRequests() : type === 'entries' ? rowsEntries() : type === 'items' ? rowsItems() : type === 'stock' ? rowsStock() : type === 'returns' ? rowsReturns() : type === 'search' ? searchRows() : type === 'arts' ? artsList().sort((a, b) => byStore(a.l.store, b.l.store) || String(a.l.req).localeCompare(String(b.l.req), undefined, { numeric: true })).map(({ l, k }) => ({ Store: l.store, 'Request No': l.req, 'Requested on': fmtLong(l.date), Item: itemName(l.code), 'Item code': l.code, Qty: l.qty, UOM: itemUom(l.code), Status: k === 'issue' ? 'Ready' : k === 'later' ? 'Scheduled' : k === 'hold' ? 'On hold' : k === 'missing' ? 'Not in stock' : 'Short' })) : type === 'verifyItems' ? (() => { const R = (S.verifyReports || []).find(r => r.id === ui.vrep) || (S.verifyReports || [])[0] || {}; const out = []; Object.values(R.details || {}).forEach(D => { D.items.forEach(i => out.push({ Serial: D.serial, Slip: D.slip, 'Project Area': D.pa, 'Received by': D.rcv ? rcvLabel(D.rcv) : '', Code: i.code, Item: i.name, 'CUIMS qty': i.qty, 'App qty': i.app == null ? 'not in app' : i.app, Remarks: i.remark || '' })); D.missing.forEach(m => out.push({ Serial: D.serial, Slip: D.slip, 'Project Area': D.pa, 'Received by': D.rcv ? rcvLabel(D.rcv) : '', Code: m.code, Item: itemName(m.code), 'CUIMS qty': 'missing', 'App qty': m.qty, Remarks: '' })); }); return out; })() : type === 'verify' ? (((S.verifyReports || []).find(r => r.id === ui.vrep) || (S.verifyReports || [])[0] || { findings: [] }).findings.map(f => ({ Entry: f.label || (f.serial ? 'Serial ' + f.serial : ''), Result: { ok: 'All good', notFound: 'Not found on CUIMS', serial: 'Serial missing in app', multi: 'Slip used more than once', store: 'Store differs', rcv: 'Receiver differs', type: 'Not a return', missing: 'Missing on CUIMS', qty: 'Qty differs', remark: 'Remark differs', extra: 'Extra on CUIMS', notInApp: 'On CUIMS, not in app' }[f.kind] || f.kind, Item: f.code ? itemName(f.code) + ' (' + f.code + ')' : '', App: f.app != null ? String(f.app) : (f.qty != null ? String(f.qty) : ''), CUIMS: f.cuims != null ? String(f.cuims) : (f.val || f.serial || ''), Status: f.fixed ? 'Fixed in app' : (f.kind === 'ok' ? '' : 'Open') }))) : type === 'cons' ? consRows() : type === 'done' ? doneRows() : type === 'expiry' ? expiryRows().filter(r => r.left <= expDays()).map(r => ({ Item: r.name, Code: r.code, Qty: r.qty, UOM: r.uom, MFD: r.mfd ? fmtLong(r.mfd) : '', Expiry: fmtLong(r.exp), 'Days left': r.left, Status: r.left < 0 ? 'Expired' : r.left <= 15 ? 'Within 15 days' : 'Within ' + expDays() + ' days', 'Counted on': fmtLong(r.countDate) })) : type === 'counts' ? countRows((S.counts || []).filter(c => !ui.countExportId || String(c.id) === String(ui.countExportId))) : [];
   const keys = objRows.length ? Object.keys(objRows[0]) : [];
   const chips = type === 'pending' ? [['Date', fmtLong(today())], ['Stores', new Set(objRows.map(r => r.Store)).size], ['Articles', objRows.length]] : [['Date', fmtLong(today())], ['Rows', objRows.length]];
   return { cols: keys.map(k => [k, k]), rows: objRows, chips, file: REPORTS[type].name.replace(/[^A-Za-z]+/g, '-') + '-' + today(), sub2: '' };
@@ -2017,10 +2054,10 @@ function shExport() {
       '<button class="xbtn" data-a="rpMove" data-k="' + esc(k) + '" data-d="-1"' + (i ? '' : ' disabled') + ' aria-label="Move up">' + ico('up', 18) + '</button><button class="xbtn" data-a="rpMove" data-k="' + esc(k) + '" data-d="1"' + (i < all.length - 1 ? '' : ' disabled') + ' aria-label="Move down">' + ico('down', 18) + '</button></div>').join('') + '</div>';
   // preview
   const pr = D.rows.slice(0, 8);
-  if (type === 'expiry' || type === 'empSheet' || type === 'empResult') h += '<div class="sect">Preview</div><div class="card" style="overflow:hidden"><div style="padding:14px 14px 10px;border-bottom:2px solid #141414;display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><span><b style="font-size:19px">' + esc(p.title || R.name) + '</b>' + (p.sub && type !== 'empSheet' ? '<div class="note">' + esc(p.sub) + '</div>' : '') + '</span><span style="text-align:right">' + (type === 'empSheet' ? '<b>' + esc(p.sub || '') + '</b>' : '<b>' + esc(mdy(D.when || new Date().toISOString())) + '</b><div class="note">' + esc(hrs(D.when || new Date().toISOString())) + '</div>') + '</span></div>' +
+  if (type === 'expiry' || type === 'zwatch' || type === 'empSheet' || type === 'empResult') h += '<div class="sect">Preview</div><div class="card" style="overflow:hidden"><div style="padding:14px 14px 10px;border-bottom:2px solid #141414;display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><span><b style="font-size:19px">' + esc(p.title || R.name) + '</b>' + (p.sub && type !== 'empSheet' ? '<div class="note">' + esc(p.sub) + '</div>' : '') + '</span><span style="text-align:right">' + (type === 'empSheet' ? '<b>' + esc(p.sub || '') + '</b>' : '<b>' + esc(mdy(D.when || new Date().toISOString())) + '</b><div class="note">' + esc(hrs(D.when || new Date().toISOString())) + '</div>') + '</span></div>' +
     '<div class="tblwrap" style="padding:0 0 6px"><table style="font-size:13px"><tr>' + cols.map(c => '<th>' + esc(c[1]) + '</th>').join('') + '</tr>' + (D.rows.slice(0, 8).map(r => '<tr>' + cols.map(c => '<td>' + esc(cellText(r[c[0]], ' ')) + '</td>').join('') + '</tr>').join('') || '<tr><td colspan="' + cols.length + '" class="note">No rows selected.</td></tr>') + '</table></div>' +
     (D.rows.length > 8 ? '<div class="note" style="padding:0 12px 10px">…and ' + (D.rows.length - 8) + ' more rows</div>' : '') +
-    '<div class="note" style="padding:0 12px 12px">Signature boxes: ' + [type === 'empSheet' ? 'employee (sign here)' : type === 'empResult' ? 'employee' : '', p.sign ? (type === 'expiry' ? 'prepared & checked by you' : 'received & reported by you') : '', p.mgr ? 'manager' : ''].filter(Boolean).join(', ') + '</div></div>';
+    '<div class="note" style="padding:0 12px 12px">Signature boxes: ' + [type === 'empSheet' ? 'employee (sign here)' : type === 'empResult' ? 'employee' : '', p.sign ? (type === 'expiry' || type === 'zwatch' ? 'prepared & checked by you' : 'received & reported by you') : '', p.mgr ? 'manager' : ''].filter(Boolean).join(', ') + '</div></div>';
   else if (type === 'counts') h += '<div class="sect">Preview</div><div class="card" style="overflow:hidden"><div style="padding:14px 14px 10px;border-bottom:2px solid #141414;display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><span><b style="font-size:19px">' + esc(p.title || 'Daily Cycle Count') + (D.draft ? ' (Draft)' : '') + '</b>' + (p.sub ? '<div class="note">' + esc(p.sub) + '</div>' : '') + '</span><span style="text-align:right"><b>' + esc(mdy(D.when)) + '</b><div class="note">' + esc(hrs(D.when)) + '</div></span></div>' +
     (p.tiles !== false ? '<div class="wrap" style="gap:6px;padding:10px 12px">' + D.chips.map(c => pill(c[0] + ' ' + c[1], 'c-gy')).join('') + '</div>' : '') +
     '<div class="tblwrap" style="padding:0 0 6px"><table style="font-size:13px"><tr>' + cols.map(c => '<th>' + esc(c[1]) + '</th>').join('') + '</tr>' + (D.rows.slice(0, 8).map(r => '<tr>' + cols.map(c => '<td style="white-space:pre-line' + ((c[0] === 'Difference' || c[0] === 'Result') ? ';font-weight:700;color:' + ({ Match: '#1A8045', Excess: '#2954BF', Short: '#BF263B' }[r._res] || '#6B6F76') : '') + '">' + esc(cellText(r[c[0]], '\n')) + '</td>').join('') + '</tr>').join('') || '<tr><td colspan="' + cols.length + '" class="note">No rows selected.</td></tr>') + '</table></div>' +
@@ -2041,6 +2078,7 @@ function rpPdf2(type) {
   const p = rptPref(type), D = reportDef(type), R = REPORTS[type];
   if (type === 'counts') return countPdf2(p, D);
   if (type === 'expiry') return expiryPdf2(p, D);
+  if (type === 'zwatch') return zwPdf2(p, D);
   if (type === 'empSheet') return empSheetPdf(p, D);
   if (type === 'empResult') return empResultPdf(p, D);
   const doc = pdfDoc(p.orient === 'l'); if (!doc) return;
@@ -3216,7 +3254,7 @@ document.addEventListener('click', async ev => {
   if (a === 'lockTap') { if (ui.locked) askUnlock(); else { ui.locked = true; render(); renderSheet(); } return; }
   if (ui.locked && GUARDED.has(a)) { ev.preventDefault(); if (t.type === 'checkbox') t.checked = !t.checked; const sel = '[data-a="' + a + '"]' + (v != null ? '[data-v="' + CSS.escape(v) + '"]' : ''); askUnlock(() => { const el = document.querySelector(sel); if (el) el.click(); }); return; }
   if (a === 'bgClose') { if (ev.target === t) { ui.sheet = null; renderSheet(); } return; }
-  if (t.type === 'checkbox' && !['hold', 'queueToggle', 'regItems', 'mgrToggle', 'syncAuto', 'lockToggle', 'markPick', 'stOn', 'rpTog', 'rpCol', 'autoSubToggle', 'queuePend', 'credAuto', 'artsSel', 'artsAll', 'artsGrp', 'autoStockTog', 'mgSel', 'mgAll', 'lkOn', 'sdAddNew', 'artsCatOn', 'artsCatSel', 'funToggle'].includes(a)) return;
+  if (t.type === 'checkbox' && !['hold', 'pdfSignAll', 'queueToggle', 'regItems', 'mgrToggle', 'syncAuto', 'lockToggle', 'markPick', 'stOn', 'rpTog', 'rpCol', 'autoSubToggle', 'queuePend', 'credAuto', 'artsSel', 'artsAll', 'artsGrp', 'autoStockTog', 'mgSel', 'mgAll', 'lkOn', 'sdAddNew', 'artsCatOn', 'artsCatSel', 'funToggle'].includes(a)) return;
   const _busy = BUSY[a];
   if (_busy && !(ui.locked && GUARDED.has(a))) { loader(true, _busy); await new Promise(r => setTimeout(r, 40)); }
   try {
@@ -3588,6 +3626,7 @@ document.addEventListener('click', async ev => {
     case 'countLog': ui.drawer = false; ui.view = 'countLog'; render(); window.scrollTo(0, 0); break;
     case 'empOpen': case 'empHome': ui.drawer = false; EMP(); ui.view = 'emp'; render(); window.scrollTo(0, 0); break;
     case 'empHow': EMP().how = v; save(true); render(); break;
+    case 'empStockF': EMP().stockF = v === 'pos' ? 'pos' : 'nz'; save(true); render(); toast(v === 'pos' ? 'Only articles above zero.' : 'All articles that are not zero.'); break;
     case 'empPickP': { const E = EMP(), i = E.pick.map(String).indexOf(String(v)); if (i >= 0) E.pick.splice(i, 1); else E.pick.push(isNaN(+v) ? v : +v); save(true); render(); break; }
     case 'empStaff': ui.view = 'empStaff'; render(); window.scrollTo(0, 0); break;
     case 'empAddP': { const F = ui.empNew || {}; if (!String(F.name || '').trim()) { toast('Type the name first.'); break; } EMP().staff.push({ id: nid(), name: F.name.trim(), code: String(F.code || '').trim().toUpperCase(), desig: String(F.desig || '').trim() }); ui.empNew = { name: '', code: '', desig: '' }; save(); render(); toast('Employee added.'); break; }
@@ -3617,6 +3656,7 @@ document.addEventListener('click', async ev => {
       if (blank || noPh) { if (!(await uiConfirm([blank ? blank + ' article' + (blank === 1 ? ' has' : 's have') + ' no count yet (they will show as Not counted)' : '', noPh ? noPh + ' sheet' + (noPh === 1 ? ' has' : 's have') + ' no photo' : ''].filter(Boolean).join(' and ') + '. Make the draft anyway?', 'Make draft'))) break; }
       const c = empMakeDraft(x); ui.countId = c.id; ui.view = 'count'; render(); window.scrollTo(0, 0); toast('Draft ready. Check it like your own count, then save.'); break; }
     case 'empResult': ui.countExportId = v; openExport('empResult'); break;
+    case 'pdfSignAll': { const k = t.dataset.k, on = !!t.checked; if (k === 'sign') S.pdfSign = on; else { S.pdfMgr = on; S.mgr.on = on; } Object.keys(REPORTS).filter(t => REPORTS[t].pdf).forEach(t => { rptPref(t)[k] = on; }); save(true); toast((k === 'sign' ? 'My signature box' : 'Manager signature box') + (on ? ' on' : ' off') + ' for all PDFs.'); break; }
     case 'countOpen': ui.countId = v; ui.view = 'count'; render(); window.scrollTo(0, 0); break;
     case 'countDelOld': { if (!(await uiConfirm('Delete this old random count?', 'Delete', true))) { ui.pendUndo = null; break; } S.counts = S.counts.filter(c => String(c.id) !== String(v)); save(); ui.view = 'countLog'; render(); break; }
     case 'taskLog': ui.drawer = false; ui.view = 'taskLog'; render(); window.scrollTo(0, 0); break;
@@ -3813,6 +3853,8 @@ document.addEventListener('input', ev => {
   if (el.dataset.corr != null) { ui.form.rows[+el.dataset.corr].final = el.value; return; }
   if (el.dataset.cadd) { ui.form[el.dataset.cadd === 'code' ? 'addCode' : 'addQty'] = el.value; return; }
   if (el.dataset.cons) { ui.cons[el.dataset.cons] = el.value; render(); return; }
+  if (el.dataset.pdfall) { S.pdfStore = el.value; S.me.storeName = el.value; Object.keys(REPORTS).filter(t => REPORTS[t].pdf).forEach(t => { rptPref(t).sub = el.value; }); EMP().store = el.value; save(true); return; }
+  if (el.dataset.pdfhead) { const t = el.dataset.pdfhead; rptPref(t).title = el.value; if (t === 'empSheet' || t === 'empResult') { EMP().title = el.value; } save(true); return; }
   if (el.dataset.emp) { const E = EMP(), k = el.dataset.emp; E[k] = el.value; if (k === 'title' || k === 'store') ['empSheet', 'empResult'].forEach(t => { const pp = rptPref(t); pp[k === 'title' ? 'title' : 'sub'] = el.value; }); save(true); if (k === 'per') { clearTimeout(ui.kT); ui.kT = setTimeout(() => { const y = window.scrollY, f = focusKey(el); render(); window.scrollTo(0, y); refocus(f); }, 500); } return; }
   if (el.dataset.empnew) { ui.empNew = ui.empNew || {}; ui.empNew[el.dataset.empnew] = el.value; return; }
   if (el.dataset.ign) { ui.ign.v = el.value; clearTimeout(ui.kT); ui.kT = setTimeout(() => { const b = document.getElementById('ignprev'); if (b) b.innerHTML = ignPreview(); }, 150); return; }
