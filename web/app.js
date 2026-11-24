@@ -90,11 +90,17 @@ function meTag() { return { name: S.me.name || '', emp: S.me.emp || '' }; }
    Tier 1 = today's requests, Tier 2 = everything older (only leftover stock).
    In each tier: first complete as many whole requests as possible, then
    remaining lines (today: smaller first; older: oldest first). No partial lines. */
+let PLC = null;
 function plan() {
+  const t = today(); let dv = 0; try { dv = DATAVER; } catch (e) { return plan2(t); }
+  const key = dv + '|' + t + '|' + S.lines.length + '|' + Object.keys(S.hold || {}).length + '|' + S.stockAt;
+  if (PLC && PLC.key === key) return PLC.res;
+  const res = plan2(t); PLC = { key, res }; return res;
+}
+function plan2(t) {
   const res = {}, avail = {};
-  for (const c in S.stock) avail[c] = S.stock[c].qty;
-  const t = today();
   const waiting = S.lines.filter(l => l.status === 'waiting' && !(l.date > t));
+  waiting.forEach(l => { if (!(l.code in avail) && S.stock[l.code]) avail[l.code] = S.stock[l.code].qty; });
   S.lines.forEach(l => { if (l.status === 'waiting' && l.date > t) res[l.id] = 'later'; });
   [waiting.filter(l => l.date === t), waiting.filter(l => l.date !== t)].forEach((tier, ti) => {
     const byReq = groupBy(tier, l => l.req);
@@ -1447,13 +1453,25 @@ function ruleHit(r, code) { const v = String(r.v || '').trim().toUpperCase(); if
 const posStock = c => (Number((S.stock[c] || {}).qty) || 0) > 0;
 function ruleAll(r) { return Object.keys(S.stock).filter(c => posStock(c) && ruleHit(r, c)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })); }
 function ruleCodes(r) { const ex = new Set(r.ex || []); return ruleAll(r).filter(c => !ex.has(c)); }
-function empIgnored(code) { if (!posStock(code)) return false; return EMP().ignore.some(r => ruleHit(r, code) && !(r.ex || []).includes(code)); }
-function empMine() { return new Set((S.countList || []).map(countKey)); }
+function empIgnoredRaw(code) { if (!posStock(code)) return false; return EMP().ignore.some(r => ruleHit(r, code) && !(r.ex || []).includes(code)); }
+let EMC = null;
+function empCache() {
+  const E = EMP(), key = DATAVER + '|' + S.stockAt + '|' + E.ignore.length + '|' + E.stockF + '|' + (S.countList || []).length;
+  if (EMC && EMC.key === key) return EMC;
+  const mine = new Set((S.countList || []).map(countKey)), ign = new Set(), base = [];
+  Object.keys(S.stock).forEach(c => { if (empIgnoredRaw(c)) ign.add(c); else if (!mine.has(c)) base.push(c); });
+  base.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  const q = c => Number(S.stock[c].qty) || 0, nz = base.filter(c => q(c) !== 0), pos = nz.filter(c => q(c) > 0);
+  EMC = { key, mine, ign, base, nz, pos, el: E.stockF === 'pos' ? pos : nz };
+  return EMC;
+}
+function empIgnored(code) { return empCache().ign.has(code); }
+function empMine() { return empCache().mine; }
 function empStockOk(c) { const q = Number((S.stock[c] || {}).qty) || 0; return EMP().stockF === 'pos' ? q > 0 : q !== 0; }
-function empEligible() { const mine = empMine(); return Object.keys(S.stock).filter(c => empStockOk(c) && !mine.has(c) && !empIgnored(c)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })); }
+function empEligible() { return empCache().el.slice(); }
 function empActive() { return EMP().sessions.filter(x => x.status === 'print' || x.status === 'entry' || x.status === 'draft'); }
 function empReserved() { const r = new Set(); empActive().forEach(x => x.people.forEach(q => q.codes.forEach(c => r.add(c)))); return r; }
-function empStat() { const E = EMP(), el = empEligible(), R = E.round, counted = el.filter(c => R.counted[c]).length;
+function empStat() { const E = EMP(), el = empCache().el, R = E.round, counted = el.filter(c => R.counted[c]).length;
   return { el, total: el.length, counted, left: el.length - counted, missed: el.filter(c => R.missed[c] && !R.counted[c]).length }; }
 function empPick(n) {
   const E = EMP(); let st = empStat();
@@ -1472,12 +1490,12 @@ function vEmp() {
     h += '<div class="card pad col" style="gap:10px;border:2px solid #B9A7FF"><button class="tap col" style="all:unset;display:flex;flex-direction:column;gap:6px;cursor:pointer" data-a="empOpenSess" data-v="' + x.id + '"><div class="row"><b class="ttl">Round ' + x.round + ' · ' + a + ' articles</b>' + pill(EMP_ST[x.status][0], EMP_ST[x.status][1]) + '</div>' + meta(['Printed ' + esc(hrsDT(x.createdAt)), x.people.map(q => esc(q.name.split(' ')[0])).join(', ')]) + '</button>' +
       '<div class="grid2"><button class="btn sm main" data-a="empOpenSess" data-v="' + x.id + '">Continue</button><button class="btn sm danger-t" data-a="empDiscard" data-v="' + x.id + '">Discard this cycle</button></div></div>'; });
   h += stockCard();
-  h += '<button class="btn full" data-a="empSys">Update system stock</button><div class="grid2"><button class="btn" data-a="empLog">Count history</button><button class="btn danger-t" data-a="empFresh">Start a fresh round</button></div>';
+  h += '<button class="btn full" data-a="empSys">Update system stock</button><div class="grid2"><button class="btn" data-a="empLog">Count history</button><button class="btn danger-t" data-a="empFresh">Full reset</button></div>';
   h += '<div class="card pad col" style="gap:10px"><div class="row"><b style="font-size:17px">Round ' + E.round.n + '</b>' + pill('started ' + fmtShort(String(E.round.start).slice(0, 10)), 'c-in') + '</div>' +
     '<div style="height:12px;border-radius:99px;background:#EEEAFB;overflow:hidden"><i style="display:block;height:100%;width:' + (st.total ? Math.round(st.counted / st.total * 100) : 0) + '%;background:linear-gradient(90deg,#B9A7FF,#F6A8EE)"></i></div>' +
     '<div class="grid3"><div class="tile t-ok"><b>' + st.counted + '</b><span>Counted</span></div><div class="tile t-pt"><b>' + st.left + '</b><span>Left in round</span></div><div class="tile t-no"><b>' + st.missed + '</b><span>Missed before</span></div></div>' +
     '<div class="note">' + st.total + ' articles in this round. Missed ones are given first. When all are counted, the next round starts by itself.</div></div>';
-  { const mine = empMine(), base = Object.keys(S.stock).filter(c => !mine.has(c) && !empIgnored(c)), nz = base.filter(c => (Number(S.stock[c].qty) || 0) !== 0).length, pos = base.filter(c => (Number(S.stock[c].qty) || 0) > 0).length, zero = base.length - nz, neg = nz - pos;
+  { const EC = empCache(), base = EC.base, nz = EC.nz.length, pos = EC.pos.length, zero = base.length - nz, neg = nz - pos;
     h += '<div class="card pad col" style="gap:10px"><b>Articles to include</b>' +
       '<button class="stkrow" data-a="empStockF" data-v="nz"><span class="zwck' + (E.stockF !== 'pos' ? ' on' : '') + '">' + (E.stockF !== 'pos' ? '✓' : '') + '</span><span class="sn"><b>All articles · not zero</b><span class="mono">Stock above zero or below zero · ' + zero + ' at zero skipped</span></span>' + pill(String(nz), 'c-gy') + '</button>' +
       '<button class="stkrow" data-a="empStockF" data-v="pos"><span class="zwck' + (E.stockF === 'pos' ? ' on' : '') + '">' + (E.stockF === 'pos' ? '✓' : '') + '</span><span class="sn"><b>Above zero only</b><span class="mono">No zero and no negative · ' + (zero + neg) + ' skipped</span></span>' + pill(String(pos), 'c-gy') + '</button></div>'; }
@@ -1487,7 +1505,7 @@ function vEmp() {
     (E.staff.length ? E.staff.map(x => { const i = sel.indexOf(x), on = i >= 0; return '<button class="stkrow" data-a="empPickP" data-v="' + x.id + '"><span class="zwck' + (on ? ' on' : '') + '">' + (on ? '✓' : '') + '</span><span class="sn"><b>' + esc(x.name) + '</b><span class="mono">' + esc([x.code, x.desig].filter(Boolean).join(' · ')) + '</span></span>' + (on ? pill(String(sizes[i] || 0), 'c-ok') : '') + '</button>'; }).join('') : '<div class="note">No employees yet. Tap Manage to add name, code and designation.</div>') +
     (sel.length ? '<div class="note">' + n + ' articles ÷ ' + sel.length + ' ' + (sel.length === 1 ? 'person' : 'people') + ' = ' + sizes.join(' · ') + '</div>' : '') + '</div>';
   h += '<div class="card pad col" style="gap:8px"><b>Never included</b><div class="stkrow"><span class="sn"><b>My count list</b><span class="mono">High-value · your own count</span></span>' + pill(empMine().size + ' articles', 'c-gy') + '</div>' +
-    '<button class="stkrow" data-a="empIgnore"><span class="sn"><b>Ignore list</b><span class="mono">' + E.ignore.length + ' rule' + (E.ignore.length === 1 ? '' : 's') + ' · tap to manage</span></span>' + pill(Object.keys(S.stock).filter(empIgnored).length + ' articles', 'c-gy') + '</button></div>';
+    '<button class="stkrow" data-a="empIgnore"><span class="sn"><b>Ignore list</b><span class="mono">' + E.ignore.length + ' rule' + (E.ignore.length === 1 ? '' : 's') + ' · tap to manage</span></span>' + pill(empCache().ign.size + ' articles', 'c-gy') + '</button></div>';
   h += '<div class="card pad col" style="gap:8px"><b>Labels on paper</b><label class="f">Title<input type="text" data-emp="title" value="' + esc(E.title) + '"></label><label class="f">Store<input type="text" data-emp="store" value="' + esc(E.store) + '"></label></div>';
   h += '<button class="btn main full" data-a="empMake"' + (sel.length && n ? '' : ' disabled') + '>Make sheets' + (sel.length ? ' · ' + sel.length + ' ' + (sel.length === 1 ? 'person' : 'people') : '') + '</button>';
   const done = EMP().sessions.filter(x => x.status === 'done').slice().reverse().slice(0, 15);
@@ -1507,7 +1525,7 @@ function vEmpIgnore() {
   const E = EMP(), F = ui.ign = ui.ign || { t: 'pre', v: '', off: {} };
   let h = '<header class="top"><div><button class="btn sm ghost" data-a="empHome">‹ Back</button><h1 style="margin-top:10px">Ignore list</h1><div class="sub">Articles here are never given to employees. Only articles with stock above zero in your latest stock report are listed.</div></div></header><main>';
   h += stockCard();
-  const tot = Object.keys(S.stock).filter(empIgnored).length;
+  const tot = empCache().ign.size;
   h += '<div class="grid2"><div class="tile t-pt"><b>' + E.ignore.length + '</b><span>Rules</span></div><div class="tile t-in"><b>' + tot + '</b><span>Articles ignored</span></div></div>';
   h += '<div class="card pad col" style="gap:10px"><b>Add a rule</b><div class="seg">' + Object.entries(EMP_RULE).map(([k, l]) => '<button data-a="eigT" data-v="' + k + '" class="' + (F.t === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>' +
     '<label class="f">' + EMP_RULE[F.t] + '<input type="text" data-ign="v" value="' + esc(F.v) + '" autocomplete="off"></label><div id="ignprev">' + ignPreview() + '</div></div>';
@@ -3086,7 +3104,7 @@ function renumberReq(from, to) {
   return true;
 }
 const UNDO_KEYS = ['emp', 'counts', 'zeroWatch', 'lines', 'entries', 'returns', 'hold', 'corrections', 'audit', 'manReqs', 'paper', 'verifyReports'];
-const UNDOABLE = { empDiscard: 'Cycle discarded', empFresh: 'Fresh round started', empDelP: 'Employee removed', eigDel: 'Rule removed', eigItemDel: 'Removed from rule', empPhotoDel: 'Photo removed', countDelOld: 'Old count deleted', cpRemove: 'Removed from count', cpRemoveAll: 'Removed from count', countClear: 'Count cycle cleared', zwDel: 'Removed from watch', zwBDel: 'Removed from watch', zwAddSave: 'Added to watch', artQty: 'Quantity changed', artHold: 'Hold changed', artDel: 'Article removed', artsBHold: 'Articles put on hold', artsBRel: 'Articles released', artsBDel: 'Articles removed', dropReq: 'Request removed', dropStore: 'Store pending removed',
+const UNDOABLE = { empDiscard: 'Cycle discarded', empFresh: 'Reset done', empDelP: 'Employee removed', eigDel: 'Rule removed', eigItemDel: 'Removed from rule', empPhotoDel: 'Photo removed', countDelOld: 'Old count deleted', cpRemove: 'Removed from count', cpRemoveAll: 'Removed from count', countClear: 'Count cycle cleared', zwDel: 'Removed from watch', zwBDel: 'Removed from watch', zwAddSave: 'Added to watch', artQty: 'Quantity changed', artHold: 'Hold changed', artDel: 'Article removed', artsBHold: 'Articles put on hold', artsBRel: 'Articles released', artsBDel: 'Articles removed', dropReq: 'Request removed', dropStore: 'Store pending removed',
   renumReq: 'Request renumbered', dcRenum: 'Request renumbered', impRenum: 'Request renumbered', impDrop: "App's request removed", corrSave: 'Correction saved', markSave: 'Slip added', dcMerge: 'Items merged', dcKeepFirst: 'Duplicate removed', dcDate: 'Date changed', dcBad: 'Incomplete removed',
   bulkSave: 'Requests edited', lkSave: 'CUIMS serials saved', vfFix: 'Fixed in app', dcRetFmt: 'Returns renumbered', dcRetFix: 'Return renumbered', clAdd: 'Count list changed', clDel: 'Count list changed', retBatchSave: 'Returns saved', stkEdit: 'Stock changed', stkRen: 'Item renamed', stkDel: 'Item deleted', stkAdd: 'Item added', mgDone: 'Requests completed', mgPend: 'Pending cleared', mgDel: 'Deleted', mgDelSlipPend: 'Slips deleted, articles pending again', delEntry: 'Entry deleted', delReturn: 'Return deleted', rsClose: 'Article closed', rsOpen: 'Article made pending', rsAll: 'Request completed', rsAdd: 'Article added', saveReq: 'Request edited', saveEntry: 'Entry saved', uploadOk: 'Import done', btSave: 'Batch saved', nrSave: 'Request added', hold: 'Hold changed' };
 const UNDO_STOCK = new Set(['lkSave', 'vfFix', 'stkEdit', 'markSave', 'delEntry', 'saveEntry', 'uploadOk', 'mgDelSlipPend']);
@@ -3690,9 +3708,9 @@ document.addEventListener('click', async ev => {
     case 'empDiscard': { const x = EMP().sessions.find(k => String(k.id) === String(v)); if (!x) break; const a = x.people.reduce((t, q) => t + q.codes.length, 0);
       if (!(await uiConfirm('Discard this employee cycle? Its ' + a + ' articles go back into the round' + (x.status !== 'print' ? ', and the values typed so far are removed' : '') + '. It stays in Count history as Discarded.', 'Discard', true))) { ui.pendUndo = null; break; }
       empDiscard(x); save(); ui.view = 'emp'; render(); window.scrollTo(0, 0); break; }
-    case 'empFresh': { const E = EMP(), act = empActive(), st = empStat();
-      if (!(await uiConfirm('Start a fresh round? Round ' + E.round.n + ' progress (' + st.counted + ' counted, ' + st.left + ' left) is cleared and all articles can be given out again.' + (act.length ? ' ' + act.length + ' open cycle' + (act.length === 1 ? ' is' : 's are') + ' discarded too.' : '') + ' Saved results are kept.', 'Start fresh', true))) { ui.pendUndo = null; break; }
-      act.forEach(empDiscard); E.round = { n: E.round.n + 1, start: new Date().toISOString(), counted: {}, missed: {} }; save(); render(); toast('Round ' + E.round.n + ' started.'); break; }
+    case 'empFresh': { const E = EMP(), act = empActive(), st = empStat(), dis = E.sessions.filter(x => x.status === 'void').length;
+      if (!(await uiConfirm('Full reset? Back to Round 1 with nothing counted (now Round ' + E.round.n + ': ' + st.counted + ' counted, ' + st.left + ' left).' + (act.length ? ' ' + act.length + ' open cycle' + (act.length === 1 ? ' is' : 's are') + ' discarded.' : '') + (dis ? ' ' + dis + ' discarded cycle' + (dis === 1 ? ' is' : 's are') + ' removed from history.' : '') + ' Saved results, employees, ignore list and settings are kept.', 'Full reset', true))) { ui.pendUndo = null; break; }
+      act.forEach(empDiscard); E.sessions = E.sessions.filter(x => x.status !== 'void'); E.round = { n: 1, start: new Date().toISOString(), counted: {}, missed: {} }; save(); render(); toast('Reset done. Round 1 started.'); break; }
     case 'empCancel': { const x = empCur(); if (!x) break; if (!(await uiConfirm('Cancel these sheets? Their articles go back into the round.', 'Cancel sheets', true))) break; x.status = 'void'; save(); ui.view = 'emp'; render(); window.scrollTo(0, 0); break; }
     case 'empTab': ui.empTab = +v; render(); window.scrollTo(0, 0); break;
     case 'empDates': { ui.empDates = ui.empDates || {}; ui.empDates[v] = 1; render(); break; }
