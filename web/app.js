@@ -1292,10 +1292,21 @@ function excluded(code) {
   const ex = countExcl(), c = String(code).toUpperCase(), n = String((S.stock[code] || {}).name || '').toUpperCase();
   return ex.prefixes.some(p => p && c.startsWith(p.toUpperCase())) || ex.words.some(w => w && new RegExp('\\b' + w.toUpperCase().replace(/[^A-Z0-9 ]/g, '') + '\\b').test(n));
 }
-function countLocked(c) { return c && c.status === 'done'; }
-function countDraft() { S.counts = S.counts || []; return S.counts.filter(c => c.status === 'open' || c.status === 'draft').sort((a, b) => String(b.startedAt || b.date).localeCompare(String(a.startedAt || a.date)))[0] || null; }
+function countLocked(c) { return c && (c.status === 'done' || c.status === 'old'); }
+function countRetire() {
+  S.counts = S.counts || []; let ch = false;
+  S.counts = S.counts.filter(c => {
+    if ((c.status === 'open' || c.status === 'draft') && c.mode !== 'fixed' && c.mode !== 'emp') {
+      const has = c.items.some(i => (i.physical !== '' && i.physical != null) || (i.variants && i.variants.length));
+      ch = true; if (!has) return false; c.status = 'old';
+    }
+    return true;
+  });
+  if (ch) save(true);
+}
+function countDraft() { countRetire(); return S.counts.filter(c => (c.status === 'open' || c.status === 'draft') && c.mode === 'fixed').sort((a, b) => String(b.startedAt || b.date).localeCompare(String(a.startedAt || a.date)))[0] || null; }
 function todayCount() { return countDraft(); }
-function countSaved() { return (S.counts || []).filter(c => c.status === 'done').sort((a, b) => String(b.doneAt || b.date).localeCompare(String(a.doneAt || a.date))); }
+function countSaved() { return (S.counts || []).filter(c => c.status === 'done' && c.mode !== 'emp').sort((a, b) => String(b.doneAt || b.date).localeCompare(String(a.doneAt || a.date))); }
 function countPick() {
   S.countMode = 'fixed';
   S.countList = (S.countList || []).map(countKey); const L = S.countList.filter(k => S.stock[k]);
@@ -1369,9 +1380,10 @@ function vCount() {
   if (!c) { ui.view = 'countStart'; return vCountStart(); }
   countLive(c);
   const sm = countSummary(c), open = !countLocked(c);
-  let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Daily Count Cycle</h1><div class="sub">' + (open ? 'Draft · started ' + esc(fmtDT(c.startedAt)) + (c.fill === 'recent' ? ' · recent values copied' : c.fill === 'copy' ? ' · copied from a saved count' : ' · blank values') : 'Saved ' + esc(fmtDT(c.doneAt || c.startedAt)) + ' · locked') + ' · ' + c.items.length + ' articles · system stock from ' + (c.stockAt ? fmtDT(c.stockAt) : '–') + '</div></div></header><main>';
+  let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">' + (c.mode === 'emp' ? 'Employee count' : 'Daily Count Cycle') + '</h1><div class="sub">' + (c.mode === 'emp' ? 'Round ' + ((EMP().sessions.find(k => String(k.id) === String(c.emp)) || {}).round || '') + ' · ' : '') + (open ? 'Draft · started ' + esc(fmtDT(c.startedAt)) + (c.fill === 'recent' ? ' · recent values copied' : c.fill === 'copy' ? ' · copied from a saved count' : c.fill === 'emp' ? ' · from employee sheets' : ' · blank values') : 'Saved ' + esc(fmtDT(c.doneAt || c.startedAt)) + ' · locked') + ' · ' + c.items.length + ' articles · system stock from ' + (c.stockAt ? fmtDT(c.stockAt) : '–') + '</div></div></header><main>';
   if (open) { h += stockCard();
     h += '<button class="btn full" data-a="countSys">Update system stock</button><div class="grid2"><button class="btn" data-a="countDraftSave">Save draft</button><button class="btn danger-t" data-a="countClear">Clear this cycle</button></div>'; }
+  else if (c.status === 'old') h += '<div class="banner t-in" style="display:block"><b>Old random count.</b> Made before you switched to your own list. It is read only and never opens as your draft.<div style="margin-top:8px"><button class="btn sm danger-t" data-a="countDelOld" data-v="' + c.id + '">Delete it</button></div></div>';
   else h += '<div class="banner t-ok" style="display:block"><b>Saved and locked.</b> System and counted values are fixed as they were at ' + esc(fmtDT(c.doneAt || c.startedAt)) + '. For a correction, start a new count.</div>';
   h += '<div class="grid3"><div class="tile t-ok"><b>' + sm.m + '</b><span>Match</span></div><div class="tile t-in"><b>' + sm.ex + '</b><span>Excess</span></div><div class="tile t-no"><b>' + sm.sh + '</b><span>Short</span></div></div>';
   h += meta([sm.left ? sm.left + ' still to count' : 'All counted', open ? 'Draft · not saved yet' + (c.draftAt ? ' · draft saved ' + fmtDT(c.draftAt) : '') : 'Saved ' + fmtDT(c.doneAt)]);
@@ -1381,7 +1393,8 @@ function vCount() {
     const d = diffOf(i);
     const tag = d === null ? '' : d === 0 ? pill('Match', 'c-ok') : d > 0 ? pill('Excess +' + num(d), 'c-in') : pill('Short ' + num(d), 'c-no');
     const V = i.variants || [];
-    h += '<div class="line"><div class="row"><b>' + (idx + 1) + '. ' + esc(i.name) + '</b>' + tag + '</div><div class="row" style="align-items:center">' + meta([esc(i.code), 'System ' + num(i.system) + ' ' + esc(i.uom)]) +
+    const eq = c.mode === 'emp' ? ((EMP().sessions.find(k => String(k.id) === String(c.emp)) || { people: [] }).people[i.by || 0] || {}) : null;
+    h += '<div class="line"><div class="row"><b>' + (idx + 1) + '. ' + esc(i.name) + '</b>' + tag + '</div>' + (eq ? '<div class="note">Counted by ' + esc(eq.name || '') + (i.rem ? ' · ' + esc(i.rem) : '') + '</div>' : '') + '<div class="row" style="align-items:center">' + meta([esc(i.code), 'System ' + num(i.system) + ' ' + esc(i.uom)]) +
       (open && !V.length ? '<input type="number" inputmode="decimal" data-cnt="' + idx + '" value="' + esc(i.physical) + '" placeholder="Physical" style="width:120px;text-align:right">' : '<b class="qty">' + (i.physical === '' ? '–' : num(i.physical)) + ' ' + esc(i.uom) + '</b>') + '</div>' + countPendBox(i, idx, open) +
       (V.length && !open ? '<div class="vbox">' + V.map((v, k) => '<div class="vrow"><div class="vhead"><b>Batch ' + (k + 1) + ' · ' + num(v.qty) + ' ' + esc(i.uom) + '</b><span class="note">' + (v.mfd ? 'MFD ' + fmtShort(v.mfd) : '') + (v.exp ? ' · EXP ' + fmtShort(v.exp) : '') + '</span></div></div>').join('') + '</div>' : '') +
       (V.length && open ? '<div class="vbox">' + V.map((v, k) => { const dl = v.exp ? days(v.exp) * -1 : null;
@@ -1391,8 +1404,9 @@ function vCount() {
   });
   h += '</div>';
   if (open) h += '<button class="btn main full" data-a="countDone">Save &amp; generate report</button><div class="note" style="text-align:center">After saving, the system and counted values are locked and cannot be changed.</div>';
-  else h += '<div class="grid2"><button class="btn main" data-a="countExport" data-v="' + c.id + '">Report</button><button class="btn" data-a="countNew" data-v="' + c.id + '">New count from this</button></div>';
-  h += '<div class="grid2">' + (open ? '<button class="btn" data-a="countExport" data-v="' + c.id + '">Preview report</button>' : '<button class="btn" data-a="countStart">Start a new count</button>') + '<button class="btn" data-a="countLog">Count history</button></div>';
+  else if (c.mode === 'emp') h += '<div class="grid2"><button class="btn main" data-a="empResult" data-v="' + c.id + '">Report</button><button class="btn" data-a="empOpen">Employee Cycle Count</button></div>';
+  else if (c.status === 'done') h += '<div class="grid2"><button class="btn main" data-a="countExport" data-v="' + c.id + '">Report</button><button class="btn" data-a="countNew" data-v="' + c.id + '">New count from this</button></div>';
+  if (c.mode !== 'emp') h += '<div class="grid2">' + (open ? '<button class="btn" data-a="countExport" data-v="' + c.id + '">Preview report</button>' : '<button class="btn" data-a="countStart">Start a new count</button>') + '<button class="btn" data-a="countLog">Count history</button></div>';
   return h + '</main>';
 }
 function expDays() { return S.expiryDays || 45; }
@@ -1405,6 +1419,204 @@ function expiryRows() {
   Object.values(latest).forEach(({ c, i }) => i.variants.forEach((v, k) => { if (!v.exp || v.cleared) return; const left = -days(v.exp);
     out.push({ code: i.code, name: i.name, uom: i.uom, qty: v.qty, mfd: v.mfd, exp: v.exp, left, countDate: c.date, cid: c.id, idx: c.items.indexOf(i), k }); }));
   return out.sort((a, b) => a.left - b.left);
+}
+/* ---------------- Employee Cycle Count ---------------- */
+function EMP() {
+  S.emp = S.emp || {}; const E = S.emp;
+  E.staff = E.staff || []; E.ignore = E.ignore || []; E.sessions = E.sessions || []; E.pick = E.pick || [];
+  E.round = E.round || { n: 1, start: new Date().toISOString(), counted: {}, missed: {} };
+  if (E.title == null) E.title = 'JV Daily Cycle Count'; if (E.store == null) E.store = 'Ration Store';
+  if (!E.per) E.per = 80; if (!E.how) E.how = 'n';
+  return E;
+}
+const EMP_RULE = { code: 'Exact code', pre: 'Code starts with', name: 'Name contains' };
+function ruleHit(r, code) { const v = String(r.v || '').trim().toUpperCase(); if (!v) return false; const c = String(code).toUpperCase(), nm = String((S.stock[code] || {}).name || '').toUpperCase();
+  return r.t === 'code' ? c === v : r.t === 'pre' ? c.startsWith(v) : nm.includes(v); }
+function ruleCodes(r) { return Object.keys(S.stock).filter(c => ruleHit(r, c)); }
+function empIgnored(code) { return EMP().ignore.some(r => ruleHit(r, code)); }
+function empMine() { return new Set((S.countList || []).map(countKey)); }
+function empEligible() { const mine = empMine(); return Object.keys(S.stock).filter(c => !mine.has(c) && !empIgnored(c)).sort((a, b) => a.localeCompare(b, undefined, { numeric: true })); }
+function empActive() { return EMP().sessions.filter(x => x.status === 'print' || x.status === 'entry' || x.status === 'draft'); }
+function empReserved() { const r = new Set(); empActive().forEach(x => x.people.forEach(q => q.codes.forEach(c => r.add(c)))); return r; }
+function empStat() { const E = EMP(), el = empEligible(), R = E.round, counted = el.filter(c => R.counted[c]).length;
+  return { el, total: el.length, counted, left: el.length - counted, missed: el.filter(c => R.missed[c] && !R.counted[c]).length }; }
+function empPick(n) {
+  const E = EMP(); let st = empStat();
+  if (st.total && !st.left) { E.round = { n: E.round.n + 1, start: new Date().toISOString(), counted: {}, missed: {} }; st = empStat(); }
+  const R = E.round, res = empReserved(), pool = st.el.filter(c => !R.counted[c] && !res.has(c));
+  return pool.filter(c => R.missed[c]).concat(pool.filter(c => !R.missed[c])).slice(0, Math.max(0, n));
+}
+function empSplitSizes(n, k) { return Array.from({ length: k }, (_, i) => Math.floor(n / k) + (i < n % k ? 1 : 0)); }
+function empSel() { const E = EMP(); return E.pick.map(id => E.staff.find(x => String(x.id) === String(id))).filter(Boolean); }
+function empCur() { return EMP().sessions.find(x => String(x.id) === String(ui.empId)) || null; }
+function empHow() { const E = EMP(), st = empStat(), free = st.el.filter(c => !E.round.counted[c] && !empReserved().has(c)).length; return E.how === 'all' ? free : Math.min(parseInt(E.per, 10) || 0, free || (st.total && !st.left ? st.total : 0)); }
+function vEmp() {
+  const E = EMP(), st = empStat(), sel = empSel(), n = empHow(), sizes = sel.length ? empSplitSizes(n, sel.length) : [], act = empActive();
+  let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Employee Cycle Count</h1><div class="sub">Articles for your staff to count on paper. Your own count list and the ignore list are never included.</div></div></header><main>';
+  act.forEach(x => { const a = x.people.reduce((t, q) => t + q.codes.length, 0);
+    h += '<button class="card pad tap col" style="gap:6px;border:2px solid #B9A7FF" data-a="empOpenSess" data-v="' + x.id + '"><div class="row"><b class="ttl">Round ' + x.round + ' · ' + a + ' articles</b>' + pill(x.status === 'print' ? 'Counting on paper' : x.status === 'entry' ? 'Entering results' : 'Draft to review', 'c-gd') + '</div>' + meta(['Printed ' + esc(hrsDT(x.createdAt)), x.people.map(q => esc(q.name.split(' ')[0])).join(', ')]) + '</button>'; });
+  h += stockCard();
+  h += '<div class="card pad col" style="gap:10px"><div class="row"><b style="font-size:17px">Round ' + E.round.n + '</b>' + pill('started ' + fmtShort(String(E.round.start).slice(0, 10)), 'c-in') + '</div>' +
+    '<div style="height:12px;border-radius:99px;background:#EEEAFB;overflow:hidden"><i style="display:block;height:100%;width:' + (st.total ? Math.round(st.counted / st.total * 100) : 0) + '%;background:linear-gradient(90deg,#B9A7FF,#F6A8EE)"></i></div>' +
+    '<div class="grid3"><div class="tile t-ok"><b>' + st.counted + '</b><span>Counted</span></div><div class="tile t-pt"><b>' + st.left + '</b><span>Left in round</span></div><div class="tile t-no"><b>' + st.missed + '</b><span>Missed before</span></div></div>' +
+    '<div class="note">' + st.total + ' articles in this round. Missed ones are given first. When all are counted, the next round starts by itself.</div></div>';
+  h += '<div class="card pad col" style="gap:10px"><b>How many articles today?</b><div class="seg"><button data-a="empHow" data-v="n" class="' + (E.how !== 'all' ? 'on' : '') + '">Number</button><button data-a="empHow" data-v="all" class="' + (E.how === 'all' ? 'on' : '') + '">All left</button></div>' +
+    (E.how !== 'all' ? '<label class="f">Articles to count<input type="number" inputmode="numeric" data-emp="per" value="' + esc(E.per) + '"></label>' : '') + '<div class="note">' + n + ' articles will be given out.</div></div>';
+  h += '<div class="card pad col" style="gap:8px"><div class="row"><b>Who is counting?</b><button class="btn sm ghost" data-a="empStaff">Manage</button></div>' +
+    (E.staff.length ? E.staff.map(x => { const i = sel.indexOf(x), on = i >= 0; return '<button class="stkrow" data-a="empPickP" data-v="' + x.id + '"><span class="zwck' + (on ? ' on' : '') + '">' + (on ? '✓' : '') + '</span><span class="sn"><b>' + esc(x.name) + '</b><span class="mono">' + esc([x.code, x.desig].filter(Boolean).join(' · ')) + '</span></span>' + (on ? pill(String(sizes[i] || 0), 'c-ok') : '') + '</button>'; }).join('') : '<div class="note">No employees yet. Tap Manage to add name, code and designation.</div>') +
+    (sel.length ? '<div class="note">' + n + ' articles ÷ ' + sel.length + ' ' + (sel.length === 1 ? 'person' : 'people') + ' = ' + sizes.join(' · ') + '</div>' : '') + '</div>';
+  h += '<div class="card pad col" style="gap:8px"><b>Never included</b><div class="stkrow"><span class="sn"><b>My count list</b><span class="mono">High-value · your own count</span></span>' + pill(empMine().size + ' articles', 'c-gy') + '</div>' +
+    '<button class="stkrow" data-a="empIgnore"><span class="sn"><b>Ignore list</b><span class="mono">' + E.ignore.length + ' rule' + (E.ignore.length === 1 ? '' : 's') + ' · tap to manage</span></span>' + pill(Object.keys(S.stock).filter(empIgnored).length + ' articles', 'c-gy') + '</button></div>';
+  h += '<div class="card pad col" style="gap:8px"><b>Labels on paper</b><label class="f">Title<input type="text" data-emp="title" value="' + esc(E.title) + '"></label><label class="f">Store<input type="text" data-emp="store" value="' + esc(E.store) + '"></label></div>';
+  h += '<button class="btn main full" data-a="empMake"' + (sel.length && n ? '' : ' disabled') + '>Make sheets' + (sel.length ? ' · ' + sel.length + ' ' + (sel.length === 1 ? 'person' : 'people') : '') + '</button>';
+  const done = EMP().sessions.filter(x => x.status === 'done').slice().reverse().slice(0, 15);
+  if (done.length) { h += '<div class="shead"><div><h2>Saved employee counts</h2><span>Locked results</span></div></div>';
+    done.forEach(x => { const c = (S.counts || []).find(k => String(k.id) === String(x.countId)); const sm = c ? countSummary(c) : null;
+      h += '<button class="card pad tap col" style="gap:6px" data-a="countOpen" data-v="' + (c ? c.id : '') + '"><div class="row"><b class="ttl">' + esc(c ? hrsDT(c.doneAt) : hrsDT(x.createdAt)) + '</b>' + pill('Round ' + x.round, 'c-ok') + '</div>' + meta([sm ? sm.m + ' match' : '', sm ? sm.ex + ' excess' : '', sm ? sm.sh + ' short' : '', x.people.map(q => esc(q.name.split(' ')[0])).join(', ')]) + '</button>'; }); }
+  return h + '</main>';
+}
+function vEmpStaff() {
+  const E = EMP(), F = ui.empNew = ui.empNew || { name: '', code: '', desig: '' };
+  let h = '<header class="top"><div><button class="btn sm ghost" data-a="empHome">‹ Back</button><h1 style="margin-top:10px">Employees</h1><div class="sub">Name, employee code and designation print on their sheets and in the result.</div></div></header><main>';
+  h += '<div class="card pad col" style="gap:8px"><b>Add an employee</b><label class="f">Name<input type="text" data-empnew="name" value="' + esc(F.name) + '"></label><label class="f">Employee code<input type="text" data-empnew="code" value="' + esc(F.code) + '" class="mono"></label><label class="f">Designation<input type="text" data-empnew="desig" value="' + esc(F.desig) + '" placeholder="e.g. Store Keeper"></label><button class="btn main full" data-a="empAddP">Add</button></div>';
+  h += '<div class="card" style="overflow:hidden">' + (E.staff.length ? E.staff.map(x => '<div class="stkrow"><span class="sn"><b>' + esc(x.name) + '</b><span class="mono">' + esc([x.code, x.desig].filter(Boolean).join(' · ')) + '</span></span><button class="btn sm" data-a="empEditP" data-v="' + x.id + '">Edit</button><button class="btn sm danger-t" data-a="empDelP" data-v="' + x.id + '">Remove</button></div>').join('') : '<div class="pad note">No employees yet.</div>') + '</div>';
+  return h + '</main>';
+}
+function vEmpIgnore() {
+  const E = EMP(), F = ui.ign = ui.ign || { t: 'pre', v: '' };
+  let h = '<header class="top"><div><button class="btn sm ghost" data-a="empHome">‹ Back</button><h1 style="margin-top:10px">Ignore list</h1><div class="sub">Articles here are never given to employees.</div></div></header><main>';
+  h += '<div class="card pad col" style="gap:10px"><b>Add a rule</b><div class="seg">' + Object.entries(EMP_RULE).map(([k, l]) => '<button data-a="ignT" data-v="' + k + '" class="' + (F.t === k ? 'on' : '') + '">' + l + '</button>').join('') + '</div>' +
+    '<label class="f">' + EMP_RULE[F.t] + '<input type="text" data-ign="v" value="' + esc(F.v) + '" autocomplete="off"></label><div id="ignprev">' + ignPreview() + '</div></div>';
+  h += '<div class="card pad col" style="gap:8px"><b>Saved rules · ' + E.ignore.length + '</b>' + (E.ignore.length ? E.ignore.map((r, i) => { const L = ruleCodes(r);
+    return '<div class="stkrow"><span class="sn"><b>' + EMP_RULE[r.t] + ' ' + esc(r.v) + '</b><span class="mono">' + (L.length === 1 ? esc(itemName(L[0])) : L.length + ' articles') + '</span></span><button class="btn sm danger-t" data-a="ignDel" data-v="' + i + '">Remove</button></div>'; }).join('') : '<div class="note">No rules yet.</div>') + '</div>';
+  return h + '</main>';
+}
+function ignPreview() {
+  const F = ui.ign; if (!String(F.v || '').trim()) return '<div class="note">Type to see which articles match.</div>';
+  const L = ruleCodes(F), mine = empMine();
+  return '<div class="note"><b>Preview · ' + L.length + ' article' + (L.length === 1 ? '' : 's') + ' match</b></div>' + L.slice(0, 30).map(c => '<div class="stkrow"><span class="sn"><b>' + esc(itemName(c)) + '</b><span class="mono">' + esc(c) + (mine.has(c) ? ' · already in your count list' : '') + '</span></span></div>').join('') +
+    (L.length > 30 ? '<div class="note">…and ' + (L.length - 30) + ' more</div>' : '') + '<button class="btn main full" data-a="ignSave"' + (L.length ? '' : ' disabled') + '>Save rule · ignore ' + L.length + ' article' + (L.length === 1 ? '' : 's') + '</button>';
+}
+function vEmpSess() {
+  const x = empCur(); if (!x) { ui.view = 'emp'; return vEmp(); }
+  if (x.status === 'entry') return vEmpEntry(x);
+  const tot = x.people.reduce((t, q) => t + q.codes.length, 0);
+  let h = '<header class="top"><div><button class="btn sm ghost" data-a="empHome">‹ Back</button><h1 style="margin-top:10px">Sheets ready</h1><div class="sub">Round ' + x.round + ' · ' + tot + ' articles · printed ' + esc(hrsDT(x.createdAt)) + '</div></div></header><main>';
+  h += '<div class="card" style="overflow:hidden">' + x.people.map(q => '<div class="stkrow"><span class="sn"><b>' + esc(q.name) + '</b><span class="mono">' + esc([q.code, q.desig].filter(Boolean).join(' · ')) + '</span></span>' + pill(q.codes.length + ' articles', 'c-ok') + '</div>').join('') + '</div>';
+  h += '<button class="btn main full" data-a="empPrint">Preview &amp; print sheets (PDF)</button>';
+  h += '<div class="banner t-in" style="display:block"><b>Staff are counting on paper.</b> When the signed sheets come back, continue below. You can close the app; this round waits for you.</div>';
+  h += '<button class="btn main full" data-a="empPhysDone">✓ Physical count done · enter results</button><button class="btn ghost danger-t full" data-a="empCancel">Cancel these sheets</button>';
+  return h + '</main>';
+}
+function vEmpEntry(x) {
+  const pi = Math.min(ui.empTab || 0, x.people.length - 1), q = x.people[pi];
+  let h = '<header class="top"><div><button class="btn sm ghost" data-a="empHome">‹ Back</button><h1 style="margin-top:10px">Enter results</h1><div class="sub">Type the counts from each sheet. The photo stays above for checking.</div></div></header><main>';
+  h += '<div class="seg">' + x.people.map((p, i) => { const f = p.codes.filter(c => p.vals[c] && p.vals[c].cnt !== '' && p.vals[c].cnt != null).length; return '<button data-a="empTab" data-v="' + i + '" class="' + (i === pi ? 'on' : '') + '">' + esc(p.name.split(' ')[0]) + (f === p.codes.length ? ' ✓' : ' ' + f + '/' + p.codes.length) + '</button>'; }).join('') + '</div>';
+  h += '<div class="card pad col" style="gap:8px"><div class="row"><b>Signed sheet photos · ' + q.photos.length + '</b><button class="btn sm" data-a="empPhoto" data-v="' + pi + '">+ Add photo</button></div>' +
+    (q.photos.length ? '<div class="wrap" style="gap:8px">' + q.photos.map((ph, k) => '<span style="position:relative;display:inline-block"><img src="' + esc(paperSrc(ph.id)) + '" data-a="empZoom" data-v="' + esc(ph.id) + '" style="width:96px;height:128px;object-fit:cover;border-radius:12px;border:1px solid #E4E1EC"><button class="xbtn" data-a="empPhotoDel" data-v="' + pi + '|' + k + '" style="position:absolute;top:4px;right:4px;background:#fff">×</button></span>').join('') + '</div>' : '<div class="note">Add a photo of the signed sheet. It is printed at the end of the result PDF.</div>') + '</div>';
+  h += '<div class="card pad col" style="gap:8px"><b>Submitted on the sheet</b><div class="grid2"><label class="f">Date<input type="date" data-empv="' + pi + '|subDate" value="' + esc(q.subDate || '') + '"></label><label class="f">Time (Hrs)<input type="text" inputmode="numeric" maxlength="4" data-empv="' + pi + '|subTime" value="' + esc(q.subTime || '') + '" placeholder="HHMM"></label></div></div>';
+  h += '<div class="card" style="overflow:hidden"><div style="display:grid;grid-template-columns:1fr 78px 96px;gap:6px;padding:10px 14px;background:#2C2E33;color:#fff;font:700 12px Outfit,system-ui"><span>Item</span><span style="text-align:right">Count</span><span>Remarks</span></div>' +
+    q.codes.map(c => { const v = q.vals[c] || {}, op = ui.empDates && ui.empDates[pi + '|' + c];
+      return '<div style="padding:8px 14px;border-bottom:1px solid #F0EEF4' + (v.cnt === '' || v.cnt == null ? '' : '') + '"><div style="display:grid;grid-template-columns:1fr 78px 96px;gap:6px;align-items:center"><span><b style="font-size:14px">' + esc(itemName(c)) + '</b><div class="mono note">' + esc(c) + ' · ' + esc(itemUom(c)) + '</div></span>' +
+        '<input type="number" inputmode="decimal" data-empc="' + pi + '|' + esc(c) + '|cnt" value="' + esc(v.cnt == null ? '' : v.cnt) + '" style="height:42px;text-align:right">' +
+        '<input type="text" data-empc="' + pi + '|' + esc(c) + '|rem" value="' + esc(v.rem || '') + '" placeholder="Remarks" style="height:42px"></div>' +
+        (op ? '<div class="grid2" style="margin-top:6px"><label class="f">Mfg. date<input type="date" data-empc="' + pi + '|' + esc(c) + '|mfd" value="' + esc(v.mfd || '') + '"></label><label class="f">Expiry date<input type="date" data-empc="' + pi + '|' + esc(c) + '|exp" value="' + esc(v.exp || '') + '"></label></div>' :
+          '<button class="btn sm ghost" data-a="empDates" data-v="' + pi + '|' + esc(c) + '" style="margin-top:4px;min-height:30px">' + (v.mfd || v.exp ? 'Mfg ' + (v.mfd ? fmtShort(v.mfd) : '–') + ' · Exp ' + (v.exp ? fmtShort(v.exp) : '–') : '+ Mfg / Expiry') + '</button>') + '</div>'; }).join('') + '</div>';
+  h += '<div class="grid2"><button class="btn" data-a="empNext">' + (pi < x.people.length - 1 ? 'Save · next person' : 'Save') + '</button><button class="btn main" data-a="empMakeDraft">Done · make draft</button></div>';
+  h += '<button class="btn ghost full" data-a="empBackPrint">Back to the printed sheets</button>';
+  return h + '</main>';
+}
+function empMakeDraft(x) {
+  const c = { id: nid(), date: today(), status: 'draft', mode: 'emp', emp: x.id, startedAt: new Date().toISOString(), by: meTag(), stockAt: S.stockAt, fill: 'emp', items: [] };
+  x.people.forEach((q, pi) => q.codes.forEach(code => { const st = S.stock[code] || {}, v = q.vals[code] || {}, cnt = v.cnt == null ? '' : String(v.cnt);
+    const it = { code, name: st.name || itemName(code), uom: st.uom || itemUom(code), system: st.qty || 0, physical: cnt, by: pi, rem: v.rem || '' };
+    if ((v.mfd || v.exp) && cnt !== '') it.variants = [{ qty: cnt, mfd: v.mfd || '', exp: v.exp || '' }];
+    c.items.push(it); }));
+  S.counts.push(c); x.status = 'draft'; x.countId = c.id; save(); return c;
+}
+function empLock(c) {
+  const x = EMP().sessions.find(k => String(k.id) === String(c.emp)); if (!x) return;
+  const R = EMP().round; c.items.forEach(i => { if (i.physical !== '' && i.physical != null) { R.counted[i.code] = 1; delete R.missed[i.code]; } else R.missed[i.code] = 1; });
+  x.people.forEach(q => q.codes.forEach(code => { if (!c.items.some(i => i.code === code)) R.missed[code] = 1; }));
+  x.status = 'done'; x.lockedAt = c.doneAt;
+}
+/* sheets & result PDFs */
+function empRowsPlan(n, A, SIGN, maxH) {
+  for (let P = 1; P < 40; P++) { for (let rh = Math.min(maxH, (P * A - SIGN) / n); rh >= 6.2; rh -= 0.05) { const full = Math.floor(A / rh), last = Math.floor((A - SIGN) / rh);
+    if ((P - 1) * full + last >= n) { const rows = []; let rest = n; for (let k = 0; k < P - 1; k++) { const t = Math.min(full, rest - 1); rows.push(t); rest -= t; } if (rest > 0 && rest <= last) { rows.push(rest); return { rh, rows }; } } } }
+  return { rh: 7, rows: [n] };
+}
+function empSheetDef() {
+  const p = rptPref('empSheet'), x = empCur(), off = (ui.sheet && ui.sheet.rowOff) || {}, all = [];
+  if (x) x.people.forEach((q, pi) => q.codes.forEach(c => all.push({ _k: pi + '|' + c, _p: pi, _lab: itemName(c), _sub: c + ' · ' + q.name, 'Item Code': c, 'Item Name': itemName(c), UOM: itemUom(c), 'Physical Count': '', 'Mfg. Date': '', 'Expiry Date': '', Remarks: '' })));
+  const K = ['Item Code', 'Item Name', 'UOM', 'Physical Count', 'Mfg. Date', 'Expiry Date', 'Remarks'];
+  return { cols: K.map(k => [k, k]), all, rows: all.filter(r => !off[r._k]), x, file: 'Employee-Count-Sheets-' + (x ? isoOf(new Date(x.createdAt)) : '') };
+}
+function empResultDef() {
+  const p = rptPref('empResult'), c = (S.counts || []).find(k => String(k.id) === String(ui.countExportId)), x = c ? EMP().sessions.find(k => String(k.id) === String(c.emp)) : null, off = (ui.sheet && ui.sheet.rowOff) || {}, all = [];
+  if (c) c.items.forEach(i => { const d = diffOf(i), res = d === null ? 'Not counted' : d === 0 ? 'Match' : d > 0 ? 'Excess' : 'Short', v = (i.variants || [])[0] || {};
+    all.push({ _k: (i.by || 0) + '|' + i.code, _p: i.by || 0, _res: res, _lab: i.name, _sub: i.code + ' · ' + res, 'Item code': i.code, Item: i.name, UOM: i.uom, 'System stock': Number(i.system) || 0, Counted: i.physical === '' || i.physical == null ? '–' : Number(i.physical), Difference: d === null ? '' : (d > 0 ? '+' : '') + num(d), Result: res, Remarks: i.rem || '–', 'Mfg. Date': v.mfd ? mdy(v.mfd) : '–', 'Expiry Date': v.exp ? mdy(v.exp) : '–' }); });
+  const K = ['Item code', 'Item', 'UOM', 'System stock', 'Counted', 'Difference', 'Result', 'Remarks', 'Mfg. Date', 'Expiry Date'];
+  return { cols: K.map(k => [k, k]), all, rows: all.filter(r => !off[r._k]), c, x, when: c ? (c.doneAt || new Date().toISOString()) : new Date().toISOString(), draft: !!(c && c.status !== 'done'), file: 'Employee-Count-Result-' + (c ? isoOf(new Date(c.doneAt || Date.now())) : '') };
+}
+function empSheetPdf(p, D) {
+  const x = D.x; if (!x) return; const doc = pdfDoc(p.orient === 'l'); if (!doc) return;
+  const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), GR = [107, 111, 118], fs = p.font === 's' ? 7.8 : p.font === 'b' ? 10 : 8.6;
+  const cols = orderedCols(p, D).filter(c => colOn(p, c[0])), AL = { UOM: 'center', 'Physical Count': 'center', 'Mfg. Date': 'center', 'Expiry Date': 'center' }, CW = { 'Item Code': 24, UOM: 14, 'Physical Count': 27, 'Mfg. Date': 24, 'Expiry Date': 24 };
+  const TOP = 44, HEAD = 8.5, BOT = H - 14, SIGN = 33, A = BOT - TOP - HEAD;
+  let first = true;
+  x.people.forEach((q, pi) => { const R = D.rows.filter(r => r._p === pi); if (!R.length) return; const PL = empRowsPlan(R.length, A, SIGN, 12); let k = 0;
+    PL.rows.forEach((rc, pg) => { if (!first) doc.addPage(); first = false;
+      cleanHead(doc, p.title || EMP().title, '', null, p.sub || EMP().store);
+      doc.setFillColor(246, 246, 247); doc.setDrawColor(214, 214, 219); doc.setLineWidth(0.3); doc.roundedRect(12, 23, W - 24, 16, 2, 2, 'FD');
+      const lab = (xx, t) => { doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(...GR); doc.text(t.toUpperCase(), xx, 28); };
+      const cx = [16, 16 + (W - 24) * 0.27, 16 + (W - 24) * 0.44, 16 + (W - 24) * 0.665];
+      lab(cx[0], 'Counted by'); lab(cx[1], 'Employee ID'); lab(cx[2], 'Printed date & time'); lab(cx[3], 'Submission date & time');
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(10.5); doc.setTextColor(...INK); doc.text(q.name, cx[0], 34.5); doc.text(q.code || '', cx[1], 34.5);
+      doc.setFontSize(9.5); doc.text(hrsDT(x.createdAt), cx[2], 34.5);
+      doc.setFillColor(255, 255, 255); doc.setDrawColor(158, 158, 168); doc.setLineWidth(0.4); const bx = cx[3] - 1, bwid = (W - 12 - 3 - bx);
+      doc.roundedRect(bx, 30.2, bwid * 0.56, 6.6, 1.2, 1.2, 'FD'); doc.roundedRect(bx + bwid * 0.56 + 2, 30.2, bwid * 0.44 - 2, 6.6, 1.2, 1.2, 'FD');
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7); doc.setTextColor(...GR); doc.text('Hrs', W - 12 - 4.4, 34.6, { align: 'right' });
+      const body = R.slice(k, k + rc).map(r => cols.map(c => cellText(r[c[0]], '\n'))); k += rc;
+      const cs = {}; cols.forEach((c, i) => { cs[i] = { halign: AL[c[0]] || 'left' }; if (CW[c[0]]) cs[i].cellWidth = CW[c[0]]; if (c[0] === 'Item Name') cs[i].fontStyle = 'bold'; });
+      doc.autoTable({ startY: TOP, margin: { left: 12, right: 12, bottom: 4 }, head: [cols.map(c => c[1])], body, columnStyles: cs, pageBreak: 'avoid', rowPageBreak: 'avoid',
+        headStyles: { fillColor: [44, 46, 51], textColor: 255, fontStyle: 'bold', fontSize: fs, minCellHeight: HEAD, valign: 'middle' },
+        styles: { fontSize: fs, textColor: INK, lineColor: [204, 204, 211], lineWidth: 0.25, minCellHeight: PL.rh, valign: 'middle', overflow: 'ellipsize', cellPadding: { left: 2, right: 2, top: 0.5, bottom: 0.5 } },
+        didParseCell: d => { if (d.section === 'head') d.cell.styles.halign = AL[cols[d.column.index][0]] || 'left'; } });
+      if (pg === PL.rows.length - 1) { const B = [['Counted by (Sign here)', q.name, [q.code, q.desig].filter(Boolean).join(' · ')]]; if (p.sign) B.push(meBox('Received & Reported by')); if (p.mgr) B.push(mgrBox()); signBoxes(doc, BOT - 28, B, true); }
+    }); });
+  cleanFoot(doc); pdfSave(doc, D.file + '.pdf');
+}
+function imgSize(src) { return new Promise(res => { const im = new Image(); im.onload = () => res([im.naturalWidth, im.naturalHeight]); im.onerror = () => res(null); im.src = src; }); }
+async function empResultPdf(p, D) {
+  const c = D.c, x = D.x; if (!c) return; const doc = pdfDoc(p.orient === 'l'); if (!doc) return;
+  const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), fs = p.font === 's' ? 7.8 : p.font === 'b' ? 10 : 8.6;
+  const C = { Match: [26, 128, 69], Excess: [41, 84, 191], Short: [191, 38, 59], 'Not counted': [107, 111, 118] };
+  const cols = orderedCols(p, D).filter(k => colOn(p, k[0])), AL = { UOM: 'center', 'System stock': 'right', Counted: 'right', Difference: 'right', Result: 'center', 'Mfg. Date': 'center', 'Expiry Date': 'center' };
+  const TOP = 30, HEAD = 8, BOT = H - 12, SIGN = 30, A = BOT - TOP - HEAD, people = x ? x.people : [{ name: '', code: '', desig: '', photos: [] }];
+  let first = true; loader(true, 'Making the PDF');
+  try {
+    people.forEach((q, pi) => { const R = D.rows.filter(r => r._p === pi); if (!R.length) return; const PL = empRowsPlan(R.length, A, SIGN, 11.5); let k = 0;
+      PL.rows.forEach((rc, pg) => { if (!first) doc.addPage(); first = false;
+        cleanHead(doc, (p.title || EMP().title) + (D.draft ? ' (Draft)' : ''), p.sub || EMP().store, D.when);
+        const chunk = R.slice(k, k + rc); k += rc;
+        doc.autoTable({ startY: TOP, margin: { left: 12, right: 12, bottom: 4 }, head: [cols.map(k2 => k2[1])], body: chunk.map(r => cols.map(k2 => cellText(r[k2[0]], '\n'))), pageBreak: 'avoid', rowPageBreak: 'avoid',
+          headStyles: { fillColor: [44, 46, 51], textColor: 255, fontStyle: 'bold', fontSize: fs - 0.4, minCellHeight: HEAD, valign: 'middle' },
+          styles: { fontSize: fs, textColor: INK, lineColor: [214, 214, 219], lineWidth: { bottom: 0.2 }, minCellHeight: PL.rh, valign: 'middle', overflow: 'ellipsize', cellPadding: { left: 1.8, right: 1.8, top: 0.5, bottom: 0.5 } }, alternateRowStyles: { fillColor: [249, 249, 250] },
+          didParseCell: d => { const kk = cols[d.column.index][0]; d.cell.styles.halign = AL[kk] || 'left'; if (d.section !== 'body') return; const res = chunk[d.row.index]._res;
+            if (kk === 'Counted') d.cell.styles.fontStyle = 'bold'; if (kk === 'Difference' || kk === 'Result') { d.cell.styles.fontStyle = 'bold'; d.cell.styles.textColor = C[res] || INK; } } });
+        if (pg === PL.rows.length - 1) { const sub = q.subDate ? 'Submitted ' + mdy(q.subDate) + (q.subTime ? ' · ' + String(q.subTime).padStart(4, '0') + ' Hrs' : '') : '';
+          const B = [['Counted by', q.name, [q.code, q.desig].filter(Boolean).join(' · '), sub]]; if (p.sign) B.push(meBox('Received & Reported by', D.draft ? '' : 'Locked ' + hrsDT(c.doneAt))); if (p.mgr) B.push(mgrBox());
+          signBoxes(doc, BOT - 24, B, false); } }); });
+    const photoFrom = doc.getNumberOfPages() + 1;
+    if (p.photos !== false && x) for (const q of x.people) for (const ph of (q.photos || [])) { const src = paperSrc(ph.id); if (!src) continue; const sz = await imgSize(src); if (!sz) continue;
+      doc.addPage('a4', 'portrait'); const PW = doc.internal.pageSize.getWidth(), PH = doc.internal.pageSize.getHeight();
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(...INK); doc.text('Original signed sheet', 12, 14); doc.setDrawColor(214, 214, 219); doc.setLineWidth(0.4); doc.line(12, 18, PW - 12, 18);
+      const s = Math.min((PW - 24) / sz[0], (PH - 32) / sz[1]); doc.addImage(src, 'JPEG', (PW - sz[0] * s) / 2, 22, sz[0] * s, sz[1] * s); }
+    const n = doc.getNumberOfPages(); for (let i = 1; i <= n; i++) { doc.setPage(i); const PW = doc.internal.pageSize.getWidth(), PH = doc.internal.pageSize.getHeight(); doc.setFont('helvetica', 'normal'); doc.setFontSize(i >= photoFrom ? 9.5 : 7.5); doc.setTextColor(107, 111, 118);
+      if (i >= photoFrom) doc.text('Page ' + i + ' of ' + n, PW - 12, 14, { align: 'right' }); else doc.text('Page ' + i + ' of ' + n, PW - 12, PH - 6.5, { align: 'right' }); }
+    pdfSave(doc, D.file + '.pdf');
+  } finally { loader(false); }
 }
 /* ---------------- Zero-stock watch (order-only articles) ---------------- */
 function zwList() { S.zeroWatch = S.zeroWatch || []; return S.zeroWatch; }
@@ -1557,11 +1769,12 @@ function clResults() {
   return '<div class="card" style="overflow:hidden">' + R.map(([c, v]) => '<div class="line" style="flex-direction:row;align-items:center;gap:10px"><span style="flex:1;min-width:0"><b>' + esc(v.name) + '</b><div class="meta"><span class="mono">' + esc(c) + '</span><i></i><span>' + num(v.qty) + ' ' + esc(v.uom) + '</span></div></span>' + (L.has(c) ? pill('In list', 'c-ok') : '<button class="btn sm main" data-a="clAdd" data-v="' + esc(c) + '">+ Add</button>') + '</div>').join('') + '</div>';
 }
 function vCountLog() {
-  const L = (S.counts || []).filter(c => c.status !== 'void').slice().sort((a, b) => String(b.doneAt || b.startedAt || b.date).localeCompare(String(a.doneAt || a.startedAt || a.date)));
+  countRetire();
+  const L = (S.counts || []).filter(c => c.status !== 'void' && c.mode !== 'emp').slice().sort((a, b) => String(b.doneAt || b.startedAt || b.date).localeCompare(String(a.doneAt || a.startedAt || a.date)));
   let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Count history</h1><div class="sub">Every Daily Count Cycle with its differences.</div></div></header><main>';
   if (!L.length) h += '<div class="card pad note">No counts yet. Open Daily Count Cycle to start one.</div>';
   L.forEach(c => { const sm = countSummary(c);
-    h += '<button class="card pad tap col" style="gap:6px" data-a="countOpen" data-v="' + c.id + '"><div class="row"><b class="ttl">' + (c.status === 'done' ? esc(fmtDT(c.doneAt || c.startedAt)) : fmtLong(c.date)) + '</b>' + (c.status === 'done' ? pill('Saved · locked', 'c-ok') : pill('Draft', 'c-gd')) + '</div>' +
+    h += '<button class="card pad tap col" style="gap:6px" data-a="countOpen" data-v="' + c.id + '"><div class="row"><b class="ttl">' + (c.status === 'done' ? esc(fmtDT(c.doneAt || c.startedAt)) : fmtLong(c.date)) + '</b>' + (c.status === 'done' ? pill('Saved · locked', 'c-ok') : c.status === 'old' ? pill('Old random count', 'c-gy') : pill('Draft', 'c-gd')) + '</div>' +
       meta([sm.m + ' match', sm.ex + ' excess', sm.sh + ' short', sm.left ? sm.left + ' not counted' : '', c.by && c.by.name ? esc(c.by.name) : '']) + '</button>'; });
   if (L.length) h += '<button class="btn" data-a="countExportAll">Download all counts</button>';
   return h + '</main>';
@@ -1587,6 +1800,56 @@ function countDef() {
   const cnt = k => rows.filter(r => r._res === k).length;
   return { cols, rows, all, list, one, when, draft: !!(one && one.status !== 'done'), chips: [['Articles', rows.length], ['Match', cnt('Match')], ['Excess', cnt('Excess')], ['Short', cnt('Short')], ['Not counted', cnt('Not counted')]],
     file: 'Daily-Cycle-Count-' + isoOf(new Date(when)) + '-' + hrs(when).slice(0, 4), sub2: '' };
+}
+function cleanHead(doc, title, sub, when, storeRight) {
+  const W = doc.internal.pageSize.getWidth(), GR = [107, 111, 118];
+  doc.setTextColor(...INK); doc.setFont('helvetica', 'bold'); doc.setFontSize(19); doc.text(title, 12, 15);
+  if (storeRight) { doc.setFontSize(12); doc.text(storeRight, W - 12, 15, { align: 'right' }); doc.setDrawColor(...INK); doc.setLineWidth(0.6); doc.line(12, 19, W - 12, 19); return 19; }
+  if (sub) { doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(...GR); doc.text(sub, 12, 21); }
+  if (when) { doc.setFont('helvetica', 'bold'); doc.setFontSize(12); doc.setTextColor(...INK); doc.text(mdy(when), W - 12, 13, { align: 'right' });
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(10.5); doc.setTextColor(...GR); doc.text(hrs(when), W - 12, 19, { align: 'right' }); }
+  doc.setDrawColor(...INK); doc.setLineWidth(0.6); doc.line(12, 24, W - 12, 24); return 24;
+}
+function cleanTiles(doc, y, chips, colors) {
+  let x = 12; const GR = [107, 111, 118], LN = [214, 214, 219], tw = Math.min(40, (doc.internal.pageSize.getWidth() - 24 - (chips.length - 1) * 4) / chips.length);
+  chips.forEach(([k, v]) => { doc.setDrawColor(...LN); doc.setLineWidth(0.3); doc.roundedRect(x, y, tw, 13, 2, 2, 'S');
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...GR); doc.text(String(k).toUpperCase(), x + 4, y + 4.8);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(...((colors || {})[k] || INK)); doc.text(String(v), x + 4, y + 10.6); x += tw + 4; });
+  return y + 19;
+}
+function cleanFoot(doc) { const n = doc.getNumberOfPages(), W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight();
+  for (let i = 1; i <= n; i++) { doc.setPage(i); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(107, 111, 118); doc.text('Page ' + i + ' of ' + n, W - 12, H - 6.5, { align: 'right' }); } }
+function signBoxes(doc, y, boxes, pen) {
+  const W = doc.internal.pageSize.getWidth(), k = boxes.length; if (!k) return;
+  const bw = k === 1 ? 80 : k === 2 ? Math.min(88, (W - 24 - 6) / 2) : (W - 24 - (k - 1) * 4) / k, hh = pen ? 28 : 22;
+  boxes.forEach((b, i) => { const x = k === 2 && bw < (W - 24 - 6) / 2 ? (i ? W - 12 - bw : 12) : 12 + i * (bw + 4);
+    doc.setDrawColor(232, 229, 223); doc.setFillColor(250, 249, 246); doc.setLineWidth(0.3); doc.roundedRect(x, y, bw, hh, 3, 3, 'FD');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(7.6); doc.setTextColor(138, 106, 31); doc.text(String(b[0]).toUpperCase(), x + 4, y + 6);
+    if (pen) { doc.setDrawColor(180); doc.line(x + 4, y + 17, x + bw - 4, y + 17);
+      doc.setTextColor(...INK); doc.setFontSize(9.5); doc.text(b[1] || ' ', x + 4, y + 22.5);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7.8); doc.setTextColor(107, 111, 118); doc.text(b[2] || ' ', x + 4, y + 26.2); }
+    else { doc.setTextColor(...INK); doc.setFontSize(9.8); doc.text(b[1] || ' ', x + 4, y + 12.5);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7.8); doc.setTextColor(107, 111, 118); doc.text(b[2] || ' ', x + 4, y + 16.6); if (b[3]) doc.text(b[3], x + 4, y + 20.3); } });
+  return y + hh;
+}
+const meBox = (label, when) => [label, S.me.name || '', [S.me.emp, S.me.desig].filter(Boolean).join(' · '), when || ''];
+const mgrBox = when => ['Manager', S.mgr.name || '', [S.mgr.emp, S.mgr.desig].filter(Boolean).join(' · '), when || ''];
+function expiryPdf2(p, D) {
+  const doc = pdfDoc(p.orient === 'l'); if (!doc) return;
+  const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), fs = p.font === 's' ? 7.5 : p.font === 'b' ? 10 : 8.6, now = new Date().toISOString();
+  const SC = { Expired: [191, 38, 59], 'Within 15 days': [179, 107, 0] }, scol = st => SC[st] || [41, 84, 191];
+  cleanHead(doc, p.title || 'Expiry Tracker', p.sub, now);
+  const st = D.rows.map(r => r.Status), win = 'Within ' + expDays() + ' days';
+  let y = cleanTiles(doc, 29, [['Batches', D.rows.length], ['Expired', st.filter(x => x === 'Expired').length], ['Within 15 days', st.filter(x => x === 'Within 15 days').length], [win, st.filter(x => x === win).length]], { Expired: [191, 38, 59], 'Within 15 days': [179, 107, 0], [win]: [41, 84, 191] });
+  const cols = orderedCols(p, D).filter(c => colOn(p, c[0])), AL = { Qty: 'right', UOM: 'center', MFD: 'center', Expiry: 'center', 'Days left': 'right', Status: 'center', 'Counted on': 'center' };
+  doc.autoTable({ startY: y, margin: { left: 12, right: 12, bottom: 16 }, head: [cols.map(c => c[1])], body: D.rows.map(r => cols.map(c => cellText(r[c[0]], '\n'))),
+    headStyles: { fillColor: [44, 46, 51], textColor: 255, fontStyle: 'bold', fontSize: fs, cellPadding: { top: 2.4, bottom: 2.4, left: 1.8, right: 1.8 } },
+    styles: { fontSize: fs, textColor: INK, lineColor: [214, 214, 219], lineWidth: { bottom: 0.2 }, cellPadding: { top: 2.2, bottom: 2.2, left: 1.8, right: 1.8 }, valign: 'middle' }, alternateRowStyles: { fillColor: [249, 249, 250] },
+    didParseCell: d => { const k = cols[d.column.index][0]; d.cell.styles.halign = AL[k] || 'left'; if (d.section !== 'body') return; const r = D.rows[d.row.index];
+      if (k === 'Item' || k === 'Expiry') d.cell.styles.fontStyle = 'bold'; if (k === 'Days left' || k === 'Status') { d.cell.styles.fontStyle = 'bold'; d.cell.styles.textColor = scol(r.Status); } } });
+  const B = []; if (p.sign) B.push(meBox('Prepared & checked by')); if (p.mgr) B.push(mgrBox());
+  if (B.length) { let sy = doc.lastAutoTable.finalY + 10; if (sy + 30 > H - 14) { doc.addPage(); sy = 20; } signBoxes(doc, sy, B, true); }
+  cleanFoot(doc); pdfSave(doc, 'Expiry-Tracker-' + isoOf(new Date()) + '.pdf');
 }
 function countPdf2(p, D) {
   const doc = pdfDoc(p.orient === 'l'); if (!doc) return;
@@ -1628,6 +1891,7 @@ function renderDrawer() {
   const item = (a, label, sub, d, v) => '<button class="ditem" data-a="' + a + '"' + (v ? ' data-v="' + v + '"' : '') + '><span class="dic"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + d + '</svg></span><span><b>' + label + '</b><span>' + sub + '</span></span></button>';
   el.innerHTML = '<div class="dbg" data-a="drawerClose"></div><aside class="dpanel" role="dialog" aria-label="Menu"><div class="dhead"><img src="icon.png" alt=""><div><b>JV Stock Issue</b><span>Built by ' + esc(S.me.builder || S.me.name || 'JV') + '</span></div></div>' +
     '<div class="dsect">Tools</div>' +
+    item('empOpen', 'Employee Cycle Count', 'Staff count on paper · rounds', '<circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.6-3 2.8-4.6 5.5-4.6s4.9 1.6 5.5 4.6"/><path d="M16 6.5h5M16 10h5M17 13.5h4"/>') +
     item('dCount', 'Daily Count Cycle', 'Your count list, physical vs system', '<path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/>') +
     item('zwOpen', 'Zero-stock watch', 'Order-only articles that should be zero', '<circle cx="12" cy="12" r="8"/><path d="M6.5 17.5l11-11"/>') +
     item('expOpen', 'Expiry Tracker', 'Batches expiring within ' + expDays() + ' days', '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6"/>') +
@@ -1661,6 +1925,7 @@ const REPORTS = {
   ret: { name: 'Daily Return Register', pdf: true, landscape: false, dated: 'reg', details: true, sorts: true },
   pending: { name: 'Pending Report', pdf: true, landscape: true, sorts: true },
   requests: { name: 'Requests Register' }, entries: { name: 'Entries Log' }, items: { name: 'Entry Items' },
+  empSheet: { name: 'Employee count sheets', pdf: true, landscape: false }, empResult: { name: 'Employee count result', pdf: true, landscape: false },
   stock: { name: 'Stock Now' }, returns: { name: 'Returns (all)' }, search: { name: 'Search Results' }, counts: { name: 'Daily Cycle Count', pdf: true, landscape: true }, expiry: { name: 'Expiry Tracker', pdf: true, landscape: false }, zwatch: { name: 'Zero-stock Watch', pdf: true, landscape: false }, done: { name: 'Done List', pdf: true, landscape: false }, cons: { name: 'Store-wise Consumption', pdf: true, landscape: false }, verify: { name: 'CUIMS Verification', pdf: true, landscape: false }, verifyItems: { name: 'CUIMS Verification · Articles', pdf: true, landscape: true }, arts: { name: 'Pending Articles', pdf: true, landscape: false }
 };
 function rptPref(type) {
@@ -1669,12 +1934,17 @@ function rptPref(type) {
   const d = { title: R.name, sub: S.me.storeName || '', orient: R.landscape ? 'l' : 'p', font: 'n', details: !!R.details && type === 'ret', sign: true, mgr: S.mgr.on, sort: 'reqdate', cols: {} };
   const p = S.rp[type] = S.rp[type] || {};
   for (const k in d) if (!(k in p)) p[k] = d[k];
+  if (type === 'expiry' && !p.v2) { p.v2 = 1; p.title = 'Expiry Tracker'; if (!p.sub) p.sub = S.me.storeName || 'Ration Store'; }
+  if (type === 'empSheet' && !p.v2) { p.v2 = 1; p.title = EMP().title; p.sub = EMP().store; p.orient = 'p'; p.order = []; p.cols = { UOM: false }; p.sign = true; }
+  if (type === 'empResult' && !p.v2) { p.v2 = 1; p.title = EMP().title; p.sub = EMP().store; p.orient = 'p'; p.order = []; p.cols = { 'Mfg. Date': false, 'Expiry Date': false }; p.sign = true; p.photos = true; }
   if (type === 'counts' && !p.v2) { p.v2 = 1; p.title = 'Daily Cycle Count'; p.sub = ''; p.orient = 'l'; p.order = []; p.cols = { 'Counted by': false }; p.rowF = 'all'; p.tiles = true; }
   return p;
 }
 function sortStores(arr, key, how) { return arr.sort((a, b) => how === 'az' ? String(a[key]).localeCompare(String(b[key])) : byStore(a[key], b[key])); }
 function reportDef(type) {
   if (type === 'counts') return countDef();
+  if (type === 'empSheet') return empSheetDef();
+  if (type === 'empResult') return empResultDef();
   const p = rptPref(type), d = ui.reg.date;
   if (type === 'issue') {
     const list = regEntries(), F = fltGet('reg');
@@ -1726,6 +1996,14 @@ function shExport() {
       '<label class="chk"><input type="checkbox" data-a="rpTog" data-k="sign"' + (p.sign ? ' checked' : '') + '> Signature box (Prepared & checked by)</label>' +
       '<label class="chk"><input type="checkbox" data-a="rpTog" data-k="mgr"' + (p.mgr ? ' checked' : '') + '> Manager signature box</label></div>';
   }
+  if (type === 'empSheet' || type === 'empResult') {
+    const off = ui.sheet.rowOff = ui.sheet.rowOff || {}, ppl = type === 'empSheet' ? (D.x ? D.x.people : []) : (D.x ? D.x.people : [{ name: '' }]);
+    h += '<div class="card pad col" style="gap:10px"><div class="row"><h3>Rows</h3><span class="note">' + D.rows.length + ' of ' + D.all.length + ' articles printed</span></div>' +
+      '<div class="grid2"><button class="btn sm" data-a="rpRowAll" data-v="on">Select all</button><button class="btn sm" data-a="rpRowAll" data-v="off">Clear all</button></div>' +
+      '<div style="max-height:40vh;overflow-y:auto;border:1px solid #EEECF3;border-radius:16px">' + ppl.map((q, pi) => { const R = D.all.filter(r => r._p === pi); if (!R.length) return '';
+        return (q.name ? '<div class="note" style="padding:8px 14px;background:#F1EEFB;font-weight:700;color:#141414">' + esc(q.name) + '</div>' : '') + R.map(r => '<button class="stkrow" data-a="rpRow" data-v="' + esc(r._k) + '"><span class="zwck' + (off[r._k] ? '' : ' on') + '">' + (off[r._k] ? '' : '✓') + '</span><span class="sn"><b>' + esc(r._lab) + '</b><span class="mono">' + esc(r._sub) + '</span></span></button>').join(''); }).join('') + '</div>' +
+      (type === 'empResult' ? '<label class="chk"><input type="checkbox" data-a="rpTog" data-k="photos"' + (p.photos !== false ? ' checked' : '') + '> Add the original signed sheet photos at the end</label>' : '') + '</div>';
+  }
   if (type === 'counts') {
     const off = ui.sheet.rowOff = ui.sheet.rowOff || {}, f = p.rowF || 'all', inF = D.all.filter(r => countFOk(f, r._res));
     h += '<div class="card pad col" style="gap:10px"><div class="row"><h3>Rows</h3><span class="note">' + D.rows.length + ' of ' + D.all.length + ' articles printed</span></div>' +
@@ -1739,7 +2017,11 @@ function shExport() {
       '<button class="xbtn" data-a="rpMove" data-k="' + esc(k) + '" data-d="-1"' + (i ? '' : ' disabled') + ' aria-label="Move up">' + ico('up', 18) + '</button><button class="xbtn" data-a="rpMove" data-k="' + esc(k) + '" data-d="1"' + (i < all.length - 1 ? '' : ' disabled') + ' aria-label="Move down">' + ico('down', 18) + '</button></div>').join('') + '</div>';
   // preview
   const pr = D.rows.slice(0, 8);
-  if (type === 'counts') h += '<div class="sect">Preview</div><div class="card" style="overflow:hidden"><div style="padding:14px 14px 10px;border-bottom:2px solid #141414;display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><span><b style="font-size:19px">' + esc(p.title || 'Daily Cycle Count') + (D.draft ? ' (Draft)' : '') + '</b>' + (p.sub ? '<div class="note">' + esc(p.sub) + '</div>' : '') + '</span><span style="text-align:right"><b>' + esc(mdy(D.when)) + '</b><div class="note">' + esc(hrs(D.when)) + '</div></span></div>' +
+  if (type === 'expiry' || type === 'empSheet' || type === 'empResult') h += '<div class="sect">Preview</div><div class="card" style="overflow:hidden"><div style="padding:14px 14px 10px;border-bottom:2px solid #141414;display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><span><b style="font-size:19px">' + esc(p.title || R.name) + '</b>' + (p.sub && type !== 'empSheet' ? '<div class="note">' + esc(p.sub) + '</div>' : '') + '</span><span style="text-align:right">' + (type === 'empSheet' ? '<b>' + esc(p.sub || '') + '</b>' : '<b>' + esc(mdy(D.when || new Date().toISOString())) + '</b><div class="note">' + esc(hrs(D.when || new Date().toISOString())) + '</div>') + '</span></div>' +
+    '<div class="tblwrap" style="padding:0 0 6px"><table style="font-size:13px"><tr>' + cols.map(c => '<th>' + esc(c[1]) + '</th>').join('') + '</tr>' + (D.rows.slice(0, 8).map(r => '<tr>' + cols.map(c => '<td>' + esc(cellText(r[c[0]], ' ')) + '</td>').join('') + '</tr>').join('') || '<tr><td colspan="' + cols.length + '" class="note">No rows selected.</td></tr>') + '</table></div>' +
+    (D.rows.length > 8 ? '<div class="note" style="padding:0 12px 10px">…and ' + (D.rows.length - 8) + ' more rows</div>' : '') +
+    '<div class="note" style="padding:0 12px 12px">Signature boxes: ' + [type === 'empSheet' ? 'employee (sign here)' : type === 'empResult' ? 'employee' : '', p.sign ? (type === 'expiry' ? 'prepared & checked by you' : 'received & reported by you') : '', p.mgr ? 'manager' : ''].filter(Boolean).join(', ') + '</div></div>';
+  else if (type === 'counts') h += '<div class="sect">Preview</div><div class="card" style="overflow:hidden"><div style="padding:14px 14px 10px;border-bottom:2px solid #141414;display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><span><b style="font-size:19px">' + esc(p.title || 'Daily Cycle Count') + (D.draft ? ' (Draft)' : '') + '</b>' + (p.sub ? '<div class="note">' + esc(p.sub) + '</div>' : '') + '</span><span style="text-align:right"><b>' + esc(mdy(D.when)) + '</b><div class="note">' + esc(hrs(D.when)) + '</div></span></div>' +
     (p.tiles !== false ? '<div class="wrap" style="gap:6px;padding:10px 12px">' + D.chips.map(c => pill(c[0] + ' ' + c[1], 'c-gy')).join('') + '</div>' : '') +
     '<div class="tblwrap" style="padding:0 0 6px"><table style="font-size:13px"><tr>' + cols.map(c => '<th>' + esc(c[1]) + '</th>').join('') + '</tr>' + (D.rows.slice(0, 8).map(r => '<tr>' + cols.map(c => '<td style="white-space:pre-line' + ((c[0] === 'Difference' || c[0] === 'Result') ? ';font-weight:700;color:' + ({ Match: '#1A8045', Excess: '#2954BF', Short: '#BF263B' }[r._res] || '#6B6F76') : '') + '">' + esc(cellText(r[c[0]], '\n')) + '</td>').join('') + '</tr>').join('') || '<tr><td colspan="' + cols.length + '" class="note">No rows selected.</td></tr>') + '</table></div>' +
     (D.rows.length > 8 ? '<div class="note" style="padding:0 12px 10px">…and ' + (D.rows.length - 8) + ' more rows</div>' : '') +
@@ -1758,6 +2040,9 @@ function rpPdf(type) { loader(true, 'Making your PDF'); setTimeout(() => { try {
 function rpPdf2(type) {
   const p = rptPref(type), D = reportDef(type), R = REPORTS[type];
   if (type === 'counts') return countPdf2(p, D);
+  if (type === 'expiry') return expiryPdf2(p, D);
+  if (type === 'empSheet') return empSheetPdf(p, D);
+  if (type === 'empResult') return empResultPdf(p, D);
   const doc = pdfDoc(p.orient === 'l'); if (!doc) return;
   const fs = p.font === 's' ? 7.5 : p.font === 'b' ? 10 : 8.5;
   const cols = orderedCols(p, D).filter(c => colOn(p, c[0]));
@@ -2127,7 +2412,7 @@ window.jvBack = () => {
 function render() {
   const app = document.getElementById('app');
   const y = window.scrollY;
-  app.innerHTML = appBar() + (S.testMode ? '<div class="testbar"><span><b>TEST MODE</b> · your real data is safe and hidden. Cloud backup is paused. Entries submitted on CUIMS are still real.</span><button class="btn sm" data-a="testToggle">Exit</button></div>' : '') + (ui.view === 'linkReview' ? vLinkReview() : ui.view === 'vreport' ? vReport() : ui.view === 'vreports' ? vReportList() : ui.view === 'countList' ? vCountList() : ui.view === 'manage' ? vManage() : ui.view === 'stock' ? vStock() : ui.view === 'cons' ? vCons() : ui.view === 'arts' ? vArts() : ui.view === 'check' ? vCheck() : ui.view === 'done' ? vDone() : ui.view === 'expiry' ? vExpiry() : ui.view === 'zwatch' ? vZeroWatch() : ui.view === 'countStart' ? vCountStart() : ui.view === 'count' ? vCount() : ui.view === 'countLog' ? vCountLog() : ui.view === 'taskLog' ? vTaskLog() : ui.view === 'req' ? vReq() : ({ home: vHome, pend: vPend, reg: vReg, find: vFind, set: vSet })[ui.tab]());
+  app.innerHTML = appBar() + (S.testMode ? '<div class="testbar"><span><b>TEST MODE</b> · your real data is safe and hidden. Cloud backup is paused. Entries submitted on CUIMS are still real.</span><button class="btn sm" data-a="testToggle">Exit</button></div>' : '') + (ui.view === 'linkReview' ? vLinkReview() : ui.view === 'vreport' ? vReport() : ui.view === 'vreports' ? vReportList() : ui.view === 'countList' ? vCountList() : ui.view === 'manage' ? vManage() : ui.view === 'stock' ? vStock() : ui.view === 'cons' ? vCons() : ui.view === 'arts' ? vArts() : ui.view === 'check' ? vCheck() : ui.view === 'done' ? vDone() : ui.view === 'expiry' ? vExpiry() : ui.view === 'zwatch' ? vZeroWatch() : ui.view === 'countStart' ? vCountStart() : ui.view === 'emp' ? vEmp() : ui.view === 'empStaff' ? vEmpStaff() : ui.view === 'empIgnore' ? vEmpIgnore() : ui.view === 'empSess' ? vEmpSess() : ui.view === 'count' ? vCount() : ui.view === 'countLog' ? vCountLog() : ui.view === 'taskLog' ? vTaskLog() : ui.view === 'req' ? vReq() : ({ home: vHome, pend: vPend, reg: vReg, find: vFind, set: vSet })[ui.tab]());
   document.querySelector('#tabs .in').innerHTML = TABS.map(([k, l]) => '<button data-a="tab" data-v="' + k + '" class="' + (ui.tab === k && !ui.view ? 'on' : '') + '" aria-label="' + l + '"><span class="nic">' + ICON[k] + '</span><span class="nl">' + l + '</span></button>').join('');
   renderDrawer();
   paintSync();
@@ -2140,7 +2425,7 @@ function renderSheet() {
   const el = document.getElementById('sheet');
   if (!ui.sheet) { el.innerHTML = ''; return; }
   const k = ui.sheet.kind;
-  const body = k === 'zwAdd' ? shZwAdd() : k === 'link' ? shLink() : k === 'retBatch' ? shRetBatch() : k === 'paperDay' ? shPaperDay() : k === 'manReq' ? shManReq() : k === 'mslips' ? shMslips() : k === 'reqStatus' ? shReqStatus() : k === 'corr' ? shCorr() : k === 'batch' ? shBatch() : k === 'newReq' ? shNewReq() : k === 'export' ? shExport() : k === 'crop' ? shCrop() : k === 'backups' ? shBackups() : k === 'start' ? shStart() : k === 'upload' ? shUpload() : k === 'entry' ? shEntry() : k === 'return' ? shReturn() : k === 'editReq' ? shEditReq() : k === 'bulk' ? shBulk() : k === 'mark' ? shMark() : '';
+  const body = k === 'empZoom' ? '<div class="row"><h2>Signed sheet</h2><button class="btn sm ghost" data-a="closeSheet">Close</button></div><img src="' + esc(ui.sheet.src) + '" style="width:100%;border-radius:14px">' : k === 'zwAdd' ? shZwAdd() : k === 'link' ? shLink() : k === 'retBatch' ? shRetBatch() : k === 'paperDay' ? shPaperDay() : k === 'manReq' ? shManReq() : k === 'mslips' ? shMslips() : k === 'reqStatus' ? shReqStatus() : k === 'corr' ? shCorr() : k === 'batch' ? shBatch() : k === 'newReq' ? shNewReq() : k === 'export' ? shExport() : k === 'crop' ? shCrop() : k === 'backups' ? shBackups() : k === 'start' ? shStart() : k === 'upload' ? shUpload() : k === 'entry' ? shEntry() : k === 'return' ? shReturn() : k === 'editReq' ? shEditReq() : k === 'bulk' ? shBulk() : k === 'mark' ? shMark() : '';
   const sc = el.querySelector('.sheet') ? el.querySelector('.sheet').scrollTop : 0;
   el.innerHTML = '<div class="sheetbg" data-a="bgClose"><div class="sheet" role="dialog" aria-modal="true">' + body + '</div></div>';
   el.querySelector('.sheet').scrollTop = sc;
@@ -2728,8 +3013,8 @@ function renumberReq(from, to) {
   if (ui.lastReq === from) ui.lastReq = to;
   return true;
 }
-const UNDO_KEYS = ['counts', 'zeroWatch', 'lines', 'entries', 'returns', 'hold', 'corrections', 'audit', 'manReqs', 'paper', 'verifyReports'];
-const UNDOABLE = { cpRemove: 'Removed from count', cpRemoveAll: 'Removed from count', countClear: 'Count cycle cleared', zwDel: 'Removed from watch', zwBDel: 'Removed from watch', zwAddSave: 'Added to watch', artQty: 'Quantity changed', artHold: 'Hold changed', artDel: 'Article removed', artsBHold: 'Articles put on hold', artsBRel: 'Articles released', artsBDel: 'Articles removed', dropReq: 'Request removed', dropStore: 'Store pending removed',
+const UNDO_KEYS = ['emp', 'counts', 'zeroWatch', 'lines', 'entries', 'returns', 'hold', 'corrections', 'audit', 'manReqs', 'paper', 'verifyReports'];
+const UNDOABLE = { empDelP: 'Employee removed', ignDel: 'Rule removed', empPhotoDel: 'Photo removed', countDelOld: 'Old count deleted', cpRemove: 'Removed from count', cpRemoveAll: 'Removed from count', countClear: 'Count cycle cleared', zwDel: 'Removed from watch', zwBDel: 'Removed from watch', zwAddSave: 'Added to watch', artQty: 'Quantity changed', artHold: 'Hold changed', artDel: 'Article removed', artsBHold: 'Articles put on hold', artsBRel: 'Articles released', artsBDel: 'Articles removed', dropReq: 'Request removed', dropStore: 'Store pending removed',
   renumReq: 'Request renumbered', dcRenum: 'Request renumbered', impRenum: 'Request renumbered', impDrop: "App's request removed", corrSave: 'Correction saved', markSave: 'Slip added', dcMerge: 'Items merged', dcKeepFirst: 'Duplicate removed', dcDate: 'Date changed', dcBad: 'Incomplete removed',
   bulkSave: 'Requests edited', lkSave: 'CUIMS serials saved', vfFix: 'Fixed in app', dcRetFmt: 'Returns renumbered', dcRetFix: 'Return renumbered', clAdd: 'Count list changed', clDel: 'Count list changed', retBatchSave: 'Returns saved', stkEdit: 'Stock changed', stkRen: 'Item renamed', stkDel: 'Item deleted', stkAdd: 'Item added', mgDone: 'Requests completed', mgPend: 'Pending cleared', mgDel: 'Deleted', mgDelSlipPend: 'Slips deleted, articles pending again', delEntry: 'Entry deleted', delReturn: 'Return deleted', rsClose: 'Article closed', rsOpen: 'Article made pending', rsAll: 'Request completed', rsAdd: 'Article added', saveReq: 'Request edited', saveEntry: 'Entry saved', uploadOk: 'Import done', btSave: 'Batch saved', nrSave: 'Request added', hold: 'Hold changed' };
 const UNDO_STOCK = new Set(['lkSave', 'vfFix', 'stkEdit', 'markSave', 'delEntry', 'saveEntry', 'uploadOk', 'mgDelSlipPend']);
@@ -3301,7 +3586,39 @@ document.addEventListener('click', async ev => {
     case 'drawerClose': ui.drawer = false; renderDrawer(); break;
     case 'dCount': openCountCycle(); break;
     case 'countLog': ui.drawer = false; ui.view = 'countLog'; render(); window.scrollTo(0, 0); break;
+    case 'empOpen': case 'empHome': ui.drawer = false; EMP(); ui.view = 'emp'; render(); window.scrollTo(0, 0); break;
+    case 'empHow': EMP().how = v; save(true); render(); break;
+    case 'empPickP': { const E = EMP(), i = E.pick.map(String).indexOf(String(v)); if (i >= 0) E.pick.splice(i, 1); else E.pick.push(isNaN(+v) ? v : +v); save(true); render(); break; }
+    case 'empStaff': ui.view = 'empStaff'; render(); window.scrollTo(0, 0); break;
+    case 'empAddP': { const F = ui.empNew || {}; if (!String(F.name || '').trim()) { toast('Type the name first.'); break; } EMP().staff.push({ id: nid(), name: F.name.trim(), code: String(F.code || '').trim().toUpperCase(), desig: String(F.desig || '').trim() }); ui.empNew = { name: '', code: '', desig: '' }; save(); render(); toast('Employee added.'); break; }
+    case 'empEditP': { const x = EMP().staff.find(k => String(k.id) === String(v)); if (!x) break; const nm = await uiPrompt('Name', x.name, 'Next'); if (nm === null) break; const cd = await uiPrompt('Employee code', x.code || '', 'Next'); if (cd === null) break; const dg = await uiPrompt('Designation', x.desig || '', 'Save'); if (dg === null) break; x.name = nm.trim() || x.name; x.code = cd.trim().toUpperCase(); x.desig = dg.trim(); save(); render(); break; }
+    case 'empDelP': { const x = EMP().staff.find(k => String(k.id) === String(v)); if (!x) break; if (!(await uiConfirm('Remove ' + x.name + '? Old results keep their name.', 'Remove', true))) { ui.pendUndo = null; break; } const E = EMP(); E.staff = E.staff.filter(k => k !== x); E.pick = E.pick.filter(k => String(k) !== String(v)); save(); render(); break; }
+    case 'empIgnore': ui.view = 'empIgnore'; ui.ign = { t: 'pre', v: '' }; render(); window.scrollTo(0, 0); break;
+    case 'ignT': ui.ign.t = v; render(); break;
+    case 'ignSave': { const F = ui.ign, L = ruleCodes(F); if (!String(F.v || '').trim() || !L.length) break; EMP().ignore.push({ t: F.t, v: String(F.v).trim(), at: new Date().toISOString() }); ui.ign = { t: F.t, v: '' }; save(); render(); toast(L.length + ' article' + (L.length === 1 ? '' : 's') + ' added to the ignore list.'); break; }
+    case 'ignDel': { const E = EMP(), r = E.ignore[+v]; if (!r) break; if (!(await uiConfirm('Remove the rule "' + EMP_RULE[r.t] + ' ' + r.v + '"? Its articles can be given to employees again.', 'Remove', true))) { ui.pendUndo = null; break; } E.ignore.splice(+v, 1); save(); render(); break; }
+    case 'empMake': { const E = EMP(), sel = empSel(), n = empHow(); if (!sel.length || !n) break; const codes = empPick(n); if (!codes.length) { toast('No articles left to give out.'); break; }
+      const sz = empSplitSizes(codes.length, sel.length); let k = 0;
+      const x = { id: nid(), round: E.round.n, createdAt: new Date().toISOString(), status: 'print', by: meTag(), people: sel.map((q, i) => { const cs = codes.slice(k, k + sz[i]); k += sz[i]; return { sid: q.id, name: q.name, code: q.code, desig: q.desig, codes: cs, vals: {}, photos: [], subDate: '', subTime: '' }; }).filter(q => q.codes.length) };
+      E.sessions.push(x); ui.empId = x.id; ui.view = 'empSess'; save(); render(); window.scrollTo(0, 0); break; }
+    case 'empOpenSess': { const x = EMP().sessions.find(k => String(k.id) === String(v)); if (!x) break; ui.empId = x.id; if (x.status === 'draft' && x.countId) { ui.countId = x.countId; ui.view = 'count'; } else { ui.view = 'empSess'; ui.empTab = 0; } render(); window.scrollTo(0, 0); break; }
+    case 'empPrint': ui.sheet = null; openExport('empSheet'); break;
+    case 'empPhysDone': { const x = empCur(); if (!x) break; x.status = 'entry'; ui.empTab = 0; save(); render(); window.scrollTo(0, 0); break; }
+    case 'empBackPrint': { const x = empCur(); if (!x) break; x.status = 'print'; save(); render(); window.scrollTo(0, 0); break; }
+    case 'empCancel': { const x = empCur(); if (!x) break; if (!(await uiConfirm('Cancel these sheets? Their articles go back into the round.', 'Cancel sheets', true))) break; x.status = 'void'; save(); ui.view = 'emp'; render(); window.scrollTo(0, 0); break; }
+    case 'empTab': ui.empTab = +v; render(); window.scrollTo(0, 0); break;
+    case 'empDates': { ui.empDates = ui.empDates || {}; ui.empDates[v] = 1; render(); break; }
+    case 'empNext': { const x = empCur(); if (!x) break; save(); if ((ui.empTab || 0) < x.people.length - 1) { ui.empTab = (ui.empTab || 0) + 1; render(); window.scrollTo(0, 0); } else toast('Saved.'); break; }
+    case 'empPhoto': { ui.empPhotoFor = +v; const pi = document.getElementById('empPhotoIn'); pi.value = ''; pi.click(); break; }
+    case 'empPhotoDel': { const x = empCur(); if (!x) break; const [a1, b1] = v.split('|').map(Number); if (!(await uiConfirm('Remove this photo?', 'Remove', true))) break; x.people[a1].photos.splice(b1, 1); save(); render(); break; }
+    case 'empZoom': { const src = paperSrc(v); if (!src) break; ui.sheet = { kind: 'empZoom', src }; renderSheet(); break; }
+    case 'empMakeDraft': { const x = empCur(); if (!x) break; const blank = x.people.reduce((t, q) => t + q.codes.filter(c => !q.vals[c] || q.vals[c].cnt === '' || q.vals[c].cnt == null).length, 0);
+      const noPh = x.people.filter(q => !q.photos.length).length;
+      if (blank || noPh) { if (!(await uiConfirm([blank ? blank + ' article' + (blank === 1 ? ' has' : 's have') + ' no count yet (they will show as Not counted)' : '', noPh ? noPh + ' sheet' + (noPh === 1 ? ' has' : 's have') + ' no photo' : ''].filter(Boolean).join(' and ') + '. Make the draft anyway?', 'Make draft'))) break; }
+      const c = empMakeDraft(x); ui.countId = c.id; ui.view = 'count'; render(); window.scrollTo(0, 0); toast('Draft ready. Check it like your own count, then save.'); break; }
+    case 'empResult': ui.countExportId = v; openExport('empResult'); break;
     case 'countOpen': ui.countId = v; ui.view = 'count'; render(); window.scrollTo(0, 0); break;
+    case 'countDelOld': { if (!(await uiConfirm('Delete this old random count?', 'Delete', true))) { ui.pendUndo = null; break; } S.counts = S.counts.filter(c => String(c.id) !== String(v)); save(); ui.view = 'countLog'; render(); break; }
     case 'taskLog': ui.drawer = false; ui.view = 'taskLog'; render(); window.scrollTo(0, 0); break;
     case 'dUpload': ui.drawer = false; renderDrawer(); ui.upload = null; ui.sheet = { kind: 'upload' }; renderSheet(); break;
     case 'dBulk': ui.drawer = false; renderDrawer(); document.querySelector('[data-a=bulkEdit]') ? document.querySelector('[data-a=bulkEdit]').click() : (ui.tab = 'home', render()); break;
@@ -3318,6 +3635,7 @@ document.addEventListener('click', async ev => {
       if (!(await uiConfirm((sm.left ? sm.left + ' article' + (sm.left === 1 ? ' is' : 's are') + ' not counted yet. ' : '') + 'Save this count? System stock (' + (c.stockAt ? fmtDT(c.stockAt) : '–') + ') and counted values will be locked and cannot be changed.', 'Save & lock'))) break;
       c.items.forEach(i => { i.system = Number(i.system) || 0; i.physical = i.physical === '' || i.physical == null ? '' : String(i.physical); });
       c.status = 'done'; c.doneAt = new Date().toISOString(); c.savedBy = meTag(); S.taskLog = S.taskLog || {}; S.taskLog[c.date] = S.taskLog[c.date] || {}; S.taskLog[c.date].count = { status: 'done', at: c.doneAt, by: S.me.name || '' };
+      if (c.mode === 'emp') { empLock(c); save(); render(); toast('Employee count saved and locked.'); ui.countExportId = c.id; openExport('empResult'); break; }
       save(); render(); toast('Count saved and locked.'); ui.countExportId = c.id; openExport('counts'); break; }
     case 'countNew': { const c = newCount(v); if (!c) { ui.view = 'countStart'; render(); break; } ui.countId = c.id; ui.view = 'count'; render(); window.scrollTo(0, 0); toast(v === 'blank' ? 'New count started with blank values.' : 'New count started with values copied.'); break; }
     case 'countStart': { const d = countDraft(); if (d) { ui.countId = d.id; ui.view = 'count'; render(); toast('Finish or clear the draft first.'); break; } ui.view = 'countStart'; render(); window.scrollTo(0, 0); break; }
@@ -3327,11 +3645,13 @@ document.addEventListener('click', async ev => {
     case 'cpKeepAll': { const c = curCount(); if (!c || countLocked(c)) break; countPendOpen(c).forEach(x => x.i.pendKeep = true); save(); render(); break; }
     case 'cpRemoveAll': { const c = curCount(); if (!c || countLocked(c)) break; const PO = countPendOpen(c); if (!PO.length) break; if (!(await uiConfirm('Remove ' + PO.length + ' pending article' + (PO.length === 1 ? '' : 's') + ' from this count?', 'Remove', true))) { ui.pendUndo = null; break; } const del = new Set(PO.map(x => x.i)); c.items = c.items.filter(i => !del.has(i)); save(); render(); break; }
     case 'countDraftSave': { const c = curCount(); if (!c || countLocked(c)) break; countLive(c); c.draftAt = new Date().toISOString(); save(); render(); toast('Draft saved.'); break; }
-    case 'countClear': { const c = curCount(); if (!c || countLocked(c)) break; if (!(await uiConfirm('Clear this count cycle? All values entered in this draft will be removed.', 'Clear', true))) { ui.pendUndo = null; break; } S.counts = S.counts.filter(x => x !== c); ui.countId = null; save(); ui.view = 'countStart'; render(); window.scrollTo(0, 0); break; }
+    case 'countClear': { const c = curCount(); if (!c || countLocked(c)) break;
+      if (c.mode === 'emp') { if (!(await uiConfirm('Clear this draft? The values typed from the sheets are kept, so you can fix them and make the draft again.', 'Clear', true))) { ui.pendUndo = null; break; } const x = EMP().sessions.find(k => String(k.id) === String(c.emp)); S.counts = S.counts.filter(k => k !== c); if (x) { x.status = 'entry'; delete x.countId; ui.empId = x.id; } save(); ui.view = 'empSess'; render(); window.scrollTo(0, 0); break; }
+      if (!(await uiConfirm('Clear this count cycle? All values entered in this draft will be removed.', 'Clear', true))) { ui.pendUndo = null; break; } S.counts = S.counts.filter(x => x !== c); ui.countId = null; save(); ui.view = 'countStart'; render(); window.scrollTo(0, 0); break; }
     case 'countExport': ui.countExportId = v; openExport('counts'); break;
     case 'rpRowF': { const p = rptPref('counts'); p.rowF = v; save(true); renderSheet(); break; }
     case 'rpRow': { const o = ui.sheet.rowOff = ui.sheet.rowOff || {}; if (o[v]) delete o[v]; else o[v] = 1; renderSheet(); break; }
-    case 'rpRowAll': { const p = rptPref('counts'), o = ui.sheet.rowOff = ui.sheet.rowOff || {}; countDef().all.filter(r => countFOk(p.rowF || 'all', r._res)).forEach(r => { if (v === 'on') delete o[r._k]; else o[r._k] = 1; }); renderSheet(); break; }
+    case 'rpRowAll': { const ty = ui.sheet.type, p = rptPref(ty), o = ui.sheet.rowOff = ui.sheet.rowOff || {}; reportDef(ty).all.filter(r => ty !== 'counts' || countFOk(p.rowF || 'all', r._res)).forEach(r => { if (v === 'on') delete o[r._k]; else o[r._k] = 1; }); renderSheet(); break; }
     case 'countExportAll': ui.countExportId = null; openExport('counts'); break;
     case 'varAdd': { const c = curCount(); if (!c || countLocked(c)) break; const it = c.items[+v]; it.variants = it.variants || []; if (!it.variants.length && it.physical !== '' && it.physical != null) it.variants.push({ qty: it.physical, mfd: '', exp: '' }); else it.variants.push({ qty: '', mfd: '', exp: '' }); syncPhysical(it); save(); render(); break; }
     case 'varDel': { const c = curCount(); if (!c || countLocked(c)) break; const [a1, k] = v.split('|').map(Number); const it = c.items[a1]; it.variants.splice(k, 1); syncPhysical(it); if (!it.variants.length) it.physical = ''; save(); render(); break; }
@@ -3493,6 +3813,11 @@ document.addEventListener('input', ev => {
   if (el.dataset.corr != null) { ui.form.rows[+el.dataset.corr].final = el.value; return; }
   if (el.dataset.cadd) { ui.form[el.dataset.cadd === 'code' ? 'addCode' : 'addQty'] = el.value; return; }
   if (el.dataset.cons) { ui.cons[el.dataset.cons] = el.value; render(); return; }
+  if (el.dataset.emp) { const E = EMP(), k = el.dataset.emp; E[k] = el.value; if (k === 'title' || k === 'store') ['empSheet', 'empResult'].forEach(t => { const pp = rptPref(t); pp[k === 'title' ? 'title' : 'sub'] = el.value; }); save(true); if (k === 'per') { clearTimeout(ui.kT); ui.kT = setTimeout(() => { const y = window.scrollY, f = focusKey(el); render(); window.scrollTo(0, y); refocus(f); }, 500); } return; }
+  if (el.dataset.empnew) { ui.empNew = ui.empNew || {}; ui.empNew[el.dataset.empnew] = el.value; return; }
+  if (el.dataset.ign) { ui.ign.v = el.value; clearTimeout(ui.kT); ui.kT = setTimeout(() => { const b = document.getElementById('ignprev'); if (b) b.innerHTML = ignPreview(); }, 150); return; }
+  if (el.dataset.empc) { const x = empCur(); if (!x) return; const parts = el.dataset.empc.split('|'), pi = +parts[0], f = parts[parts.length - 1], code = parts.slice(1, -1).join('|'); const q = x.people[pi]; q.vals[code] = q.vals[code] || {}; q.vals[code][f] = el.value; save(true); return; }
+  if (el.dataset.empv) { const x = empCur(); if (!x) return; const [pi, f] = el.dataset.empv.split('|'); x.people[+pi][f] = el.value; save(true); return; }
   if (el.dataset.zw) { ui.zw.q = el.value; clearTimeout(ui.kT); ui.kT = setTimeout(() => { const b = document.getElementById('zwres'); if (b) b.innerHTML = zwResults(); }, 120); return; }
   if (el.dataset.zwadd) { ui.sheet.q = el.value; clearTimeout(ui.kT); ui.kT = setTimeout(() => { const b = document.getElementById('zwaddres'); if (b) b.innerHTML = zwAddResults(); }, 120); return; }
   if (el.dataset.stk) { ui.stk.q = el.value; clearTimeout(ui.kT); ui.kT = setTimeout(() => { const b = document.getElementById('stkres'); if (b) b.innerHTML = stockResults(); }, 120); return; }
@@ -3540,6 +3865,20 @@ document.addEventListener('input', ev => {
 document.addEventListener('change', async ev => {
   const el = ev.target;
   if (ui.locked && (el.dataset.set || el.dataset.storeRcv || el.dataset.storeName)) { render(); askUnlock(); return; }
+  if (el.id === 'empPhotoIn') {
+    const f = el.files[0]; el.value = ''; const x = empCur(), pi = ui.empPhotoFor; if (!f || !x || pi == null || !x.people[pi]) return;
+    loader(true, 'Saving the sheet photo');
+    const img = new Image(), fr = new FileReader();
+    fr.onload = () => { img.onload = () => { try {
+      const M = 2000, k = Math.min(1, M / Math.max(img.width, img.height)); const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+      const url = c.toDataURL('image/jpeg', 0.85), id = 'e' + Date.now() + Math.floor(Math.random() * 1000);
+      let ok = false; if (N && N.paperSave) ok = N.paperSave(id, url.split(',')[1]);
+      if (!ok) { S.paperImg = S.paperImg || {}; S.paperImg[id] = url; }
+      PAPER_MEM[id] = url; x.people[pi].photos.push({ id, at: new Date().toISOString() }); save(); render();
+    } finally { loader(false); } }; img.onerror = () => { loader(false); toast('Could not read this image.'); }; img.src = fr.result; };
+    fr.readAsDataURL(f); return;
+  }
   if (el.id === 'paperIn') {
     const f = el.files[0]; el.value = ''; const req = ui.paperFor; if (!f || !req) return;
     loader(true, 'Saving the paper photo');
