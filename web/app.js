@@ -1228,7 +1228,7 @@ function pdfPending() {
 
 /* ---------------- tasks ---------------- */
 const BUILTIN_TASKS = [
-  ['count', 'Daily Count Cycle', 'Count the articles in your list'],
+  ['count', 'Daily Count Cycle', 'Count your list · any time, many times'],
   ['stock', 'Upload fresh stock', 'CUIMS stock report'],
   ['requests', "Upload today's requests", 'Requests sheet'],
   ['backup', 'Cloud backup', 'Back up to Google Drive']
@@ -1292,40 +1292,79 @@ function excluded(code) {
   const ex = countExcl(), c = String(code).toUpperCase(), n = String((S.stock[code] || {}).name || '').toUpperCase();
   return ex.prefixes.some(p => p && c.startsWith(p.toUpperCase())) || ex.words.some(w => w && new RegExp('\\b' + w.toUpperCase().replace(/[^A-Z0-9 ]/g, '') + '\\b').test(n));
 }
-function todayCount(create) {
-  S.counts = S.counts || []; S.countMode = 'fixed';
-  let c = S.counts.find(x => x.date === today() && x.status !== 'void');
-  if (c && c.status === 'open' && (S.countMode === 'fixed') !== (c.mode === 'fixed') && c.items.every(i => i.physical === '' || i.physical == null)) { S.counts = S.counts.filter(x => x !== c); c = null; create = true; }
-  if (c && c.mode === 'fixed' && c.status === 'open' && c.items.every(i => i.physical === '' || i.physical == null) && c.listSig !== countListSig()) { S.counts = S.counts.filter(x => x !== c); c = null; create = true; }
-  if (!c && create && S.countMode === 'fixed') {
-    S.countList = (S.countList || []).map(countKey); const L = S.countList.filter(k => S.stock[k]);
-    if (!L.length) { ui.clWhy = (S.countList || []).length ? 'none' : 'empty'; return null; }
-    const per = Math.max(0, parseInt(S.countPerDay, 10) || 0); let pick = L;
-    if (per && per < L.length) { const done = S.counts.filter(x => x.mode === 'fixed' && x.date < today()).length; const st = (done * per) % L.length; pick = L.slice(st).concat(L.slice(0, st)).slice(0, per); }
-    c = { id: nid(), date: today(), status: 'open', mode: 'fixed', listSig: countListSig(), startedAt: new Date().toISOString(), by: meTag(), stockAt: S.stockAt,
-      items: pick.map(k => ({ code: k, name: S.stock[k].name, uom: S.stock[k].uom, system: S.stock[k].qty, physical: '' })) };
-    S.counts.push(c); save();
-  }
-  return c;
+function countLocked(c) { return c && c.status === 'done'; }
+function countDraft() { S.counts = S.counts || []; return S.counts.filter(c => c.status === 'open' || c.status === 'draft').sort((a, b) => String(b.startedAt || b.date).localeCompare(String(a.startedAt || a.date)))[0] || null; }
+function todayCount() { return countDraft(); }
+function countSaved() { return (S.counts || []).filter(c => c.status === 'done').sort((a, b) => String(b.doneAt || b.date).localeCompare(String(a.doneAt || a.date))); }
+function countPick() {
+  S.countMode = 'fixed';
+  S.countList = (S.countList || []).map(countKey); const L = S.countList.filter(k => S.stock[k]);
+  if (!L.length) { ui.clWhy = (S.countList || []).length ? 'none' : 'empty'; return null; }
+  const per = Math.max(0, parseInt(S.countPerDay, 10) || 0); let pick = L;
+  if (per && per < L.length) { const done = countSaved().filter(x => x.mode === 'fixed').length; const st = (done * per) % L.length; pick = L.slice(st).concat(L.slice(0, st)).slice(0, per); }
+  return pick;
+}
+function lastCounted(code) {
+  for (const c of countSaved()) { const it = c.items.find(i => i.code === code && i.physical !== '' && i.physical != null); if (it) return it; }
+  return null;
+}
+function newCount(from) {
+  const pick = countPick(); if (!pick) return null;
+  const src = from && from !== 'recent' && from !== 'blank' ? (S.counts || []).find(x => String(x.id) === String(from)) : null;
+  const c = { id: nid(), date: today(), status: 'draft', mode: 'fixed', listSig: countListSig(), startedAt: new Date().toISOString(), by: meTag(), stockAt: S.stockAt, fill: src ? 'copy' : from === 'recent' ? 'recent' : 'blank', from: src ? src.id : null,
+    items: pick.map(k => { const it = { code: k, name: S.stock[k].name, uom: S.stock[k].uom, system: S.stock[k].qty, physical: '' };
+      const o = src ? src.items.find(i => i.code === k) : from === 'recent' ? lastCounted(k) : null;
+      if (o) { it.physical = o.physical == null ? '' : o.physical; if (o.variants && o.variants.length) it.variants = JSON.parse(JSON.stringify(o.variants)); }
+      return it; }) };
+  if (src) src.items.forEach(o => { if (!c.items.some(i => i.code === o.code) && S.stock[o.code]) c.items.push({ code: o.code, name: S.stock[o.code].name, uom: S.stock[o.code].uom, system: S.stock[o.code].qty, physical: o.physical, variants: o.variants ? JSON.parse(JSON.stringify(o.variants)) : undefined }); });
+  S.counts.push(c); save(); return c;
+}
+function countLive(c) {
+  if (!c || countLocked(c)) return;
+  c.items.forEach(i => { const st = S.stock[i.code]; if (st) { i.system = st.qty; i.name = st.name; i.uom = st.uom; } });
+  c.stockAt = S.stockAt;
+}
+function openCountCycle() {
+  ui.drawer = false; ui.clWhy = null;
+  const d = countDraft();
+  if (d) { ui.countId = d.id; ui.view = 'count'; } else ui.view = 'countStart';
+  render(); window.scrollTo(0, 0);
+}
+function vCountStart() {
+  const pick = countPick(), last = countSaved()[0], todayN = countSaved().filter(c => c.date === today());
+  let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Daily Count Cycle</h1><div class="sub">Count your list any time, as many times as you need. System stock is always the latest. A saved count is locked.</div></div></header><main>';
+  h += stockCard();
+  if (!pick) return h + '<div class="banner t-no" style="display:block"><b>Your count list ' + (ui.clWhy === 'empty' ? 'is empty' : 'has no items in the current stock report') + '.</b> Add items to start counting.</div><button class="btn main full" data-a="clOpen">Edit my count list</button></main>';
+  h += '<div class="card pad col" style="gap:12px"><div class="row"><b style="font-size:18px">Start a new count</b><span class="note">' + pick.length + ' articles</span></div>' +
+    '<div class="note">How should the counted values start?</div>' +
+    '<button class="btn main full" data-a="countNew" data-v="recent"' + (last ? '' : ' disabled') + '>Copy recently entered values</button>' +
+    '<div class="note" style="margin-top:-6px">' + (last ? 'Each article gets its last saved count (latest: ' + esc(fmtDT(last.doneAt)) + '). Batches are copied too.' : 'No saved count yet to copy from.') + '</div>' +
+    '<button class="btn full" data-a="countNew" data-v="blank">Blank values</button></div>';
+  h += '<div class="grid2"><button class="btn" data-a="clOpen">Edit my count list</button><button class="btn" data-a="countLog">Count history</button></div>';
+  if (todayN.length) { h += '<div class="shead"><div><h2>Saved today · ' + todayN.length + '</h2><span>Locked counts</span></div></div>';
+    todayN.forEach(c => { const sm = countSummary(c); h += '<button class="card pad tap col" style="gap:6px" data-a="countOpen" data-v="' + c.id + '"><div class="row"><b class="ttl">' + esc(fmtDT(c.doneAt)) + '</b>' + pill('Saved', 'c-ok') + '</div>' + meta([sm.m + ' match', sm.ex + ' excess', sm.sh + ' short', c.items.length + ' articles']) + '</button>'; }); }
+  return h + '</main>';
 }
 function countKey(k) {
   if (S.stock[k]) return k;
   const n = String(k || '').replace(/\s+/g, '').toUpperCase(); if (!n) return k;
   return Object.keys(S.stock).find(c => String(c).replace(/\s+/g, '').toUpperCase() === n) || k;
 }
-function countOpenFail() { ui.view = 'countList'; render(); window.scrollTo(0, 0); }
+function countOpenFail() { openCountCycle(); }
 function countListSig() { return (S.countList || []).join('|') + '#' + (S.countPerDay || 0); }
 function diffOf(i) { if (i.physical === '' || i.physical == null || isNaN(parseFloat(i.physical))) return null; return Math.round((parseFloat(i.physical) - i.system) * 1000) / 1000; }
 function countSummary(c) { let m = 0, ex = 0, sh = 0, left = 0; c.items.forEach(i => { const d = diffOf(i); if (d === null) left++; else if (d === 0) m++; else if (d > 0) ex++; else sh++; }); return { m, ex, sh, left }; }
 function vCount() {
-  const c = (S.counts || []).find(x => String(x.id) === String(ui.countId)) || todayCount(false);
-  if (!c) { ui.view = null; return vHome(); }
-  const sm = countSummary(c), open = c.status === 'open';
-  let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Daily Count Cycle</h1><div class="sub">' + fmtLong(c.date) + ' · ' + c.items.length + (c.mode === 'fixed' ? ' articles from your list' : ' articles') + ' · system stock from ' + (c.stockAt ? fmtDT(c.stockAt) : '–') + '</div></div></header><main>';
-  { const untouched = c.status === 'open' && c.items.every(i => i.physical === '' || i.physical == null);
-    h += '<div class="card pad col" style="gap:10px"><div class="row"><b>My count list</b><span class="note">' + (S.countList || []).length + ' items' + (parseInt(S.countPerDay, 10) > 0 ? ' · ' + parseInt(S.countPerDay, 10) + ' a day' : '') + '</span></div><button class="btn sm" data-a="clOpen">Edit my count list</button>' + (!untouched && c.listSig !== countListSig() ? '<div class="note">Counting has started, so list changes apply from tomorrow.</div>' : '') + '</div>'; }
+  const c = (S.counts || []).find(x => String(x.id) === String(ui.countId)) || countDraft();
+  if (!c) { ui.view = 'countStart'; return vCountStart(); }
+  countLive(c);
+  const sm = countSummary(c), open = !countLocked(c);
+  let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Daily Count Cycle</h1><div class="sub">' + (open ? 'Draft · started ' + esc(fmtDT(c.startedAt)) + (c.fill === 'recent' ? ' · recent values copied' : c.fill === 'copy' ? ' · copied from a saved count' : ' · blank values') : 'Saved ' + esc(fmtDT(c.doneAt || c.startedAt)) + ' · locked') + ' · ' + c.items.length + ' articles · system stock from ' + (c.stockAt ? fmtDT(c.stockAt) : '–') + '</div></div></header><main>';
+  if (open) { h += stockCard();
+    h += '<button class="btn full" data-a="countSys">Update system stock</button><div class="grid2"><button class="btn" data-a="countDraftSave">Save draft</button><button class="btn danger-t" data-a="countClear">Clear this cycle</button></div>'; }
+  else h += '<div class="banner t-ok" style="display:block"><b>Saved and locked.</b> System and counted values are fixed as they were at ' + esc(fmtDT(c.doneAt || c.startedAt)) + '. For a correction, start a new count.</div>';
   h += '<div class="grid3"><div class="tile t-ok"><b>' + sm.m + '</b><span>Match</span></div><div class="tile t-in"><b>' + sm.ex + '</b><span>Excess</span></div><div class="tile t-no"><b>' + sm.sh + '</b><span>Short</span></div></div>';
-  h += meta([sm.left ? sm.left + ' still to count' : 'All counted', c.status === 'done' ? 'Finished ' + fmtDT(c.doneAt) : 'In progress']);
+  h += meta([sm.left ? sm.left + ' still to count' : 'All counted', open ? 'Draft · not saved yet' + (c.draftAt ? ' · draft saved ' + fmtDT(c.draftAt) : '') : 'Saved ' + fmtDT(c.doneAt)]);
   h += '<div class="card" style="overflow:hidden">';
   c.items.forEach((i, idx) => {
     const d = diffOf(i);
@@ -1333,14 +1372,16 @@ function vCount() {
     const V = i.variants || [];
     h += '<div class="line"><div class="row"><b>' + (idx + 1) + '. ' + esc(i.name) + '</b>' + tag + '</div><div class="row" style="align-items:center">' + meta([esc(i.code), 'System ' + num(i.system) + ' ' + esc(i.uom)]) +
       (open && !V.length ? '<input type="number" inputmode="decimal" data-cnt="' + idx + '" value="' + esc(i.physical) + '" placeholder="Physical" style="width:120px;text-align:right">' : '<b class="qty">' + (i.physical === '' ? '–' : num(i.physical)) + ' ' + esc(i.uom) + '</b>') + '</div>' +
-      (V.length ? '<div class="vbox">' + V.map((v, k) => { const dl = v.exp ? days(v.exp) * -1 : null;
+      (V.length && !open ? '<div class="vbox">' + V.map((v, k) => '<div class="vrow"><div class="vhead"><b>Batch ' + (k + 1) + ' · ' + num(v.qty) + ' ' + esc(i.uom) + '</b><span class="note">' + (v.mfd ? 'MFD ' + fmtShort(v.mfd) : '') + (v.exp ? ' · EXP ' + fmtShort(v.exp) : '') + '</span></div></div>').join('') + '</div>' : '') +
+      (V.length && open ? '<div class="vbox">' + V.map((v, k) => { const dl = v.exp ? days(v.exp) * -1 : null;
         return '<div class="vrow"><div class="vhead"><b>Batch ' + (k + 1) + '</b>' + (v.exp ? pill(dl < 0 ? 'Expired' : dl + ' days left', dl < 0 ? 'c-no' : dl <= 15 ? 'c-no' : dl <= expDays() ? 'c-gd' : 'c-ok') : '') + '<button class="xbtn" data-a="varDel" data-v="' + idx + '|' + k + '" aria-label="Remove batch">' + ico('x', 16) + '</button></div>' +
           '<div class="grid3"><label class="f">Qty<input type="number" inputmode="decimal" data-var="' + idx + '|' + k + '|qty" value="' + esc(v.qty) + '"></label><label class="f">MFD<input type="date" data-var="' + idx + '|' + k + '|mfd" value="' + esc(v.mfd || '') + '"></label><label class="f">Expiry<input type="date" data-var="' + idx + '|' + k + '|exp" value="' + esc(v.exp || '') + '"></label></div></div>'; }).join('') + '<div class="note">Physical count = total of all batches.</div></div>' : '') +
-      '<button class="btn sm ghost" data-a="varAdd" data-v="' + idx + '" style="align-self:flex-start">+ Add batch (MFD / expiry)</button></div>';
+      (open ? '<button class="btn sm ghost" data-a="varAdd" data-v="' + idx + '" style="align-self:flex-start">+ Add batch (MFD / expiry)</button>' : '') + '</div>';
   });
   h += '</div>';
-  if (open) h += '<button class="btn main full" data-a="countDone"' + (sm.left ? ' disabled' : '') + '>' + (sm.left ? 'Count all ' + sm.left + ' remaining to finish' : 'Finish count') + '</button>';
-  h += '<div class="grid2"><button class="btn" data-a="countExport" data-v="' + c.id + '">Download</button><button class="btn" data-a="countLog">Count history</button></div>';
+  if (open) h += '<button class="btn main full" data-a="countDone">Save &amp; generate report</button><div class="note" style="text-align:center">After saving, the system and counted values are locked and cannot be changed.</div>';
+  else h += '<div class="grid2"><button class="btn main" data-a="countExport" data-v="' + c.id + '">Report</button><button class="btn" data-a="countNew" data-v="' + c.id + '">New count from this</button></div>';
+  h += '<div class="grid2">' + (open ? '<button class="btn" data-a="countExport" data-v="' + c.id + '">Preview report</button>' : '<button class="btn" data-a="countStart">Start a new count</button>') + '<button class="btn" data-a="countLog">Count history</button></div>';
   return h + '</main>';
 }
 function expDays() { return S.expiryDays || 45; }
@@ -1505,18 +1546,68 @@ function clResults() {
   return '<div class="card" style="overflow:hidden">' + R.map(([c, v]) => '<div class="line" style="flex-direction:row;align-items:center;gap:10px"><span style="flex:1;min-width:0"><b>' + esc(v.name) + '</b><div class="meta"><span class="mono">' + esc(c) + '</span><i></i><span>' + num(v.qty) + ' ' + esc(v.uom) + '</span></div></span>' + (L.has(c) ? pill('In list', 'c-ok') : '<button class="btn sm main" data-a="clAdd" data-v="' + esc(c) + '">+ Add</button>') + '</div>').join('') + '</div>';
 }
 function vCountLog() {
-  const L = (S.counts || []).slice().sort((a, b) => b.date.localeCompare(a.date));
+  const L = (S.counts || []).filter(c => c.status !== 'void').slice().sort((a, b) => String(b.doneAt || b.startedAt || b.date).localeCompare(String(a.doneAt || a.startedAt || a.date)));
   let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Count history</h1><div class="sub">Every Daily Count Cycle with its differences.</div></div></header><main>';
-  if (!L.length) h += '<div class="card pad note">No counts yet. Start today\'s count from Tasks.</div>';
+  if (!L.length) h += '<div class="card pad note">No counts yet. Open Daily Count Cycle to start one.</div>';
   L.forEach(c => { const sm = countSummary(c);
-    h += '<button class="card pad tap col" style="gap:6px" data-a="countOpen" data-v="' + c.id + '"><div class="row"><b class="ttl">' + fmtLong(c.date) + '</b>' + (c.status === 'done' ? pill('Done', 'c-ok') : c.date < today() ? pill('Not finished', 'c-no') : pill('In progress', 'c-gd')) + '</div>' +
+    h += '<button class="card pad tap col" style="gap:6px" data-a="countOpen" data-v="' + c.id + '"><div class="row"><b class="ttl">' + (c.status === 'done' ? esc(fmtDT(c.doneAt || c.startedAt)) : fmtLong(c.date)) + '</b>' + (c.status === 'done' ? pill('Saved · locked', 'c-ok') : pill('Draft', 'c-gd')) + '</div>' +
       meta([sm.m + ' match', sm.ex + ' excess', sm.sh + ' short', sm.left ? sm.left + ' not counted' : '', c.by && c.by.name ? esc(c.by.name) : '']) + '</button>'; });
   if (L.length) h += '<button class="btn" data-a="countExportAll">Download all counts</button>';
   return h + '</main>';
 }
 function countRows(list) {
-  const rows = []; list.forEach(c => c.items.forEach(i => { const d = diffOf(i); rows.push({ Date: fmtLong(c.date), Code: i.code, Item: i.name, UOM: i.uom, System: i.system, Physical: i.physical === '' ? '' : Number(i.physical), Difference: d === null ? '' : d, Result: d === null ? 'Not counted' : d === 0 ? 'Match' : d > 0 ? 'Excess' : 'Short', Batches: (i.variants || []).map(v => num(v.qty) + (v.mfd ? ' MFD ' + fmtShort(v.mfd) : '') + (v.exp ? ' EXP ' + fmtShort(v.exp) : '')), Status: c.status === 'done' ? 'Done' : 'Open', 'Counted by': (c.by || {}).name || '' }); }));
+  const rows = []; list.forEach(c => c.items.forEach((i, n) => { const d = diffOf(i), res = d === null ? 'Not counted' : d === 0 ? 'Match' : d > 0 ? 'Excess' : 'Short';
+    rows.push({ _k: c.id + '|' + i.code, _res: res, Count: c.status === 'done' ? hrsDT(c.doneAt || c.startedAt) : fmtLong(c.date) + ' (draft)', '#': n + 1, 'Item code': i.code, Item: i.name, UOM: i.uom, 'System stock': Number(i.system) || 0, Counted: i.physical === '' || i.physical == null ? '–' : Number(i.physical), Difference: d === null ? '' : (d > 0 ? '+' : '') + num(d), Result: res,
+      'Batches (Qty · MFD · Expiry)': (i.variants || []).map(v => num(v.qty) + (v.mfd ? ' · MFD ' + mdy(v.mfd) : '') + (v.exp ? ' · EXP ' + mdy(v.exp) : '')), 'Counted by': (c.by || {}).name || '' }); }));
   return rows;
+}
+function mdy(iso) { const d = new Date(String(iso).length <= 10 ? iso + 'T00:00:00' : iso); if (isNaN(d)) return String(iso || ''); return MON3[d.getMonth()] + ' ' + String(d.getDate()).padStart(2, '0') + ', ' + d.getFullYear(); }
+function hrs(iso) { const d = new Date(iso); if (isNaN(d)) return ''; return String(d.getHours()).padStart(2, '0') + String(d.getMinutes()).padStart(2, '0') + ' Hrs'; }
+function hrsDT(iso) { return mdy(iso) + ' · ' + hrs(iso); }
+const CNT_F = [['all', 'All'], ['diff', 'Differences'], ['short', 'Short'], ['excess', 'Excess'], ['match', 'Match'], ['nc', 'Not counted']];
+function countFOk(f, res) { return f === 'all' || (f === 'diff' && (res === 'Short' || res === 'Excess')) || (f === 'short' && res === 'Short') || (f === 'excess' && res === 'Excess') || (f === 'match' && res === 'Match') || (f === 'nc' && res === 'Not counted'); }
+function countDef() {
+  const p = rptPref('counts'), list = (S.counts || []).filter(c => c.status !== 'void' && (!ui.countExportId || String(c.id) === String(ui.countExportId)));
+  const all = countRows(list), off = (ui.sheet && ui.sheet.rowOff) || {};
+  const rows = all.filter(r => countFOk(p.rowF || 'all', r._res) && !off[r._k]);
+  const one = list.length === 1 ? list[0] : null, when = one ? (one.status === 'done' ? one.doneAt || one.startedAt : new Date().toISOString()) : new Date().toISOString();
+  const K = ['#', 'Item code', 'Item', 'UOM', 'System stock', 'Counted', 'Difference', 'Result', 'Batches (Qty · MFD · Expiry)', 'Counted by'];
+  const cols = (one ? K : ['Count'].concat(K)).map(k => [k, k]);
+  const cnt = k => rows.filter(r => r._res === k).length;
+  return { cols, rows, all, list, one, when, draft: !!(one && one.status !== 'done'), chips: [['Articles', rows.length], ['Match', cnt('Match')], ['Excess', cnt('Excess')], ['Short', cnt('Short')], ['Not counted', cnt('Not counted')]],
+    file: 'Daily-Cycle-Count-' + isoOf(new Date(when)) + '-' + hrs(when).slice(0, 4), sub2: '' };
+}
+function countPdf2(p, D) {
+  const doc = pdfDoc(p.orient === 'l'); if (!doc) return;
+  const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), fs = p.font === 's' ? 7.5 : p.font === 'b' ? 10 : 8.5;
+  const GR = [107, 111, 118], LN = [214, 214, 219], C = { Match: [26, 128, 69], Excess: [41, 84, 191], Short: [191, 38, 59], 'Not counted': GR };
+  doc.setTextColor(...INK); doc.setFont('helvetica', 'bold'); doc.setFontSize(20); doc.text((p.title || 'Daily Cycle Count') + (D.draft ? ' (Draft)' : ''), 12, 17);
+  doc.setFontSize(12); doc.text(mdy(D.when), W - 12, 12.5, { align: 'right' });
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(10.5); doc.setTextColor(...GR); doc.text(hrs(D.when), W - 12, 18.5, { align: 'right' });
+  let y = 23;
+  if (p.sub) { doc.setFontSize(10); doc.setTextColor(...GR); doc.text(p.sub, 12, 22.5); y = 26; }
+  doc.setDrawColor(...INK); doc.setLineWidth(0.6); doc.line(12, y, W - 12, y);
+  if (p.tiles !== false) { let x = 12; const ty = y + 5;
+    D.chips.forEach(([k, v]) => { doc.setDrawColor(...LN); doc.setLineWidth(0.3); doc.roundedRect(x, ty, 34, 13, 2, 2, 'S');
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...GR); doc.text(k.toUpperCase(), x + 4, ty + 4.8);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(...(C[k] || INK)); doc.text(String(v), x + 4, ty + 10.6); x += 38; });
+    y = ty + 19; } else y += 6;
+  const cols = orderedCols(p, D).filter(c => colOn(p, c[0]));
+  const body = D.rows.map(r => cols.map(c => cellText(r[c[0]], '\n')));
+  const AL = { '#': 'center', UOM: 'center', 'System stock': 'right', Counted: 'right', Difference: 'right', Result: 'center' };
+  const colStyles = {}; cols.forEach((c, i) => { colStyles[i] = { halign: AL[c[0]] || 'left' }; if (c[0] === '#') colStyles[i].cellWidth = 9; if (c[0] === 'Batches (Qty · MFD · Expiry)') colStyles[i].fontSize = fs - 0.7; });
+  doc.autoTable({ startY: y, margin: { left: 12, right: 12, bottom: 16 }, tableWidth: W - 24, head: [cols.map(c => c[1])], body, columnStyles: colStyles, rowPageBreak: 'avoid',
+    headStyles: { fillColor: [44, 46, 51], textColor: 255, fontStyle: 'bold', fontSize: fs, cellPadding: { top: 2.4, bottom: 2.4, left: 1.8, right: 1.8 }, valign: 'middle' },
+    styles: { fontSize: fs, textColor: INK, lineColor: LN, lineWidth: { bottom: 0.2 }, cellPadding: { top: 1.9, bottom: 1.9, left: 1.8, right: 1.8 }, valign: 'middle' },
+    alternateRowStyles: { fillColor: [249, 249, 250] },
+    didParseCell: d => { if (d.section === 'head') d.cell.styles.halign = AL[cols[d.column.index][0]] || 'left';
+      if (d.section !== 'body') return; const k = cols[d.column.index][0], res = D.rows[d.row.index]._res;
+      if (k === 'Counted') d.cell.styles.fontStyle = 'bold';
+      if (k === 'Difference' || k === 'Result') { d.cell.styles.fontStyle = 'bold'; d.cell.styles.textColor = C[res] || INK; } } });
+  if (p.sign || p.mgr) pdfSign(doc, p.sign, p.mgr);
+  const n = doc.getNumberOfPages();
+  for (let i = 1; i <= n; i++) { doc.setPage(i); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...GR); doc.text('Page ' + i + ' of ' + n, W - 12, H - 6.5, { align: 'right' }); }
+  pdfSave(doc, D.file + '.pdf');
 }
 
 /* ---------------- side drawer ---------------- */
@@ -1559,7 +1650,7 @@ const REPORTS = {
   ret: { name: 'Daily Return Register', pdf: true, landscape: false, dated: 'reg', details: true, sorts: true },
   pending: { name: 'Pending Report', pdf: true, landscape: true, sorts: true },
   requests: { name: 'Requests Register' }, entries: { name: 'Entries Log' }, items: { name: 'Entry Items' },
-  stock: { name: 'Stock Now' }, returns: { name: 'Returns (all)' }, search: { name: 'Search Results' }, counts: { name: 'Daily Count Cycle', pdf: true, landscape: true }, expiry: { name: 'Expiry Tracker', pdf: true, landscape: false }, zwatch: { name: 'Zero-stock Watch', pdf: true, landscape: false }, done: { name: 'Done List', pdf: true, landscape: false }, cons: { name: 'Store-wise Consumption', pdf: true, landscape: false }, verify: { name: 'CUIMS Verification', pdf: true, landscape: false }, verifyItems: { name: 'CUIMS Verification · Articles', pdf: true, landscape: true }, arts: { name: 'Pending Articles', pdf: true, landscape: false }
+  stock: { name: 'Stock Now' }, returns: { name: 'Returns (all)' }, search: { name: 'Search Results' }, counts: { name: 'Daily Cycle Count', pdf: true, landscape: true }, expiry: { name: 'Expiry Tracker', pdf: true, landscape: false }, zwatch: { name: 'Zero-stock Watch', pdf: true, landscape: false }, done: { name: 'Done List', pdf: true, landscape: false }, cons: { name: 'Store-wise Consumption', pdf: true, landscape: false }, verify: { name: 'CUIMS Verification', pdf: true, landscape: false }, verifyItems: { name: 'CUIMS Verification · Articles', pdf: true, landscape: true }, arts: { name: 'Pending Articles', pdf: true, landscape: false }
 };
 function rptPref(type) {
   S.rp = S.rp || {};
@@ -1567,10 +1658,12 @@ function rptPref(type) {
   const d = { title: R.name, sub: S.me.storeName || '', orient: R.landscape ? 'l' : 'p', font: 'n', details: !!R.details && type === 'ret', sign: true, mgr: S.mgr.on, sort: 'reqdate', cols: {} };
   const p = S.rp[type] = S.rp[type] || {};
   for (const k in d) if (!(k in p)) p[k] = d[k];
+  if (type === 'counts' && !p.v2) { p.v2 = 1; p.title = 'Daily Cycle Count'; p.sub = ''; p.orient = 'l'; p.order = []; p.cols = { 'Counted by': false }; p.rowF = 'all'; p.tiles = true; }
   return p;
 }
 function sortStores(arr, key, how) { return arr.sort((a, b) => how === 'az' ? String(a[key]).localeCompare(String(b[key])) : byStore(a[key], b[key])); }
 function reportDef(type) {
+  if (type === 'counts') return countDef();
   const p = rptPref(type), d = ui.reg.date;
   if (type === 'issue') {
     const list = regEntries(), F = fltGet('reg');
@@ -1622,12 +1715,25 @@ function shExport() {
       '<label class="chk"><input type="checkbox" data-a="rpTog" data-k="sign"' + (p.sign ? ' checked' : '') + '> Signature box (Prepared & checked by)</label>' +
       '<label class="chk"><input type="checkbox" data-a="rpTog" data-k="mgr"' + (p.mgr ? ' checked' : '') + '> Manager signature box</label></div>';
   }
+  if (type === 'counts') {
+    const off = ui.sheet.rowOff = ui.sheet.rowOff || {}, f = p.rowF || 'all', inF = D.all.filter(r => countFOk(f, r._res));
+    h += '<div class="card pad col" style="gap:10px"><div class="row"><h3>Rows</h3><span class="note">' + D.rows.length + ' of ' + D.all.length + ' articles printed</span></div>' +
+      '<div class="wrap" style="gap:6px">' + CNT_F.map(([k, l]) => '<button class="btn sm' + (f === k ? ' main' : '') + '" data-a="rpRowF" data-v="' + k + '">' + l + ' · ' + D.all.filter(r => countFOk(k, r._res)).length + '</button>').join('') + '</div>' +
+      '<div class="grid2"><button class="btn sm" data-a="rpRowAll" data-v="on">Select all</button><button class="btn sm" data-a="rpRowAll" data-v="off">Clear all</button></div>' +
+      '<div style="max-height:40vh;overflow-y:auto;border:1px solid #EEECF3;border-radius:16px">' + (inF.length ? inF.map(r => '<button class="stkrow" data-a="rpRow" data-v="' + esc(r._k) + '"><span class="zwck' + (off[r._k] ? '' : ' on') + '">' + (off[r._k] ? '' : '✓') + '</span><span class="sn"><b>' + esc(r.Item) + '</b><span class="mono">' + esc(r['Item code']) + (D.one ? '' : ' · ' + esc(r.Count)) + '</span></span>' + pill(r._res + (r.Difference ? ' ' + r.Difference : ''), r._res === 'Match' ? 'c-ok' : r._res === 'Excess' ? 'c-in' : r._res === 'Short' ? 'c-no' : 'c-gy') + '</button>').join('') : '<div class="pad note">No articles in this filter.</div>') + '</div>' +
+      '<label class="chk"><input type="checkbox" data-a="rpTog" data-k="tiles"' + (p.tiles !== false ? ' checked' : '') + '> Totals boxes (Articles, Match, Excess, Short, Not counted)</label></div>';
+  }
   h += '<div class="card" style="overflow:hidden"><div class="pad row"><h3>Columns and order</h3><span class="note">' + cols.length + ' of ' + D.cols.length + ' printed</span></div>' +
     all.map(([k, l], i) => '<div class="line" style="flex-direction:row;align-items:center;gap:8px;padding:8px 14px"><label class="chk" style="min-height:40px;font-size:14.5px;flex:1"><input type="checkbox" data-a="rpCol" data-k="' + esc(k) + '"' + (colOn(p, k) ? ' checked' : '') + '> ' + esc(l) + '</label>' +
       '<button class="xbtn" data-a="rpMove" data-k="' + esc(k) + '" data-d="-1"' + (i ? '' : ' disabled') + ' aria-label="Move up">' + ico('up', 18) + '</button><button class="xbtn" data-a="rpMove" data-k="' + esc(k) + '" data-d="1"' + (i < all.length - 1 ? '' : ' disabled') + ' aria-label="Move down">' + ico('down', 18) + '</button></div>').join('') + '</div>';
   // preview
   const pr = D.rows.slice(0, 8);
-  h += '<div class="sect">Preview</div><div class="card" style="overflow:hidden"><div style="background:linear-gradient(160deg,#1B2540,#0B1220);color:#fff;padding:12px 14px;border-bottom:2px solid var(--gold)"><b style="font-size:16px">' + esc(p.title) + '</b><div style="font-size:12px;color:#C9CED6">' + esc([p.sub, D.sub2].filter(Boolean).join(' · ')) + '</div></div>' +
+  if (type === 'counts') h += '<div class="sect">Preview</div><div class="card" style="overflow:hidden"><div style="padding:14px 14px 10px;border-bottom:2px solid #141414;display:flex;justify-content:space-between;align-items:flex-start;gap:10px"><span><b style="font-size:19px">' + esc(p.title || 'Daily Cycle Count') + (D.draft ? ' (Draft)' : '') + '</b>' + (p.sub ? '<div class="note">' + esc(p.sub) + '</div>' : '') + '</span><span style="text-align:right"><b>' + esc(mdy(D.when)) + '</b><div class="note">' + esc(hrs(D.when)) + '</div></span></div>' +
+    (p.tiles !== false ? '<div class="wrap" style="gap:6px;padding:10px 12px">' + D.chips.map(c => pill(c[0] + ' ' + c[1], 'c-gy')).join('') + '</div>' : '') +
+    '<div class="tblwrap" style="padding:0 0 6px"><table style="font-size:13px"><tr>' + cols.map(c => '<th>' + esc(c[1]) + '</th>').join('') + '</tr>' + (D.rows.slice(0, 8).map(r => '<tr>' + cols.map(c => '<td style="white-space:pre-line' + ((c[0] === 'Difference' || c[0] === 'Result') ? ';font-weight:700;color:' + ({ Match: '#1A8045', Excess: '#2954BF', Short: '#BF263B' }[r._res] || '#6B6F76') : '') + '">' + esc(cellText(r[c[0]], '\n')) + '</td>').join('') + '</tr>').join('') || '<tr><td colspan="' + cols.length + '" class="note">No rows selected.</td></tr>') + '</table></div>' +
+    (D.rows.length > 8 ? '<div class="note" style="padding:0 12px 10px">…and ' + (D.rows.length - 8) + ' more rows</div>' : '') +
+    ((p.sign || p.mgr) ? '<div class="note" style="padding:0 12px 12px">+ ' + [p.sign ? 'your signature box' : '', p.mgr ? 'manager signature box' : ''].filter(Boolean).join(' and ') + '</div>' : '') + '</div>';
+  else h += '<div class="sect">Preview</div><div class="card" style="overflow:hidden"><div style="background:linear-gradient(160deg,#1B2540,#0B1220);color:#fff;padding:12px 14px;border-bottom:2px solid var(--gold)"><b style="font-size:16px">' + esc(p.title) + '</b><div style="font-size:12px;color:#C9CED6">' + esc([p.sub, D.sub2].filter(Boolean).join(' · ')) + '</div></div>' +
     '<div class="wrap" style="gap:6px;padding:10px 12px">' + D.chips.map(c => pill(c[0] + ' ' + c[1], 'c-gd')).join('') + '</div>' +
     '<div class="tblwrap" style="padding:0 0 6px"><table style="font-size:' + (p.font === 's' ? 12 : p.font === 'b' ? 15 : 13.5) + 'px"><tr>' + cols.map(c => '<th>' + esc(c[1]) + '</th>').join('') + '</tr>' +
     (pr.length ? pr.map(r => '<tr>' + cols.map(c => '<td style="white-space:pre-line">' + esc(cellText(r[c[0]], '\n')) + '</td>').join('') + '</tr>').join('') : '<tr><td colspan="' + cols.length + '" class="note">No data for this selection.</td></tr>') + '</table></div>' +
@@ -1640,6 +1746,7 @@ function shExport() {
 function rpPdf(type) { loader(true, 'Making your PDF'); setTimeout(() => { try { rpPdf2(type); } finally { loader(false); } }, 60); }
 function rpPdf2(type) {
   const p = rptPref(type), D = reportDef(type), R = REPORTS[type];
+  if (type === 'counts') return countPdf2(p, D);
   const doc = pdfDoc(p.orient === 'l'); if (!doc) return;
   const fs = p.font === 's' ? 7.5 : p.font === 'b' ? 10 : 8.5;
   const cols = orderedCols(p, D).filter(c => colOn(p, c[0]));
@@ -2009,7 +2116,7 @@ window.jvBack = () => {
 function render() {
   const app = document.getElementById('app');
   const y = window.scrollY;
-  app.innerHTML = appBar() + (S.testMode ? '<div class="testbar"><span><b>TEST MODE</b> · your real data is safe and hidden. Cloud backup is paused. Entries submitted on CUIMS are still real.</span><button class="btn sm" data-a="testToggle">Exit</button></div>' : '') + (ui.view === 'linkReview' ? vLinkReview() : ui.view === 'vreport' ? vReport() : ui.view === 'vreports' ? vReportList() : ui.view === 'countList' ? vCountList() : ui.view === 'manage' ? vManage() : ui.view === 'stock' ? vStock() : ui.view === 'cons' ? vCons() : ui.view === 'arts' ? vArts() : ui.view === 'check' ? vCheck() : ui.view === 'done' ? vDone() : ui.view === 'expiry' ? vExpiry() : ui.view === 'zwatch' ? vZeroWatch() : ui.view === 'count' ? vCount() : ui.view === 'countLog' ? vCountLog() : ui.view === 'taskLog' ? vTaskLog() : ui.view === 'req' ? vReq() : ({ home: vHome, pend: vPend, reg: vReg, find: vFind, set: vSet })[ui.tab]());
+  app.innerHTML = appBar() + (S.testMode ? '<div class="testbar"><span><b>TEST MODE</b> · your real data is safe and hidden. Cloud backup is paused. Entries submitted on CUIMS are still real.</span><button class="btn sm" data-a="testToggle">Exit</button></div>' : '') + (ui.view === 'linkReview' ? vLinkReview() : ui.view === 'vreport' ? vReport() : ui.view === 'vreports' ? vReportList() : ui.view === 'countList' ? vCountList() : ui.view === 'manage' ? vManage() : ui.view === 'stock' ? vStock() : ui.view === 'cons' ? vCons() : ui.view === 'arts' ? vArts() : ui.view === 'check' ? vCheck() : ui.view === 'done' ? vDone() : ui.view === 'expiry' ? vExpiry() : ui.view === 'zwatch' ? vZeroWatch() : ui.view === 'countStart' ? vCountStart() : ui.view === 'count' ? vCount() : ui.view === 'countLog' ? vCountLog() : ui.view === 'taskLog' ? vTaskLog() : ui.view === 'req' ? vReq() : ({ home: vHome, pend: vPend, reg: vReg, find: vFind, set: vSet })[ui.tab]());
   document.querySelector('#tabs .in').innerHTML = TABS.map(([k, l]) => '<button data-a="tab" data-v="' + k + '" class="' + (ui.tab === k && !ui.view ? 'on' : '') + '" aria-label="' + l + '"><span class="nic">' + ICON[k] + '</span><span class="nl">' + l + '</span></button>').join('');
   renderDrawer();
   paintSync();
@@ -2610,8 +2717,8 @@ function renumberReq(from, to) {
   if (ui.lastReq === from) ui.lastReq = to;
   return true;
 }
-const UNDO_KEYS = ['zeroWatch', 'lines', 'entries', 'returns', 'hold', 'corrections', 'audit', 'manReqs', 'paper', 'verifyReports'];
-const UNDOABLE = { zwDel: 'Removed from watch', zwBDel: 'Removed from watch', zwAddSave: 'Added to watch', artQty: 'Quantity changed', artHold: 'Hold changed', artDel: 'Article removed', artsBHold: 'Articles put on hold', artsBRel: 'Articles released', artsBDel: 'Articles removed', dropReq: 'Request removed', dropStore: 'Store pending removed',
+const UNDO_KEYS = ['counts', 'zeroWatch', 'lines', 'entries', 'returns', 'hold', 'corrections', 'audit', 'manReqs', 'paper', 'verifyReports'];
+const UNDOABLE = { countClear: 'Count cycle cleared', zwDel: 'Removed from watch', zwBDel: 'Removed from watch', zwAddSave: 'Added to watch', artQty: 'Quantity changed', artHold: 'Hold changed', artDel: 'Article removed', artsBHold: 'Articles put on hold', artsBRel: 'Articles released', artsBDel: 'Articles removed', dropReq: 'Request removed', dropStore: 'Store pending removed',
   renumReq: 'Request renumbered', dcRenum: 'Request renumbered', impRenum: 'Request renumbered', impDrop: "App's request removed", corrSave: 'Correction saved', markSave: 'Slip added', dcMerge: 'Items merged', dcKeepFirst: 'Duplicate removed', dcDate: 'Date changed', dcBad: 'Incomplete removed',
   bulkSave: 'Requests edited', lkSave: 'CUIMS serials saved', vfFix: 'Fixed in app', dcRetFmt: 'Returns renumbered', dcRetFix: 'Return renumbered', clAdd: 'Count list changed', clDel: 'Count list changed', retBatchSave: 'Returns saved', stkEdit: 'Stock changed', stkRen: 'Item renamed', stkDel: 'Item deleted', stkAdd: 'Item added', mgDone: 'Requests completed', mgPend: 'Pending cleared', mgDel: 'Deleted', mgDelSlipPend: 'Slips deleted, articles pending again', delEntry: 'Entry deleted', delReturn: 'Return deleted', rsClose: 'Article closed', rsOpen: 'Article made pending', rsAll: 'Request completed', rsAdd: 'Article added', saveReq: 'Request edited', saveEntry: 'Entry saved', uploadOk: 'Import done', btSave: 'Batch saved', nrSave: 'Request added', hold: 'Hold changed' };
 const UNDO_STOCK = new Set(['lkSave', 'vfFix', 'stkEdit', 'markSave', 'delEntry', 'saveEntry', 'uploadOk', 'mgDelSlipPend']);
@@ -2788,8 +2895,8 @@ window.jvRelock = () => { if (!ui.locked) { ui.locked = true; render(); renderSh
 
 /* ---------------- actions ---------------- */
 const later = fn => setTimeout(fn, 0);
-function focusKey(el) { if (!el) return null; for (const a of ['data-in', 'data-f', 'data-it', 'data-set', 'data-store-rcv', 'data-store-name', 'data-nr', 'data-bt']) if (el.hasAttribute && el.hasAttribute(a)) return [a, el.getAttribute(a), el.selectionStart]; return null; }
-function refocus(k) { if (!k) return; const el = document.querySelector('[' + k[0] + '="' + CSS.escape(k[1]) + '"]'); if (el) { el.focus(); try { if (k[2] != null) el.setSelectionRange(k[2], k[2]); } catch (e) {} } }
+function focusKey(el) { if (!el) return null; for (const a of ['data-in', 'data-f', 'data-it', 'data-set', 'data-store-rcv', 'data-store-name', 'data-nr', 'data-bt', 'data-cnt', 'data-var']) if (el.hasAttribute && el.hasAttribute(a)) return [a, el.getAttribute(a), el.selectionStart]; return null; }
+function refocus(k) { if (!k) return; const el = document.querySelector('[' + k[0] + '="' + CSS.escape(k[1]) + '"]'); if (el) { el.focus(); try { if (k[2] != null) el.setSelectionRange(k[2], k[2]); else if (el.type === 'number') { const v = el.value; el.value = ''; el.value = v; } } catch (e) {} } }
 function blankItem() { return { code: '', name: '', uom: '', qty: '', remark: '' }; }
 function fillItemMeta(it) { it.code = String(it.code || '').trim().toUpperCase(); if (S.stock[it.code]) { it.name = S.stock[it.code].name; it.uom = S.stock[it.code].uom; } else { const f = findItemAnywhere(it.code); if (f) { it.name = f.name; it.uom = f.uom; } } }
 function cleanItems(items) { return items.map(i => { fillItemMeta(i); return { code: i.code, name: i.name || '', uom: i.uom || '', qty: parseFloat(i.qty), remark: (i.remark || '').trim(), req: i.req || '', lineId: i.lineId }; }).filter(i => i.code && i.qty > 0); }
@@ -3181,7 +3288,7 @@ document.addEventListener('click', async ev => {
     case 'sRdClear': ui.search.rd = ''; render(); break;
     case 'drawer': ui.drawer = true; renderDrawer(); break;
     case 'drawerClose': ui.drawer = false; renderDrawer(); break;
-    case 'dCount': ui.drawer = false; ui.clWhy = null; if (todayCount(true)) { ui.countId = todayCount(false).id; ui.view = 'count'; render(); window.scrollTo(0, 0); } else countOpenFail(); break;
+    case 'dCount': openCountCycle(); break;
     case 'countLog': ui.drawer = false; ui.view = 'countLog'; render(); window.scrollTo(0, 0); break;
     case 'countOpen': ui.countId = v; ui.view = 'count'; render(); window.scrollTo(0, 0); break;
     case 'taskLog': ui.drawer = false; ui.view = 'taskLog'; render(); window.scrollTo(0, 0); break;
@@ -3191,16 +3298,28 @@ document.addEventListener('click', async ev => {
     case 'dMgr': ui.drawer = false; renderDrawer(); openLiveStock(); break;
     case 'dBackup': ui.drawer = false; renderDrawer(); if (S.sync.url) { ui.sheet = { kind: 'backups' }; loadBackups(); } else { ui.tab = 'set'; ui.setPage = 'cloud'; ui.view = null; render(); } break;
     case 'dData': ui.drawer = false; ui.tab = 'set'; ui.setPage = 'data'; ui.view = null; render(); window.scrollTo(0, 0); break;
-    case 'taskOpen': if (v === 'count') { ui.clWhy = null; if (todayCount(true)) { ui.countId = todayCount(false).id; ui.view = 'count'; render(); window.scrollTo(0, 0); } else countOpenFail(); } else if (v === 'stock' || v === 'requests') { ui.upload = null; ui.sheet = { kind: 'upload' }; renderSheet(); } else if (v === 'backup') { if (S.sync.url) syncNow(false); else { ui.tab = 'set'; ui.setPage = 'cloud'; render(); } } break;
+    case 'taskOpen': if (v === 'count') { openCountCycle(); } else if (v === 'stock' || v === 'requests') { ui.upload = null; ui.sheet = { kind: 'upload' }; renderSheet(); } else if (v === 'backup') { if (S.sync.url) syncNow(false); else { ui.tab = 'set'; ui.setPage = 'cloud'; render(); } } break;
     case 'taskTog': { const d = today(); S.taskLog = S.taskLog || {}; S.taskLog[d] = S.taskLog[d] || {}; const cur = taskStatus(v, d);
       S.taskLog[d][v] = cur === 'done' ? { status: 'pending', at: new Date().toISOString(), by: S.me.name || '' } : { status: 'done', at: new Date().toISOString(), by: S.me.name || '' }; save(); render(); break; }
     case 'taskAdd': { const tt = String(ui.newTask || '').trim(); if (!tt) break; S.customTasks = S.customTasks || []; S.customTasks.push({ id: 'c' + nid(), title: tt }); ui.newTask = ''; save(); render(); break; }
     case 'taskDel': if (await uiConfirm('Delete this task? Its history stays.', 'Delete', true)) { S.customTasks = (S.customTasks || []).filter(x => x.id !== v); save(); render(); } break;
-    case 'countDone': { const c = (S.counts || []).find(x => String(x.id) === String(ui.countId)); if (!c) break; c.status = 'done'; c.doneAt = new Date().toISOString(); S.taskLog = S.taskLog || {}; S.taskLog[c.date] = S.taskLog[c.date] || {}; S.taskLog[c.date].count = { status: 'done', at: c.doneAt, by: S.me.name || '' }; save(); render(); toast('Count finished and logged.'); break; }
+    case 'countDone': { const c = curCount(); if (!c || countLocked(c)) break; countLive(c); const sm = countSummary(c);
+      if (!(await uiConfirm((sm.left ? sm.left + ' article' + (sm.left === 1 ? ' is' : 's are') + ' not counted yet. ' : '') + 'Save this count? System stock (' + (c.stockAt ? fmtDT(c.stockAt) : '–') + ') and counted values will be locked and cannot be changed.', 'Save & lock'))) break;
+      c.items.forEach(i => { i.system = Number(i.system) || 0; i.physical = i.physical === '' || i.physical == null ? '' : String(i.physical); });
+      c.status = 'done'; c.doneAt = new Date().toISOString(); c.savedBy = meTag(); S.taskLog = S.taskLog || {}; S.taskLog[c.date] = S.taskLog[c.date] || {}; S.taskLog[c.date].count = { status: 'done', at: c.doneAt, by: S.me.name || '' };
+      save(); render(); toast('Count saved and locked.'); ui.countExportId = c.id; openExport('counts'); break; }
+    case 'countNew': { const c = newCount(v); if (!c) { ui.view = 'countStart'; render(); break; } ui.countId = c.id; ui.view = 'count'; render(); window.scrollTo(0, 0); toast(v === 'blank' ? 'New count started with blank values.' : 'New count started with values copied.'); break; }
+    case 'countStart': { const d = countDraft(); if (d) { ui.countId = d.id; ui.view = 'count'; render(); toast('Finish or clear the draft first.'); break; } ui.view = 'countStart'; render(); window.scrollTo(0, 0); break; }
+    case 'countSys': { const c = curCount(); if (!c || countLocked(c)) break; openLiveStock(); break; }
+    case 'countDraftSave': { const c = curCount(); if (!c || countLocked(c)) break; countLive(c); c.draftAt = new Date().toISOString(); save(); render(); toast('Draft saved.'); break; }
+    case 'countClear': { const c = curCount(); if (!c || countLocked(c)) break; if (!(await uiConfirm('Clear this count cycle? All values entered in this draft will be removed.', 'Clear', true))) { ui.pendUndo = null; break; } S.counts = S.counts.filter(x => x !== c); ui.countId = null; save(); ui.view = 'countStart'; render(); window.scrollTo(0, 0); break; }
     case 'countExport': ui.countExportId = v; openExport('counts'); break;
+    case 'rpRowF': { const p = rptPref('counts'); p.rowF = v; save(true); renderSheet(); break; }
+    case 'rpRow': { const o = ui.sheet.rowOff = ui.sheet.rowOff || {}; if (o[v]) delete o[v]; else o[v] = 1; renderSheet(); break; }
+    case 'rpRowAll': { const p = rptPref('counts'), o = ui.sheet.rowOff = ui.sheet.rowOff || {}; countDef().all.filter(r => countFOk(p.rowF || 'all', r._res)).forEach(r => { if (v === 'on') delete o[r._k]; else o[r._k] = 1; }); renderSheet(); break; }
     case 'countExportAll': ui.countExportId = null; openExport('counts'); break;
-    case 'varAdd': { const c = curCount(); if (!c) break; const it = c.items[+v]; it.variants = it.variants || []; if (!it.variants.length && it.physical !== '' && it.physical != null) it.variants.push({ qty: it.physical, mfd: '', exp: '' }); else it.variants.push({ qty: '', mfd: '', exp: '' }); syncPhysical(it); save(); render(); break; }
-    case 'varDel': { const c = curCount(); if (!c) break; const [a1, k] = v.split('|').map(Number); const it = c.items[a1]; it.variants.splice(k, 1); syncPhysical(it); if (!it.variants.length) it.physical = ''; save(); render(); break; }
+    case 'varAdd': { const c = curCount(); if (!c || countLocked(c)) break; const it = c.items[+v]; it.variants = it.variants || []; if (!it.variants.length && it.physical !== '' && it.physical != null) it.variants.push({ qty: it.physical, mfd: '', exp: '' }); else it.variants.push({ qty: '', mfd: '', exp: '' }); syncPhysical(it); save(); render(); break; }
+    case 'varDel': { const c = curCount(); if (!c || countLocked(c)) break; const [a1, k] = v.split('|').map(Number); const it = c.items[a1]; it.variants.splice(k, 1); syncPhysical(it); if (!it.variants.length) it.physical = ''; save(); render(); break; }
     case 'zwOpen': ui.drawer = false; ui.view = 'zwatch'; ui.zw = ui.zw || { f: 'all', q: '', open: null, sel: null }; render(); window.scrollTo(0, 0); break;
     case 'zwF': ui.zw.f = v; render(); break;
     case 'zwOpenRow': ui.zw.open = ui.zw.open === v ? null : v; { const b = document.getElementById('zwres'); if (b) b.innerHTML = zwResults(); } break;
@@ -3387,10 +3506,10 @@ document.addEventListener('input', ev => {
   if (el.dataset.bg) { const [gi, k] = el.dataset.bg.split('|'); if (k === 'req') ui.form.groups[+gi]._auto = false; ui.form.groups[+gi][k] = k === 'rcv' ? el.value.toUpperCase().replace(/[^A-Z0-9]/g, '') : k === 'slip' ? el.value.toUpperCase() : el.value; return; }
   if (el.dataset.bq) { const [gi, ii] = el.dataset.bq.split('|').map(Number); ui.form.groups[gi].items[ii].qty = el.value; return; }
   if (el.dataset.nrq != null) { ui.form.items[+el.dataset.nrq].qty = el.value; const b = document.querySelector('[data-a=nrSave]'); if (b) { const f = ui.form; b.disabled = !(f.store && f.req && f.items.length && f.items.every(x => parseFloat(x.qty) > 0)); } return; }
-  if (el.dataset.var) { const c = curCount(); if (c) { const [a1, k, f] = el.dataset.var.split('|'); const it = c.items[+a1]; it.variants[+k][f] = el.value; syncPhysical(it); save(true); } return; }
+  if (el.dataset.var) { const c = curCount(); if (c && !countLocked(c)) { const [a1, k, f] = el.dataset.var.split('|'); const it = c.items[+a1]; it.variants[+k][f] = el.value; syncPhysical(it); save(true); } return; }
   if (el.dataset.expdays) { const n = parseInt(el.value, 10); if (n > 0) { S.expiryDays = n; save(true); } return; }
   if (el.dataset.cx) { countExcl()[el.dataset.cx] = el.value.split(',').map(x => x.trim()).filter(Boolean); save(true); return; }
-  if (el.dataset.cnt != null) { const c = (S.counts || []).find(x => String(x.id) === String(ui.countId)); if (c) { c.items[+el.dataset.cnt].physical = el.value; save(true); } return; }
+  if (el.dataset.cnt != null) { const c = (S.counts || []).find(x => String(x.id) === String(ui.countId)); if (c && !countLocked(c)) { c.items[+el.dataset.cnt].physical = el.value; save(true); } return; }
   if (el.dataset.rp) { rptPref(ui.sheet.type)[el.dataset.rp] = el.value; save(true); if (el.tagName === 'SELECT') renderSheet(); return; }
   if (el.dataset.crop) { ui.sheet.zoom = parseFloat(el.value); const im = document.querySelector('#cropBox img'); if (im) { const V = 280, c = ui.sheet, base = Math.max(V / c.img.width, V / c.img.height) * c.zoom, dw = c.img.width * base, dh = c.img.height * base; im.style.width = dw + 'px'; im.style.height = dh + 'px'; im.style.left = ((V - dw) / 2 + c.x) + 'px'; im.style.top = ((V - dh) / 2 + c.y) + 'px'; } return; }
   if (el.dataset.url) { ui[el.dataset.url === 'emp' ? 'urlEmp' : 'urlMgr'] = el.value.trim(); return; }
@@ -3442,7 +3561,7 @@ document.addEventListener('change', async ev => {
   if (el.dataset.rp) { later(() => renderSheet()); return; }
   if (el.dataset.ms && el.dataset.ms.endsWith('|count')) { later(() => { const k = focusKey(document.activeElement); renderSheet(); refocus(k); }); return; }
   if (el.dataset.bq || el.dataset.bg || el.dataset.corr != null) { later(() => { const k = focusKey(document.activeElement); renderSheet(); refocus(k); }); return; }
-  if (el.dataset.cnt != null || el.dataset.var || el.dataset.expdays) { later(() => render()); return; }
+  if (el.dataset.cnt != null || el.dataset.var || el.dataset.expdays) { later(() => { const k = focusKey(document.activeElement), y = window.scrollY; render(); window.scrollTo(0, y); refocus(k); }); return; }
   if (el.dataset.flt) { const [k, key] = el.dataset.flt.split('|'); const f = fltGet(k); f[key] = el.value; if ((k === 'done' || k === 'reg') && !f.rd && !f.id) f.id = today(); if (k === 'reg' && key === 'id' && el.value) ui.reg.date = el.value; render(); return; }
   if (el.dataset.in === 'sRd') { ui.search.rd = el.value; render(); return; }
   if (el.dataset.in === 'doneDate') { ui.doneDate = el.value || today(); render(); return; }
