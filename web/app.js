@@ -1330,6 +1330,16 @@ function openCountCycle() {
   if (d) { ui.countId = d.id; ui.view = 'count'; } else ui.view = 'countStart';
   render(); window.scrollTo(0, 0);
 }
+function countPend(code) { const L = S.lines.filter(l => l.code === code && l.status === 'waiting' && !S.hold[l.id] && l.date <= today()); return { L, qty: Math.round(L.reduce((n, l) => n + (Number(l.qty) || 0), 0) * 1000) / 1000 }; }
+function countPendOpen(c) { return c.items.map((i, idx) => ({ i, idx, P: countPend(i.code) })).filter(x => x.P.L.length && !x.i.pendKeep); }
+function countPendBox(i, idx, open) {
+  if (!open) return '';
+  const P = countPend(i.code); if (!P.L.length) return '';
+  const reqs = P.L.slice(0, 3).map(l => esc(l.req) + ' ' + esc(l.store) + ' (' + num(l.qty) + ')').join(', ') + (P.L.length > 3 ? ' +' + (P.L.length - 3) + ' more' : '');
+  if (i.pendKeep) return '<div class="note" style="margin-top:6px">Kept in count · ' + num(P.qty) + ' ' + esc(i.uom) + ' still pending for issue (' + reqs + ') <button class="btn sm ghost" data-a="cpUndo" data-v="' + idx + '" style="min-height:30px;padding:0 10px">Change</button></div>';
+  return '<div class="banner t-no" style="display:block;margin-top:8px"><b>Still pending for issue: ' + num(P.qty) + ' ' + esc(i.uom) + '</b> · ' + P.L.length + ' request' + (P.L.length === 1 ? '' : 's') + ': ' + reqs + '. If it is already given out but not entered on CUIMS, system stock will not match.' +
+    '<div class="grid2" style="margin-top:8px"><button class="btn sm" data-a="cpKeep" data-v="' + idx + '">Keep</button><button class="btn sm danger-t" data-a="cpRemove" data-v="' + idx + '">Remove</button></div></div>';
+}
 function vCountStart() {
   const pick = countPick(), last = countSaved()[0], todayN = countSaved().filter(c => c.date === today());
   let h = '<header class="top"><div><button class="btn sm ghost" data-a="back">‹ Back</button><h1 style="margin-top:10px">Daily Count Cycle</h1><div class="sub">Count your list any time, as many times as you need. System stock is always the latest. A saved count is locked.</div></div></header><main>';
@@ -1365,13 +1375,14 @@ function vCount() {
   else h += '<div class="banner t-ok" style="display:block"><b>Saved and locked.</b> System and counted values are fixed as they were at ' + esc(fmtDT(c.doneAt || c.startedAt)) + '. For a correction, start a new count.</div>';
   h += '<div class="grid3"><div class="tile t-ok"><b>' + sm.m + '</b><span>Match</span></div><div class="tile t-in"><b>' + sm.ex + '</b><span>Excess</span></div><div class="tile t-no"><b>' + sm.sh + '</b><span>Short</span></div></div>';
   h += meta([sm.left ? sm.left + ' still to count' : 'All counted', open ? 'Draft · not saved yet' + (c.draftAt ? ' · draft saved ' + fmtDT(c.draftAt) : '') : 'Saved ' + fmtDT(c.doneAt)]);
+  if (open) { const PO = countPendOpen(c); if (PO.length) h += '<div class="banner t-no" style="display:block"><b>' + PO.length + ' article' + (PO.length === 1 ? ' is' : 's are') + ' still pending for issue.</b> Keep or remove ' + (PO.length === 1 ? 'it' : 'each one') + ' so your count is not affected: ' + PO.slice(0, 4).map(x => esc(x.i.name)).join(', ') + (PO.length > 4 ? '…' : '') + '<div class="grid2" style="margin-top:8px"><button class="btn sm" data-a="cpKeepAll">Keep all</button><button class="btn sm danger-t" data-a="cpRemoveAll">Remove all</button></div></div>'; }
   h += '<div class="card" style="overflow:hidden">';
   c.items.forEach((i, idx) => {
     const d = diffOf(i);
     const tag = d === null ? '' : d === 0 ? pill('Match', 'c-ok') : d > 0 ? pill('Excess +' + num(d), 'c-in') : pill('Short ' + num(d), 'c-no');
     const V = i.variants || [];
     h += '<div class="line"><div class="row"><b>' + (idx + 1) + '. ' + esc(i.name) + '</b>' + tag + '</div><div class="row" style="align-items:center">' + meta([esc(i.code), 'System ' + num(i.system) + ' ' + esc(i.uom)]) +
-      (open && !V.length ? '<input type="number" inputmode="decimal" data-cnt="' + idx + '" value="' + esc(i.physical) + '" placeholder="Physical" style="width:120px;text-align:right">' : '<b class="qty">' + (i.physical === '' ? '–' : num(i.physical)) + ' ' + esc(i.uom) + '</b>') + '</div>' +
+      (open && !V.length ? '<input type="number" inputmode="decimal" data-cnt="' + idx + '" value="' + esc(i.physical) + '" placeholder="Physical" style="width:120px;text-align:right">' : '<b class="qty">' + (i.physical === '' ? '–' : num(i.physical)) + ' ' + esc(i.uom) + '</b>') + '</div>' + countPendBox(i, idx, open) +
       (V.length && !open ? '<div class="vbox">' + V.map((v, k) => '<div class="vrow"><div class="vhead"><b>Batch ' + (k + 1) + ' · ' + num(v.qty) + ' ' + esc(i.uom) + '</b><span class="note">' + (v.mfd ? 'MFD ' + fmtShort(v.mfd) : '') + (v.exp ? ' · EXP ' + fmtShort(v.exp) : '') + '</span></div></div>').join('') + '</div>' : '') +
       (V.length && open ? '<div class="vbox">' + V.map((v, k) => { const dl = v.exp ? days(v.exp) * -1 : null;
         return '<div class="vrow"><div class="vhead"><b>Batch ' + (k + 1) + '</b>' + (v.exp ? pill(dl < 0 ? 'Expired' : dl + ' days left', dl < 0 ? 'c-no' : dl <= 15 ? 'c-no' : dl <= expDays() ? 'c-gd' : 'c-ok') : '') + '<button class="xbtn" data-a="varDel" data-v="' + idx + '|' + k + '" aria-label="Remove batch">' + ico('x', 16) + '</button></div>' +
@@ -1397,7 +1408,7 @@ function expiryRows() {
 }
 /* ---------------- Zero-stock watch (order-only articles) ---------------- */
 function zwList() { S.zeroWatch = S.zeroWatch || []; return S.zeroWatch; }
-function zwWaiting(code) { return S.lines.filter(l => l.code === code && l.status === 'waiting').sort((a, b) => a.date.localeCompare(b.date)); }
+function zwWaiting(code) { return S.lines.filter(l => l.code === code && l.status === 'waiting' && !S.hold[l.id]).sort((a, b) => a.date.localeCompare(b.date)); }
 function zwRow(w) {
   const st = S.stock[w.code], inRep = !!st, qty = inRep ? Math.round((Number(st.qty) || 0) * 1000) / 1000 : null;
   const W = zwWaiting(w.code), need = Math.round(W.reduce((n, l) => n + (Number(l.qty) || 0), 0) * 1000) / 1000;
@@ -2718,7 +2729,7 @@ function renumberReq(from, to) {
   return true;
 }
 const UNDO_KEYS = ['counts', 'zeroWatch', 'lines', 'entries', 'returns', 'hold', 'corrections', 'audit', 'manReqs', 'paper', 'verifyReports'];
-const UNDOABLE = { countClear: 'Count cycle cleared', zwDel: 'Removed from watch', zwBDel: 'Removed from watch', zwAddSave: 'Added to watch', artQty: 'Quantity changed', artHold: 'Hold changed', artDel: 'Article removed', artsBHold: 'Articles put on hold', artsBRel: 'Articles released', artsBDel: 'Articles removed', dropReq: 'Request removed', dropStore: 'Store pending removed',
+const UNDOABLE = { cpRemove: 'Removed from count', cpRemoveAll: 'Removed from count', countClear: 'Count cycle cleared', zwDel: 'Removed from watch', zwBDel: 'Removed from watch', zwAddSave: 'Added to watch', artQty: 'Quantity changed', artHold: 'Hold changed', artDel: 'Article removed', artsBHold: 'Articles put on hold', artsBRel: 'Articles released', artsBDel: 'Articles removed', dropReq: 'Request removed', dropStore: 'Store pending removed',
   renumReq: 'Request renumbered', dcRenum: 'Request renumbered', impRenum: 'Request renumbered', impDrop: "App's request removed", corrSave: 'Correction saved', markSave: 'Slip added', dcMerge: 'Items merged', dcKeepFirst: 'Duplicate removed', dcDate: 'Date changed', dcBad: 'Incomplete removed',
   bulkSave: 'Requests edited', lkSave: 'CUIMS serials saved', vfFix: 'Fixed in app', dcRetFmt: 'Returns renumbered', dcRetFix: 'Return renumbered', clAdd: 'Count list changed', clDel: 'Count list changed', retBatchSave: 'Returns saved', stkEdit: 'Stock changed', stkRen: 'Item renamed', stkDel: 'Item deleted', stkAdd: 'Item added', mgDone: 'Requests completed', mgPend: 'Pending cleared', mgDel: 'Deleted', mgDelSlipPend: 'Slips deleted, articles pending again', delEntry: 'Entry deleted', delReturn: 'Return deleted', rsClose: 'Article closed', rsOpen: 'Article made pending', rsAll: 'Request completed', rsAdd: 'Article added', saveReq: 'Request edited', saveEntry: 'Entry saved', uploadOk: 'Import done', btSave: 'Batch saved', nrSave: 'Request added', hold: 'Hold changed' };
 const UNDO_STOCK = new Set(['lkSave', 'vfFix', 'stkEdit', 'markSave', 'delEntry', 'saveEntry', 'uploadOk', 'mgDelSlipPend']);
@@ -3311,6 +3322,10 @@ document.addEventListener('click', async ev => {
     case 'countNew': { const c = newCount(v); if (!c) { ui.view = 'countStart'; render(); break; } ui.countId = c.id; ui.view = 'count'; render(); window.scrollTo(0, 0); toast(v === 'blank' ? 'New count started with blank values.' : 'New count started with values copied.'); break; }
     case 'countStart': { const d = countDraft(); if (d) { ui.countId = d.id; ui.view = 'count'; render(); toast('Finish or clear the draft first.'); break; } ui.view = 'countStart'; render(); window.scrollTo(0, 0); break; }
     case 'countSys': { const c = curCount(); if (!c || countLocked(c)) break; openLiveStock(); break; }
+    case 'cpKeep': case 'cpUndo': { const c = curCount(); if (!c || countLocked(c)) break; const i = c.items[+v]; if (!i) break; if (a === 'cpKeep') i.pendKeep = true; else delete i.pendKeep; save(); render(); break; }
+    case 'cpRemove': { const c = curCount(); if (!c || countLocked(c)) break; const i = c.items[+v]; if (!i) break; c.items.splice(+v, 1); save(); render(); break; }
+    case 'cpKeepAll': { const c = curCount(); if (!c || countLocked(c)) break; countPendOpen(c).forEach(x => x.i.pendKeep = true); save(); render(); break; }
+    case 'cpRemoveAll': { const c = curCount(); if (!c || countLocked(c)) break; const PO = countPendOpen(c); if (!PO.length) break; if (!(await uiConfirm('Remove ' + PO.length + ' pending article' + (PO.length === 1 ? '' : 's') + ' from this count?', 'Remove', true))) { ui.pendUndo = null; break; } const del = new Set(PO.map(x => x.i)); c.items = c.items.filter(i => !del.has(i)); save(); render(); break; }
     case 'countDraftSave': { const c = curCount(); if (!c || countLocked(c)) break; countLive(c); c.draftAt = new Date().toISOString(); save(); render(); toast('Draft saved.'); break; }
     case 'countClear': { const c = curCount(); if (!c || countLocked(c)) break; if (!(await uiConfirm('Clear this count cycle? All values entered in this draft will be removed.', 'Clear', true))) { ui.pendUndo = null; break; } S.counts = S.counts.filter(x => x !== c); ui.countId = null; save(); ui.view = 'countStart'; render(); window.scrollTo(0, 0); break; }
     case 'countExport': ui.countExportId = v; openExport('counts'); break;
