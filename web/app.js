@@ -1402,8 +1402,26 @@ function openCountCycle() {
   if (d) { ui.countId = d.id; ui.view = 'count'; } else ui.view = 'countStart';
   render(); window.scrollTo(0, 0);
 }
-function countPend(code) { const L = S.lines.filter(l => l.code === code && l.status === 'waiting' && !S.hold[l.id] && l.date <= today()); return { L, qty: Math.round(L.reduce((n, l) => n + (Number(l.qty) || 0), 0) * 1000) / 1000 }; }
+function countPend(code) { const L = S.lines.filter(l => l.code === code && l.status === 'waiting' && !S.hold[l.id]); return { L, qty: Math.round(L.reduce((n, l) => n + (Number(l.qty) || 0), 0) * 1000) / 1000 }; }
 function countPendOpen(c) { return c.items.map((i, idx) => ({ i, idx, P: countPend(i.code) })).filter(x => x.P.L.length && !x.i.pendKeep); }
+function countRemark(i, live) {
+  const sysQ = live ? ((i.pend && i.pend.sys === false) ? 0 : countPend(i.code).qty) : (Number(i.pendSys) || 0), u = i.uom || '', out = [];
+  if (sysQ > 0) out.push(num(sysQ) + ' ' + u + ' pending in system');
+  const pq = i.pend && i.pend.phys ? Number(i.pend.physQty) || 0 : 0; if (pq > 0) out.push(num(pq) + ' ' + u + ' pending physically');
+  if (String(i.rem || '').trim()) out.push(String(i.rem).trim());
+  return out.join(' · ');
+}
+function countRemBox(i, idx, open) {
+  if (!open) { const r = i.remark != null ? i.remark : countRemark(i, true); return r ? '<div class="note" style="margin-top:6px"><b>Remark:</b> ' + esc(r) + '</div>' : ''; }
+  const P = countPend(i.code), pd = i.pend || {}, sysOn = P.qty > 0 && pd.sys !== false, physOn = !!pd.phys, r = countRemark(i, true);
+  if (!P.qty && !physOn && !String(i.rem || '').trim() && !(ui.remOpen || {})[idx]) return '<button class="btn sm ghost" data-a="crOpen" data-v="' + idx + '" style="margin-top:6px;min-height:32px;align-self:flex-start">+ Remark / pending</button>';
+  return '<div class="col" style="gap:8px;margin-top:8px;padding:10px 12px;border:1px solid #EEECF3;border-radius:14px;background:#FCFBFE"><div class="row" style="justify-content:flex-start;gap:8px;flex-wrap:wrap">' +
+    (P.qty > 0 ? '<button class="chip ' + (sysOn ? 'c-gd' : 'c-gy') + '" data-a="crSys" data-v="' + idx + '" style="border:0">' + (sysOn ? '✓ ' : '') + 'Pending in system · ' + num(P.qty) + ' ' + esc(i.uom) + '</button>' : '') +
+    '<button class="chip ' + (physOn ? 'c-gd' : 'c-gy') + '" data-a="crPhys" data-v="' + idx + '" style="border:0">' + (physOn ? '✓ ' : '') + 'Pending physically</button></div>' +
+    (physOn ? '<label class="f">Physically pending (' + esc(i.uom) + ')<input type="number" inputmode="decimal" data-crp="' + idx + '" value="' + esc(pd.physQty || '') + '" placeholder="Qty"></label>' : '') +
+    '<label class="f">Your remark<input type="text" data-crn="' + idx + '" value="' + esc(i.rem || '') + '" placeholder="Optional, e.g. damaged packing"></label>' +
+    '<div class="note" id="crprev' + idx + '"><b>Remark:</b> ' + (r ? esc(r) : '–') + '</div></div>';
+}
 function countPendBox(i, idx, open) {
   if (!open) return '';
   const P = countPend(i.code); if (!P.L.length) return '';
@@ -1455,8 +1473,8 @@ function vCount() {
     const tag = d === null ? '' : d === 0 ? pill('Match', 'c-ok') : d > 0 ? pill('Excess +' + num(d), 'c-in') : pill('Short ' + num(d), 'c-no');
     const V = i.variants || [];
     const eq = c.mode === 'emp' ? ((EMP().sessions.find(k => String(k.id) === String(c.emp)) || { people: [] }).people[i.by || 0] || {}) : null;
-    h += '<div class="line"><div class="row"><b>' + (idx + 1) + '. ' + esc(i.name) + '</b>' + tag + '</div>' + (eq ? '<div class="note">Counted by ' + esc(eq.name || '') + (i.rem ? ' · ' + esc(i.rem) : '') + '</div>' : '') + '<div class="row" style="align-items:center">' + meta([esc(i.code), 'System ' + num(i.system) + ' ' + esc(i.uom)]) +
-      (open && !V.length ? '<input type="number" inputmode="decimal" data-cnt="' + idx + '" value="' + esc(i.physical) + '" placeholder="Physical" style="width:120px;text-align:right">' : '<b class="qty">' + (i.physical === '' ? '–' : num(i.physical)) + ' ' + esc(i.uom) + '</b>') + '</div>' + countPendBox(i, idx, open) +
+    h += '<div class="line"><div class="row"><b>' + (idx + 1) + '. ' + esc(i.name) + '</b>' + tag + '</div>' + (eq ? '<div class="note">Counted by ' + esc(eq.name || '') + '</div>' : '') + '<div class="row" style="align-items:center">' + meta([esc(i.code), 'System ' + num(i.system) + ' ' + esc(i.uom)]) +
+      (open && !V.length ? '<input type="number" inputmode="decimal" data-cnt="' + idx + '" value="' + esc(i.physical) + '" placeholder="Physical" style="width:120px;text-align:right">' : '<b class="qty">' + (i.physical === '' ? '–' : num(i.physical)) + ' ' + esc(i.uom) + '</b>') + '</div>' + countPendBox(i, idx, open) + countRemBox(i, idx, open) +
       (V.length && !open ? '<div class="vbox">' + V.map((v, k) => '<div class="vrow"><div class="vhead"><b>Batch ' + (k + 1) + ' · ' + num(v.qty) + ' ' + esc(i.uom) + '</b><span class="note">' + (v.mfd ? 'MFD ' + fmtShort(v.mfd) : '') + (v.exp ? ' · EXP ' + fmtShort(v.exp) : '') + '</span></div></div>').join('') + '</div>' : '') +
       (V.length && open ? '<div class="vbox">' + V.map((v, k) => { const dl = v.exp ? days(v.exp) * -1 : null;
         return '<div class="vrow"><div class="vhead"><b>Batch ' + (k + 1) + '</b>' + (v.exp ? pill(dl < 0 ? 'Expired' : dl + ' days left', dl < 0 ? 'c-no' : dl <= 15 ? 'c-no' : dl <= expDays() ? 'c-gd' : 'c-ok') : '') + '<button class="xbtn" data-a="varDel" data-v="' + idx + '|' + k + '" aria-label="Remove batch">' + ico('x', 16) + '</button></div>' +
@@ -1667,7 +1685,7 @@ function empSheetDef() {
 function empResultDef() {
   const p = rptPref('empResult'), c = (S.counts || []).find(k => String(k.id) === String(ui.countExportId)), x = c ? EMP().sessions.find(k => String(k.id) === String(c.emp)) : null, off = (ui.sheet && ui.sheet.rowOff) || {}, all = [];
   if (c) c.items.forEach(i => { const d = diffOf(i), res = d === null ? 'Not counted' : d === 0 ? 'Match' : d > 0 ? 'Excess' : 'Short', v = (i.variants || [])[0] || {};
-    all.push({ _k: (i.by || 0) + '|' + i.code, _p: i.by || 0, _res: res, _lab: i.name, _sub: i.code + ' · ' + res, 'Item code': i.code, Item: i.name, UOM: i.uom, 'System stock': Number(i.system) || 0, Counted: i.physical === '' || i.physical == null ? '–' : Number(i.physical), Difference: d === null ? '' : (d > 0 ? '+' : '') + num(d), Result: res, Remarks: i.rem || '–', 'Mfg. Date': v.mfd ? mdy(v.mfd) : '–', 'Expiry Date': v.exp ? mdy(v.exp) : '–' }); });
+    all.push({ _k: (i.by || 0) + '|' + i.code, _p: i.by || 0, _res: res, _lab: i.name, _sub: i.code + ' · ' + res, 'Item code': i.code, Item: i.name, UOM: i.uom, 'System stock': Number(i.system) || 0, Counted: i.physical === '' || i.physical == null ? '–' : Number(i.physical), Difference: d === null ? '' : (d > 0 ? '+' : '') + num(d), Result: res, Remarks: (c.status === 'done' && i.remark != null ? i.remark : countRemark(i, true)) || '–', 'Mfg. Date': v.mfd ? mdy(v.mfd) : '–', 'Expiry Date': v.exp ? mdy(v.exp) : '–' }); });
   const K = ['Item code', 'Item', 'UOM', 'System stock', 'Counted', 'Difference', 'Result', 'Remarks', 'Mfg. Date', 'Expiry Date'];
   return { cols: K.map(k => [k, k]), all, rows: all.filter(r => !off[r._k]), c, x, when: c ? (c.doneAt || new Date().toISOString()) : new Date().toISOString(), draft: !!(c && c.status !== 'done'), file: 'Employee-Count-Result-' + (c ? isoOf(new Date(c.doneAt || Date.now())) : '') };
 }
@@ -1897,7 +1915,7 @@ function vCountLog() {
 }
 function countRows(list) {
   const rows = []; list.forEach(c => c.items.forEach((i, n) => { const d = diffOf(i), res = d === null ? 'Not counted' : d === 0 ? 'Match' : d > 0 ? 'Excess' : 'Short';
-    rows.push({ _k: c.id + '|' + i.code, _res: res, Count: c.status === 'done' ? hrsDT(c.doneAt || c.startedAt) : fmtLong(c.date) + ' (draft)', '#': n + 1, 'Item code': i.code, Item: i.name, UOM: i.uom, 'System stock': Number(i.system) || 0, Counted: i.physical === '' || i.physical == null ? '–' : Number(i.physical), Difference: d === null ? '' : (d > 0 ? '+' : '') + num(d), Result: res,
+    rows.push({ _k: c.id + '|' + i.code, _res: res, Count: c.status === 'done' ? hrsDT(c.doneAt || c.startedAt) : fmtLong(c.date) + ' (draft)', '#': n + 1, 'Item code': i.code, Item: i.name, UOM: i.uom, 'System stock': Number(i.system) || 0, Counted: i.physical === '' || i.physical == null ? '–' : Number(i.physical), Difference: d === null ? '' : (d > 0 ? '+' : '') + num(d), Result: res, Remarks: (c.status === 'done' && i.remark != null ? i.remark : countRemark(i, true)) || '–',
       'Batches (Qty · MFD · Expiry)': (i.variants || []).map(v => num(v.qty) + (v.mfd ? ' · MFD ' + mdy(v.mfd) : '') + (v.exp ? ' · EXP ' + mdy(v.exp) : '')), 'Counted by': (c.by || {}).name || '' }); }));
   return rows;
 }
@@ -1911,7 +1929,7 @@ function countDef() {
   const all = countRows(list), off = (ui.sheet && ui.sheet.rowOff) || {};
   const rows = all.filter(r => countFOk(p.rowF || 'all', r._res) && !off[r._k]);
   const one = list.length === 1 ? list[0] : null, when = one ? (one.status === 'done' ? one.doneAt || one.startedAt : new Date().toISOString()) : new Date().toISOString();
-  const K = ['#', 'Item code', 'Item', 'UOM', 'System stock', 'Counted', 'Difference', 'Result', 'Batches (Qty · MFD · Expiry)', 'Counted by'];
+  const K = ['#', 'Item code', 'Item', 'UOM', 'System stock', 'Counted', 'Difference', 'Result', 'Remarks', 'Batches (Qty · MFD · Expiry)', 'Counted by'];
   const cols = (one ? K : ['Count'].concat(K)).map(k => [k, k]);
   const cnt = k => rows.filter(r => r._res === k).length;
   return { cols, rows, all, list, one, when, draft: !!(one && one.status !== 'done'), chips: [['Articles', rows.length], ['Match', cnt('Match')], ['Excess', cnt('Excess')], ['Short', cnt('Short')], ['Not counted', cnt('Not counted')]],
@@ -3802,7 +3820,7 @@ document.addEventListener('click', async ev => {
     case 'taskDel': if (await uiConfirm('Delete this task? Its history stays.', 'Delete', true)) { S.customTasks = (S.customTasks || []).filter(x => x.id !== v); save(); render(); } break;
     case 'countDone': { const c = curCount(); if (!c || countLocked(c)) break; countLive(c); const sm = countSummary(c);
       if (!(await uiConfirm((sm.left ? sm.left + ' article' + (sm.left === 1 ? ' is' : 's are') + ' not counted yet. ' : '') + 'Save this count? System stock (' + (c.stockAt ? fmtDT(c.stockAt) : '–') + ') and counted values will be locked and cannot be changed.', 'Save & lock'))) break;
-      c.items.forEach(i => { i.system = Number(i.system) || 0; i.physical = i.physical === '' || i.physical == null ? '' : String(i.physical); });
+      c.items.forEach(i => { i.system = Number(i.system) || 0; i.physical = i.physical === '' || i.physical == null ? '' : String(i.physical); i.pendSys = (i.pend && i.pend.sys === false) ? 0 : countPend(i.code).qty; i.remark = countRemark(i, false); });
       c.status = 'done'; c.doneAt = new Date().toISOString(); c.savedBy = meTag(); S.taskLog = S.taskLog || {}; S.taskLog[c.date] = S.taskLog[c.date] || {}; S.taskLog[c.date].count = { status: 'done', at: c.doneAt, by: S.me.name || '' };
       if (c.mode === 'emp') { empLock(c); save(); render(); toast('Employee count saved and locked.'); ui.countExportId = c.id; openExport('empResult'); break; }
       save(); render(); toast('Count saved and locked.'); ui.countExportId = c.id; openExport('counts'); break; }
@@ -3813,6 +3831,9 @@ document.addEventListener('click', async ev => {
     case 'cpRemove': { const c = curCount(); if (!c || countLocked(c)) break; const i = c.items[+v]; if (!i) break; c.items.splice(+v, 1); save(); render(); break; }
     case 'cpKeepAll': { const c = curCount(); if (!c || countLocked(c)) break; countPendOpen(c).forEach(x => x.i.pendKeep = true); save(); render(); break; }
     case 'cpRemoveAll': { const c = curCount(); if (!c || countLocked(c)) break; const PO = countPendOpen(c); if (!PO.length) break; if (!(await uiConfirm('Remove ' + PO.length + ' pending article' + (PO.length === 1 ? '' : 's') + ' from this count?', 'Remove', true))) { ui.pendUndo = null; break; } const del = new Set(PO.map(x => x.i)); c.items = c.items.filter(i => !del.has(i)); save(); render(); break; }
+    case 'crOpen': ui.remOpen = ui.remOpen || {}; ui.remOpen[v] = 1; render(); break;
+    case 'crSys': case 'crPhys': { const c = curCount(); if (!c || countLocked(c)) break; const i = c.items[+v]; if (!i) break; i.pend = i.pend || {};
+      if (a === 'crSys') i.pend.sys = i.pend.sys === false ? true : false; else i.pend.phys = !i.pend.phys; save(true); { const y = window.scrollY; render(); window.scrollTo(0, y); } break; }
     case 'countDraftSave': { const c = curCount(); if (!c || countLocked(c)) break; countLive(c); c.draftAt = new Date().toISOString(); save(); render(); toast('Draft saved.'); break; }
     case 'countClear': { const c = curCount(); if (!c || countLocked(c)) break;
       if (c.mode === 'emp') { if (!(await uiConfirm('Go back to entering results? This draft is removed, but the values typed from the sheets are kept so you can fix them and make the draft again.', 'Back to entry'))) { ui.pendUndo = null; break; } const x = EMP().sessions.find(k => String(k.id) === String(c.emp)); S.counts = S.counts.filter(k => k !== c); if (x) { x.status = 'entry'; delete x.countId; ui.empId = x.id; } save(); ui.view = 'empSess'; render(); window.scrollTo(0, 0); break; }
@@ -3984,6 +4005,9 @@ document.addEventListener('input', ev => {
   if (el.dataset.cons) { ui.cons[el.dataset.cons] = el.value; render(); return; }
   if (el.dataset.pdfall) { S.pdfStore = el.value; S.me.storeName = el.value; Object.keys(REPORTS).filter(t => REPORTS[t].pdf).forEach(t => { rptPref(t).sub = el.value; }); EMP().store = el.value; save(true); return; }
   if (el.dataset.pdfhead) { const t = el.dataset.pdfhead; rptPref(t).title = el.value; if (t === 'empSheet' || t === 'empResult') { EMP().title = el.value; } save(true); return; }
+  if (el.dataset.crp != null || el.dataset.crn != null) { const c = curCount(); if (!c || countLocked(c)) return; const idx = +(el.dataset.crp != null ? el.dataset.crp : el.dataset.crn), i = c.items[idx]; if (!i) return;
+    if (el.dataset.crp != null) { i.pend = i.pend || {}; i.pend.physQty = el.value; } else i.rem = el.value; save(true);
+    const pv = document.getElementById('crprev' + idx); if (pv) { const r = countRemark(i, true); pv.innerHTML = '<b>Remark:</b> ' + (r ? esc(r) : '–'); } return; }
   if (el.dataset.emp) { const E = EMP(), k = el.dataset.emp; E[k] = el.value; if (k === 'title' || k === 'store') ['empSheet', 'empResult'].forEach(t => { const pp = rptPref(t); pp[k === 'title' ? 'title' : 'sub'] = el.value; }); save(true); if (k === 'per') { clearTimeout(ui.kT); ui.kT = setTimeout(() => { const y = window.scrollY, f = focusKey(el); render(); window.scrollTo(0, y); refocus(f); }, 500); } return; }
   if (el.dataset.empnew) { ui.empNew = ui.empNew || {}; ui.empNew[el.dataset.empnew] = el.value; return; }
   if (el.dataset.ign) { ui.ign.v = el.value; clearTimeout(ui.kT); ui.kT = setTimeout(() => { const b = document.getElementById('ignprev'); if (b) b.innerHTML = ignPreview(); }, 150); return; }
