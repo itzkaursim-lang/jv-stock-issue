@@ -773,7 +773,7 @@ public class MainActivity extends AppCompatActivity {
             runOnUiThread(() -> { siteView.setInitialScale(0); mgrView.setInitialScale(0); });
         }
         @JavascriptInterface public void siteGo(String u) { runOnUiThread(() -> ("mgr".equals(who) ? mgrView : siteView).loadUrl(u)); }
-        @JavascriptInterface public void showApp() { if (prefs.getBoolean("spy_on", false) || kittyWant) return; runOnUiThread(MainActivity.this::backToApp); }
+        @JavascriptInterface public void showApp() { if ("emp".equals(who) && (prefs.getBoolean("spy_on", false) || kittyWant)) return; runOnUiThread(MainActivity.this::backToApp); }
         @JavascriptInterface public void setSpy(boolean on) { prefs.edit().putBoolean("spy_on", on).putBoolean("fun_emp", on).apply(); if (on) runOnUiThread(() -> { if (svcOn) { stopService(new Intent(MainActivity.this, JobService.class)); svcOn = false; } NotificationManagerCompat.from(MainActivity.this).cancel(JobService.ID); }); }
         @JavascriptInterface public void spyAuth(String kind) {
             final String k = kind == null ? "peek" : kind.replaceAll("[^a-z]", "");

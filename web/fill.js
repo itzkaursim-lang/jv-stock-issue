@@ -348,7 +348,8 @@
     }).join('');
     var msg = AS.err ? statusCard('no', 'Stopped', AS.err) : statusCard('run', AS.note || 'Working…', 'Live stock update · ' + AUTO.store + ' · ' + AUTO.fy);
     return hero('Live stock · auto update', 'Manager CUIMS', null) + wrap(msg + '<div style="background:' + C.soft + ';border-radius:20px;padding:4px 14px">' + rows + '</div>' +
-      row2(AS.err ? btn('asRetry', 'Try again', 'main') : '', btn('asStop', AS.err ? 'Close' : 'Stop', AS.err ? '' : 'link')) + '<style>@keyframes jvp{50%{transform:scale(.5);opacity:.5}}</style>' + credit());
+      ((AS.step === 'loaded' || AS.step === 'export' || AS.err) && AS.step !== 'download' ? '<div style="margin-top:2px">' + btn('asForce', 'Report is loaded · Download Excel now', 'main') + '</div>' : '') +
+      row2(AS.err ? btn('asRetry', 'Try again', '') : '', btn('asStop', AS.err ? 'Close' : 'Stop', AS.err ? '' : 'link')) + '<style>@keyframes jvp{50%{transform:scale(.5);opacity:.5}}</style>' + credit());
   }
   function vis(x) { return x && x.offsetParent !== null; }
   function setSel(sel, re) { for (var i = 0; i < sel.options.length; i++) if (re.test(sel.options[i].text.trim())) { if (sel.selectedIndex !== i) { sel.selectedIndex = i; fire(sel, 'change'); return 'changed'; } return 'ok'; } return 'missing'; }
@@ -407,8 +408,13 @@
       AS.step = 'loaded'; AS.showAt = now; AS.note = 'Loading the stock report'; asSave(); paint(); sb.click(); return;
     }
     if (AS.step === 'loaded') {
-      var rows = busyNow() ? 0 : reportRows(), sb2 = saveBtn(), sbOff = sb2 && (sb2.disabled || /disabled/i.test(sb2.className || '') || sb2.getAttribute('aria-disabled') === 'true');
-      if (!rows || sbOff) { AS.stableAt = 0; AS.lastRows = rows; AS.note = rows ? 'Report loading · ' + rows + ' rows so far' : 'Waiting for the portal to load the report'; if (now - AS.showAt > 420000) AS.err = 'The report did not load in 7 minutes. Check the page, then Try again.'; asSave(); paint(); return; }
+      var bz = busyNow(), rows = bz ? 0 : reportRows(), sb2 = saveBtn(), sbOff = sb2 && (sb2.disabled || /disabled/i.test(sb2.className || '') || sb2.getAttribute('aria-disabled') === 'true');
+      var sig = bz ? '' : String((document.body.innerText || '').length) + ':' + document.querySelectorAll('tr').length;
+      if (sig && sig !== AS.sig) { AS.sig = sig; AS.sigAt = now; }
+      var quiet = !bz && AS.sigAt && now - AS.sigAt > 6000 && now - AS.showAt > 10000;
+      if (quiet && (!rows || sbOff)) { AS.step = 'export'; AS.expAt = 0; AS.expTries = 0; AS.note = 'Report looks fully loaded'; asSave(); }
+      else if (!rows || sbOff) { AS.stableAt = 0; AS.lastRows = rows; AS.note = rows ? 'Report loading · ' + rows + ' rows so far' : 'Waiting for the portal to load the report'; if (now - AS.showAt > 420000) AS.err = 'The report did not load in 7 minutes. Check the page, then Try again.'; asSave(); paint(); return; }
+      if (AS.step !== 'loaded') { paint(); return; }
       if (rows !== AS.lastRows || !AS.stableAt) { AS.lastRows = rows; AS.rows = rows; AS.stableAt = now; AS.note = 'Report loading · ' + rows + ' rows'; asSave(); paint(); return; }
       if (now - AS.stableAt < 4000) { AS.note = 'Report fetched · ' + rows + ' rows · checking it is complete'; asSave(); paint(); return; }
       AS.step = 'export'; AS.expAt = 0; AS.expTries = 0; AS.note = 'Report fully loaded · ' + rows + ' rows'; asSave();
@@ -533,7 +539,8 @@
     var a = t.getAttribute('data-jv'); var j = job();
     if (a === 'app') { B.showApp(); return; }
     if (a === 'tQueue' || a === 'tAuto') { var k = a === 'tQueue' ? 'queue' : 'autoSubmit'; var jt = job(); if (jt && jt.adv) return; if (jt) { jt[k] = !jt[k]; save(jt); ev('setPref', { key: k, val: jt[k] }); if (k === 'autoSubmit') { ui.autoStop = false; ui.autoAt = 0; } } paint(); return; }
-    if (a === 'asStop') { try { B.autoStop && B.autoStop(); } catch (er) {} AUTO = null; try { localStorage.removeItem('jvAS'); } catch (er) {} B.showApp(); return; }
+    if (a === 'asStop') { AUTO = null; try { localStorage.removeItem('jvAS'); } catch (er) {} bar.style.visibility = 'hidden'; try { B.showApp(); } catch (er) {} setTimeout(function () { try { B.autoStop && B.autoStop(); } catch (er) {} }, 350); return; }
+    if (a === 'asForce') { AS.err = ''; AS.step = 'export'; AS.expAt = 0; AS.expTries = 0; AS.menuAt = 0; AS.t0 = Date.now(); AS.note = 'Tapping save → Excel'; asSave(); paint(); asStep(); return; }
     if (a === 'asRetry') { AS = { run: AUTO.run, step: 'start' }; asSave(); location.href = (B.targetUrl && B.targetUrl()) || location.href; return; }
     if (a === 'kPeek') { needAuth('peek'); return; }
     if (a === 'kErrLater') { ui.kErr = false; paint(); return; }

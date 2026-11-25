@@ -38,11 +38,19 @@ function save(noSync) {
   if (!S.sync.firstDirty) S.sync.firstDirty = Date.now();
   paintSync();
 }
-let syncBusy = false, syncErr = '';
+let syncBusy = false, syncErr = '', SYNCP = null, SYNCT = null;
+function fmtLeft(sec) { sec = Math.max(1, Math.round(sec)); return sec < 60 ? sec + ' s' : Math.floor(sec / 60) + ' min ' + (sec % 60 ? (sec % 60) + ' s' : ''); }
+// estimated progress: Apps Script does not allow live upload progress, so it is timed from earlier syncs of similar size
+function syncProg() {
+  const P = SYNCP; if (!P) return { pct: 0 };
+  if (P.phase === 'Preparing') return { pct: 3, phase: 'Preparing', left: P.est / 1000 };
+  const el = Date.now() - P.t0, f = Math.min(0.97, el / P.est);
+  return { pct: Math.max(5, Math.round(5 + f * 92)), left: Math.max(1, (P.est - el) / 1000), phase: el < P.est * 0.6 ? 'Uploading' : 'Saving to Google Sheet' };
+}
 function syncLabel() {
   if (S.testMode) return ['offline', 'Test mode · backup paused'];
   if (!S.sync.url) return ['off', 'Cloud not set'];
-  if (syncBusy) return ['busy', 'Syncing…'];
+  if (syncBusy) { const P = syncProg(); return ['busy', 'Syncing ' + P.pct + '%' + (P.left != null ? ' · ~' + fmtLeft(P.left) + ' left' : '')]; }
   if (!navigator.onLine) return ['offline', 'Offline · saved on phone'];
   if (S.sync.dirty || !S.sync.at) { const left = Math.max(0, Math.ceil(((S.sync.firstDirty || Date.now()) + (S.sync.delay != null ? S.sync.delay : 5) * 60000 - Date.now()) / 60000)); return [syncErr ? 'error' : 'pending', syncErr ? 'Will retry · saved on phone' : 'Saved on phone · upload in ' + (left ? left + ' min' : 'a moment')]; }
   return ['ok', 'Synced ' + (S.sync.at ? ago(S.sync.at) : '')];
@@ -69,8 +77,44 @@ const fmtShort = iso => { const p = P(iso); return p.d + ' ' + MON[p.m - 1]; };
 const fmtDT = ts => { const d = new Date(ts); return d.getDate() + ' ' + MON[d.getMonth()] + ' ' + d.getFullYear() + ', ' + d.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }); };
 const days = iso => Math.round((new Date(today() + 'T00:00:00') - new Date(iso + 'T00:00:00')) / 864e5);
 const remarkFor = iso => iso === today() ? '' : 'Requisition Requested on ' + fmtLong(iso);
-const itemName = c => (S.stock[c] && S.stock[c].name) || (findItemAnywhere(c) || {}).name || 'Unknown item';
-const itemUom = c => (S.stock[c] && S.stock[c].uom) || (findItemAnywhere(c) || {}).uom || '';
+const itemName = c => (S.stock[c] && S.stock[c].name) || (allOn() && ALL[c] && ALL[c].name) || (findItemAnywhere(c) || {}).name || 'Unknown item';
+const itemUom = c => (S.stock[c] && S.stock[c].uom) || (allOn() && ALL[c] && ALL[c].uom) || (findItemAnywhere(c) || {}).uom || '';
+/* ---------- full stock list (all items, stored separately) + small working list in S.stock ---------- */
+let ALL = null, ALL_P = null, ALL_OK = true, ALL_WS = null;
+function idb() { return new Promise((ok, bad) => { try { const r = indexedDB.open('jvStock', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => ok(r.result); r.onerror = () => bad(r.error); } catch (e) { bad(e); } }); }
+async function idbGet(k) { const db = await idb(); return new Promise((ok, bad) => { const t = db.transaction('kv', 'readonly').objectStore('kv').get(k); t.onsuccess = () => ok(t.result); t.onerror = () => bad(t.error); }); }
+async function idbPut(k, v) { const db = await idb(); return new Promise((ok, bad) => { const tx = db.transaction('kv', 'readwrite'); tx.objectStore('kv').put(v, k); tx.oncomplete = () => ok(true); tx.onerror = () => bad(tx.error); }); }
+function allOn() { return !!ALL && ALL_WS === S.stock && !S.testMode; }
+function stockFull() { return allOn() ? ALL : S.stock; }
+function stockCount() { return Math.max(S.stockAllN || 0, S.stockWorkN || 0) || Object.keys(S.stock).length; }
+function allLoad() {
+  if (ALL) return Promise.resolve(ALL); if (ALL_P) return ALL_P;
+  ALL_P = idbGet('stockAll').then(v => { ALL = v && typeof v === 'object' ? v : {}; for (const c in S.stock) ALL[c] = S.stock[c]; S.stockAllN = Object.keys(ALL).length; ALL_WS = S.stock; return ALL; })
+    .catch(() => { ALL_OK = false; ALL = null; return S.stock; });
+  return ALL_P;
+}
+function allSave() { if (!ALL) return Promise.resolve(false); S.stockAllN = Object.keys(ALL).length; return idbPut('stockAll', ALL).then(() => { ALL_OK = true; return true; }).catch(() => { ALL_OK = false; return false; }); }
+function stockNeed() {
+  const n = new Set(); S.lines.forEach(l => n.add(l.code)); (S.returns || []).forEach(r => (r.items || []).forEach(i => n.add(i.code)));
+  (S.countList || []).forEach(c => n.add(c)); (S.zeroWatch || []).forEach(w => n.add(w.code)); Object.keys(S.stockEdits || {}).forEach(c => n.add(c));
+  const E = S.emp; if (E) { (E.sessions || []).forEach(x => { if (x.status !== 'void' && x.status !== 'done') x.people.forEach(q => q.codes.forEach(c => n.add(c))); }); (E.ignore || []).forEach(r => (r.ex || []).forEach(c => n.add(c))); }
+  return n;
+}
+// rebuild the small working list from the full list: stock not zero + every article the app refers to
+function stockRebuild() {
+  if (!ALL || !ALL_OK || S.testMode) return false;
+  const need = stockNeed(), keep = {};
+  for (const c in ALL) { const v = ALL[c]; if ((Number(v.qty) || 0) !== 0 || need.has(c)) keep[c] = v; }
+  S.stock = keep; ALL_WS = keep; S.stockWorkN = Object.keys(keep).length; S.stockAllN = Object.keys(ALL).length; return true;
+}
+// bring articles the app needs (new requests etc.) into the working list
+function stockEnsure(codes) { if (!allOn()) return 0; let n = 0; codes.forEach(c => { if (!S.stock[c] && ALL[c]) { S.stock[c] = ALL[c]; n++; } }); return n; }
+async function stockBoot() {
+  const big = Object.keys(S.stock).length;
+  if (S.testMode) return;
+  if (!S.stockAllN && big) { ALL = S.stock; ALL_WS = S.stock; const ok = await allSave(); if (ok && stockRebuild()) { save(true); render(); } return; }
+  await allLoad(); if (ALL && ALL_OK && Object.keys(S.stock).length > 3000 && stockRebuild()) { save(true); render(); }
+}
 function findItemAnywhere(c) {
   for (const e of S.entries) for (const i of e.items) if (i.code === c && i.name) return i;
   for (const r of S.returns) for (const i of r.items) if (i.code === c && i.name) return i;
@@ -100,6 +144,7 @@ function plan() {
 function plan2(t) {
   const res = {}, avail = {};
   const waiting = S.lines.filter(l => l.status === 'waiting' && !(l.date > t));
+  stockEnsure(waiting.map(l => l.code));
   waiting.forEach(l => { if (!(l.code in avail) && S.stock[l.code]) avail[l.code] = S.stock[l.code].qty; });
   S.lines.forEach(l => { if (l.status === 'waiting' && l.date > t) res[l.id] = 'later'; });
   [waiting.filter(l => l.date === t), waiting.filter(l => l.date !== t)].forEach((tier, ti) => {
@@ -261,7 +306,7 @@ function parseReqSheet(ws, kind, sheetName) {
     const rcv = ci.rcv >= 0 ? (normRcv(r[ci.rcv]) || String(r[ci.rcv]).trim()) : '';
     const nb = [];
     if (rcv && !validRcv(rcv)) nb.push('Receiver "' + r[ci.rcv] + '" is not a GA or E code, so the store default is used');
-    if (Object.keys(S.stock).length && !S.stock[code]) nb.push('Item code is not in the current stock sheet');
+    if (stockCount() && !stockFull()[code]) nb.push('Item code is not in the current stock sheet');
     const slip = ci.slip >= 0 ? String(r[ci.slip]).trim().toUpperCase() : '';
     if (slip && !SLIP_RE.test(slip)) nb.push('Slip No ' + slip + ' is not valid, so it is left empty');
     if (ci.date >= 0 && String(r[ci.date]).trim() && !toISO(r[ci.date])) nb.push('Date "' + r[ci.date] + '" not understood, so today is used');
@@ -274,7 +319,7 @@ function parseReqSheet(ws, kind, sheetName) {
 const nmKey = n => String(n || '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').trim();
 function stockDiff(file, linkBy) {
   linkBy = linkBy || 'both';
-  const cur = S.stock || {}, byName = {}, dupName = new Set();
+  const cur = stockFull() || {}, byName = {}, dupName = new Set();
   const exN = v => String(v.raw != null ? v.raw : (v.name == null ? '' : v.name));
   Object.entries(cur).forEach(([c, v]) => { const k = exN(v); if (!k) return; if (byName[k] && byName[k] !== c) dupName.add(k); byName[k] = c; });
   const fileNames = {}; Object.values(file).forEach(v => { const k = exN(v); fileNames[k] = (fileNames[k] || 0) + 1; });
@@ -397,7 +442,7 @@ function stockCard() {
   const when = new Date(S.stockAt), tm = when.toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }), sameDay = isoOf(when) === today();
   return '<div class="stockcard ' + (old ? 'warn' : 'fresh') + '"><button class="scmain" data-a="stockOpen"><span class="sci">' + (old ? clock : check) + '</span><span class="sct"><b>' + (old ? 'Stock needs an update' : 'Stock is up to date') + '</b>' +
     '<span class="l1">Updated ' + esc(ago(S.stockAt)) + (mins >= 1 ? ' · ' + (sameDay ? tm : fmtShort(isoOf(when)) + ', ' + tm) : '') + '</span>' +
-    '<span class="l2">' + Object.keys(S.stock).length.toLocaleString('en-IN') + ' items · ' + (S.stockSrc === 'auto' ? 'from CUIMS' : 'from a file') + '</span></span></button><button class="scgo" data-a="openMgr">' + (old ? 'Update' : 'Refresh') + '</button></div>';
+    '<span class="l2">' + stockCount().toLocaleString('en-IN') + ' items · ' + (S.stockSrc === 'auto' ? 'from CUIMS' : 'from a file') + '</span></span></button><button class="scgo" data-a="openMgr">' + (old ? 'Update' : 'Refresh') + '</button></div>';
 }
 
 /* ---------------- Home ---------------- */
@@ -735,10 +780,10 @@ function shUpload() {
   const r = u.result;
   if (u.kind === 'stock') {
     if (r.noCode) { u.linkBy = 'name'; u.stockMode = 'update'; u.addNew = false; }
-    if (!u.diff) { u.diff = stockDiff(r.stock, u.linkBy || 'both'); if (!u.stockMode) u.stockMode = Object.keys(S.stock).length ? 'update' : 'fresh'; }
-    h += '<div class="card pad col"><b>' + r.count.toLocaleString('en-IN') + ' items in this report</b><div class="note">Current stock: ' + Object.keys(S.stock).length.toLocaleString('en-IN') + ' items, updated ' + (S.stockAt ? esc(ago(S.stockAt)) : 'never') + '.</div></div>';
+    if (!u.diff) { u.diff = stockDiff(r.stock, u.linkBy || 'both'); if (!u.stockMode) u.stockMode = stockCount() ? 'update' : 'fresh'; }
+    h += '<div class="card pad col"><b>' + r.count.toLocaleString('en-IN') + ' items in this report</b><div class="note">Current stock: ' + stockCount().toLocaleString('en-IN') + ' items, updated ' + (S.stockAt ? esc(ago(S.stockAt)) : 'never') + '.</div></div>';
     if (r.noCode) h += '<div class="banner" style="border:0;background:#FFE4EA;color:#8E1B3A"><b>This report has no Item Codes.</b> The Item Code column is empty in every row, so the app can only update closing qty of items whose name is exactly the same. Fresh replace and adding new items are turned off for this file. Tip: on CUIMS export with the floppy icon → Excel inside the report.</div>';
-    if (Object.keys(S.stock).length) h += stockDiffHtml(u);
+    if (stockCount()) h += stockDiffHtml(u);
     else if (r.noCode) h += '<div class="err">You have no stock in the app yet, so a report without Item Codes cannot be used. Please export again with Item Codes.</div>';
   } else {
     const stores = [...new Set(r.rows.map(x => x.store))];
@@ -753,7 +798,7 @@ function shUpload() {
   if (u.auto) h = '<div class="okbox" style="background:#ECE6FF;color:#4B3BA8"><span><b>Live stock downloaded from CUIMS</b> · ' + esc((S.autoStock || {}).store || '') + ' · ' + esc(((S.autoStock || {}).fy) || curFY()) + '</span></div>' + h;
   h += importReport(r, u.kind);
   const nImp = u.kind === 'stock' ? r.count : r.rows.length, nSk = (r.skipped || []).length;
-  const lbl = u.kind === 'stock' && u.diff && Object.keys(S.stock).length ? (u.stockMode === 'fresh' ? 'Replace with ' + nImp + ' items' : 'Update ' + (u.diff.code.length + u.diff.name.length) + ' items' + (u.addNew && u.diff.fresh.length ? ' + add ' + u.diff.fresh.length : '')) : 'Import ' + nImp + (nSk ? ', skip ' + nSk : '');
+  const lbl = u.kind === 'stock' && u.diff && stockCount() ? (u.stockMode === 'fresh' ? 'Replace with ' + nImp + ' items' : 'Update ' + (u.diff.code.length + u.diff.name.length) + ' items' + (u.addNew && u.diff.fresh.length ? ' + add ' + u.diff.fresh.length : '')) : 'Import ' + nImp + (nSk ? ', skip ' + nSk : '');
   h += '<div class="grid2"><button class="btn" data-a="uploadCancel">Back</button><button class="btn main" data-a="uploadOk"' + (!nImp ? ' disabled' : '') + '>' + lbl + '</button></div>';
   return h;
 }
@@ -1491,7 +1536,7 @@ function vEmp() {
       '<div class="grid2"><button class="btn sm main" data-a="empOpenSess" data-v="' + x.id + '">Continue</button><button class="btn sm danger-t" data-a="empDiscard" data-v="' + x.id + '">Discard this cycle</button></div></div>'; });
   h += stockCard();
   h += '<button class="btn full" data-a="empSys">Update system stock</button><div class="grid2"><button class="btn" data-a="empLog">Count history</button><button class="btn danger-t" data-a="empFresh">Full reset</button></div>';
-  h += '<div class="card pad col" style="gap:10px"><div class="row"><b style="font-size:17px">Round ' + E.round.n + '</b>' + pill('started ' + fmtShort(String(E.round.start).slice(0, 10)), 'c-in') + '</div>' +
+  h += '<div class="card pad col" style="gap:10px"><div class="row"><b style="font-size:17px">Round ' + E.round.n + '</b>' + pill('started ' + fmtShort(isoOf(new Date(E.round.start))), 'c-in') + '</div>' +
     '<div style="height:12px;border-radius:99px;background:#EEEAFB;overflow:hidden"><i style="display:block;height:100%;width:' + (st.total ? Math.round(st.counted / st.total * 100) : 0) + '%;background:linear-gradient(90deg,#B9A7FF,#F6A8EE)"></i></div>' +
     '<div class="grid3"><div class="tile t-ok"><b>' + st.counted + '</b><span>Counted</span></div><div class="tile t-pt"><b>' + st.left + '</b><span>Left in round</span></div><div class="tile t-no"><b>' + st.missed + '</b><span>Missed before</span></div></div>' +
     '<div class="note">' + st.total + ' articles in this round. Missed ones are given first. When all are counted, the next round starts by itself.</div></div>';
@@ -1768,14 +1813,14 @@ function shZwAdd() {
 }
 function zwAddResults() {
   const Z = ui.sheet, by = Z.by || 'both', q = String(Z.q || '').trim().toUpperCase(), words = q.split(/\s+/).filter(Boolean), have = new Set(zwList().map(w => w.code));
-  let L = Object.entries(S.stock).map(([c, v]) => ({ c, v }));
+  let L = Object.entries(q ? stockFull() : S.stock).map(([c, v]) => ({ c, v }));
   if (by === 'code') L = q ? L.filter(x => x.c.toUpperCase().includes(q)) : [];
   else if (by === 'name') L = q ? L.filter(x => String(x.v.name).trim().toUpperCase() === q) : [];
   else if (words.length) L = L.filter(x => words.every(w => x.c.toUpperCase().includes(w) || String(x.v.name).toUpperCase().includes(w)));
   L.sort((a, b) => (Z.sel.includes(b.c) ? 1 : 0) - (Z.sel.includes(a.c) ? 1 : 0) || String(a.v.name).localeCompare(String(b.v.name)));
   let h = '';
   if (Z.sel.length) h += '<div class="note" style="padding:0 4px">Selected: ' + Z.sel.map(c => esc((S.stock[c] || {}).name || c)).join(', ') + '</div>';
-  if (!Object.keys(S.stock).length) return h + '<div class="card pad note">No stock report yet. Upload one or update live stock first.</div>';
+  if (!stockCount()) return h + '<div class="card pad note">No stock report yet. Upload one or update live stock first.</div>';
   if (!L.length) return h + '<div class="card pad note">' + (q ? (by === 'name' ? 'No item has exactly this name.' : 'No item matches.') : 'Type to search the stock report.') + '</div>';
   return h + '<div class="card" style="overflow:hidden;max-height:46vh;overflow-y:auto">' + L.slice(0, 80).map(x => { const on = Z.sel.includes(x.c), had = have.has(x.c);
     return '<button class="stkrow" data-a="zwAddPick" data-v="' + esc(x.c) + '"' + (had ? ' disabled style="opacity:.55"' : '') + '><span class="zwck' + (on ? ' on' : '') + '">' + (on || had ? '✓' : '') + '</span><span class="sn"><b>' + esc(x.v.name) + '</b><span class="mono">' + esc(x.c) + (had ? ' · already watched' : '') + '</span></span><span class="sq"><b>' + num(x.v.qty) + '</b><small>' + esc(x.v.uom) + '</small></span></button>'; }).join('') + '</div>' +
@@ -1835,7 +1880,7 @@ function vCountList() {
 function clResults() {
   const q = String(ui.clq || '').trim().toUpperCase(), words = q.split(/\s+/).filter(Boolean); if (!words.length) return '';
   const L = new Set(S.countList || []);
-  const R = Object.entries(S.stock).filter(([c, v]) => words.every(w => c.includes(w) || String(v.name).toUpperCase().includes(w))).slice(0, 25);
+  const R = Object.entries(stockFull()).filter(([c, v]) => words.every(w => c.includes(w) || String(v.name).toUpperCase().includes(w))).slice(0, 25);
   if (!R.length) return '<div class="card pad note">No stock item matches.</div>';
   return '<div class="card" style="overflow:hidden">' + R.map(([c, v]) => '<div class="line" style="flex-direction:row;align-items:center;gap:10px"><span style="flex:1;min-width:0"><b>' + esc(v.name) + '</b><div class="meta"><span class="mono">' + esc(c) + '</span><i></i><span>' + num(v.qty) + ' ' + esc(v.uom) + '</span></div></span>' + (L.has(c) ? pill('In list', 'c-ok') : '<button class="btn sm main" data-a="clAdd" data-v="' + esc(c) + '">+ Add</button>') + '</div>').join('') + '</div>';
 }
@@ -2166,20 +2211,34 @@ function rpXlsx2(type) {
 async function syncNow(quiet, kind, note) {
   if (!S.sync.url) return;
   if (S.testMode) { if (!quiet) toast('Test mode: cloud backup is paused.'); return; }
-  const payload = { action: 'sync', kind: kind || 'auto', note: note || '', counts: { requests: requests().length, articles: S.lines.length, entries: S.entries.length, returns: S.returns.length }, at: new Date().toISOString(), by: meTag(),
-    tabs: { 'Requests': rowsRequests(), 'Request lines': rowsAllLines(), 'Entries': rowsEntries(), 'Entry items': rowsItems(), 'Pending': rowsPending(), 'Returns': rowsReturns(), 'Stock': rowsStock(),
-      'Stores': Object.entries(S.stores).map(([s, v]) => ({ Store: s, Receiver: v.rcv ? rcvLabel(v.rcv) : '', Name: v.rname || '' })) },
-    backup: JSON.stringify(S) };
-  if (syncBusy) return; syncBusy = true; paintSync();
+  if (syncBusy) return; syncBusy = true; SYNCP = { phase: 'Preparing', t0: Date.now(), est: S.sync.lastMs || 8000 }; paintSync();
+  await new Promise(r => setTimeout(r, 30));
+  let body = '';
+  try {
+    flushLocal();
+    const withAll = !!(allOn() && ALL_OK && S.stockAllN && S.sync.allAt !== S.stockAllN + '|' + S.stockAt);
+    const bk = withAll ? Object.assign({}, S, { _stockAll: ALL }) : S;
+    const payload = { action: 'sync', kind: kind || 'auto', note: note || '', counts: { requests: requests().length, articles: S.lines.length, entries: S.entries.length, returns: S.returns.length }, at: new Date().toISOString(), by: meTag(),
+      tabs: { 'Requests': rowsRequests(), 'Request lines': rowsAllLines(), 'Entries': rowsEntries(), 'Entry items': rowsItems(), 'Pending': rowsPending(), 'Returns': rowsReturns(), 'Stock': rowsStock(),
+        'Stores': Object.entries(S.stores).map(([st, v]) => ({ Store: st, Receiver: v.rcv ? rcvLabel(v.rcv) : '', Name: v.rname || '' })) },
+      backup: JSON.stringify(bk) };
+    body = JSON.stringify(payload); SYNCP.withAll = withAll;
+  } catch (e) { syncBusy = false; SYNCP = null; syncErr = e.message; paintSync(); return; }
+  const kb = body.length / 1024, per = S.sync.msPerKB || 6, base = S.sync.baseMs || 4000;
+  SYNCP = { phase: 'Uploading', t0: Date.now(), est: Math.max(2500, base + kb * per), kb, withAll: SYNCP.withAll };
+  clearInterval(SYNCT); SYNCT = setInterval(paintSync, 500); paintSync();
   const startedAt = S.sync.changedAt;
   try {
     if (!navigator.onLine) throw new Error('offline');
-    const r = await fetch(S.sync.url, { method: 'POST', body: JSON.stringify(payload) });
+    const r = await fetch(S.sync.url, { method: 'POST', body });
     const j = await r.json();
     if (!j.ok) throw new Error(j.error || 'failed');
-    S.sync.at = new Date().toISOString(); if (S.sync.changedAt === startedAt) { S.sync.dirty = false; S.sync.firstDirty = 0; } setTimeout(() => syncPhotos(true), 800); syncErr = ''; syncBusy = false; writeLocal(); paintSync();
-    if (!quiet) { toast('Backed up to Google Drive and Sheet.'); render(); if (ui.sheet && ui.sheet.kind === 'backups') loadBackups(); }
-  } catch (e) { syncBusy = false; syncErr = e.message; paintSync(); if (!quiet) toast(e.message === 'offline' ? 'Offline. Saved on phone; it uploads by itself when internet is back.' : 'Backup failed: ' + e.message + '. It will retry by itself.'); }
+    const ms = Date.now() - SYNCP.t0;
+    S.sync.lastMs = ms; S.sync.msPerKB = Math.round(((S.sync.msPerKB || 6) * 0.5 + Math.max(0.5, (ms - (S.sync.baseMs || 4000)) / Math.max(1, kb)) * 0.5) * 100) / 100; S.sync.baseMs = Math.round((S.sync.baseMs || 4000) * 0.7 + Math.min(ms, 6000) * 0.3);
+    if (SYNCP.withAll) S.sync.allAt = S.stockAllN + '|' + S.stockAt;
+    S.sync.at = new Date().toISOString(); if (S.sync.changedAt === startedAt) { S.sync.dirty = false; S.sync.firstDirty = 0; } setTimeout(() => syncPhotos(true), 800); syncErr = ''; syncBusy = false; SYNCP = null; clearInterval(SYNCT); writeLocal(); paintSync();
+    if (!quiet) { toast('Backed up to Google Drive and Sheet in ' + fmtLeft(ms / 1000) + '.'); render(); if (ui.sheet && ui.sheet.kind === 'backups') loadBackups(); }
+  } catch (e) { syncBusy = false; SYNCP = null; clearInterval(SYNCT); syncErr = e.message; paintSync(); if (!quiet) toast(e.message === 'offline' ? 'Offline. Saved on phone; it uploads by itself when internet is back.' : 'Backup failed: ' + e.message + '. It will retry by itself.'); }
 }
 async function apiGet(q) { const r = await fetch(S.sync.url + (S.sync.url.includes('?') ? '&' : '?') + q); const j = await r.json(); if (!j.ok) throw new Error(j.error || 'failed'); return j; }
 async function apiPost(o) { const r = await fetch(S.sync.url, { method: 'POST', body: JSON.stringify(o) }); const j = await r.json(); if (!j.ok) throw new Error(j.error || 'failed'); return j; }
@@ -2233,7 +2292,7 @@ function batchAddGroup(store) {
 function itemHits(q, have, n) {
   q = String(q || '').trim().toUpperCase(); if (q.length < 1) return [];
   const words = q.split(/\s+/);
-  return Object.entries(S.stock).filter(([c, v]) => !have.has(c) && words.every(w => c.includes(w) || String(v.name).toUpperCase().includes(w)))
+  return Object.entries(stockFull()).filter(([c, v]) => !have.has(c) && words.every(w => c.includes(w) || String(v.name).toUpperCase().includes(w)))
     .sort((a, b) => (a[0] === q ? -2 : 0) - (b[0] === q ? -2 : 0) || (String(a[1].name).toUpperCase().startsWith(q) ? 0 : 1) - (String(b[1].name).toUpperCase().startsWith(q) ? 0 : 1) || String(a[1].name).localeCompare(String(b[1].name))).slice(0, n || 6);
 }
 function batchHits(gi) {
@@ -2418,7 +2477,10 @@ async function restoreNow() {
     const j = await r.json();
     if (!j.ok || !j.backup) throw new Error(j.error || 'no backup found');
     const url = S.sync.url;
-    S = Object.assign(blank(), JSON.parse(j.backup)); S.sync.url = url; save(true); render(); toast('Restored from Google Sheet.');
+    const B = JSON.parse(j.backup), full = B._stockAll; delete B._stockAll;
+    S = Object.assign(blank(), B); S.sync.url = url;
+    if (full && typeof full === 'object') { ALL = full; for (const c in S.stock) ALL[c] = S.stock[c]; ALL_WS = S.stock; await allSave(); stockRebuild(); } else { ALL = null; ALL_P = null; allLoad(); }
+    save(true); render(); toast('Restored from Google Sheet.');
   } catch (e) { toast('Restore failed: ' + e.message); }
 }
 
@@ -2601,7 +2663,7 @@ function dataIssues() {
   const rn = {}; S.returns.forEach(r => (rn[String(r.no).toUpperCase()] = rn[String(r.no).toUpperCase()] || []).push(r));
   Object.entries(rn).filter(([k, v]) => v.length > 1).forEach(([k, v]) => out.push({ kind: 'retdup', no: k, ids: v.map(r => r.id), stores: v.map(r => r.store) }));
   const oldF = S.returns.filter(r => !RET_RE.test(String(r.no))); if (oldF.length) out.push({ kind: 'retfmt', n: oldF.length, nos: oldF.map(r => r.no) });
-  const miss = S.lines.filter(l => l.status === 'waiting' && Object.keys(S.stock).length && !S.stock[l.code]);
+  const miss = S.lines.filter(l => l.status === 'waiting' && stockCount() && !stockFull()[l.code]);
   if (miss.length) out.push({ kind: 'nostock', n: miss.length, codes: [...new Set(miss.map(l => l.code))] });
   return out;
 }
@@ -2701,7 +2763,7 @@ function vArts() {
 function stockDemand() { const d = {}, t = today(); S.lines.forEach(l => { if (l.status === 'waiting' && !(l.date > t)) d[l.code] = (d[l.code] || 0) + l.qty; }); return d; }
 function stockRows() {
   const K = ui.stk, q = String(K.q || '').trim().toUpperCase(), words = q.split(/\s+/).filter(Boolean), D = stockDemand();
-  let L = Object.entries(S.stock).map(([c, v]) => ({ c, v, need: D[c] || 0 }));
+  let L = Object.entries(words.length ? stockFull() : S.stock).map(([c, v]) => ({ c, v, need: D[c] || 0 }));
   if (words.length) L = L.filter(x => words.every(w => x.c.includes(w) || String(x.v.name).toUpperCase().includes(w)));
   if (K.f === 'edited') L = L.filter(x => (S.stockEdits || {})[x.c]);
   else if (K.f === 'in') L = L.filter(x => x.v.qty > 0); else if (K.f === 'zero') L = L.filter(x => !(x.v.qty > 0)); else if (K.f === 'short') L = L.filter(x => x.need > x.v.qty); else if (K.f === 'need') L = L.filter(x => x.need > 0);
@@ -3567,11 +3629,11 @@ document.addEventListener('click', async ev => {
     case 'stkRen': { const it = S.stock[v]; if (!it) break; const nm = await uiPrompt('Item name for ' + v, it.name, 'Next'); if (nm == null) break; const um = await uiPrompt('Unit (UOM) for ' + v, it.uom, 'Save'); if (um == null) break;
       undoArm('stkEdit'); it.name = nm.trim() || it.name; it.uom = um.trim().toUpperCase() || it.uom; save(); render(); break; }
     case 'stkDel': { const it = S.stock[v]; if (!it) break; if (!(await uiConfirm('Delete ' + it.name + ' (' + v + ') from the stock list? Requests that need it will show "Not in stock".', 'Delete', true))) break;
-      undoArm('stkEdit'); delete S.stock[v]; if (S.stockEdits) delete S.stockEdits[v]; ui.stk.open = null; save(); render(); break; }
+      undoArm('stkEdit'); delete S.stock[v]; if (allOn()) { delete ALL[v]; allSave(); } if (S.stockEdits) delete S.stockEdits[v]; ui.stk.open = null; save(); render(); break; }
     case 'stkAdd': { const c = await uiPrompt('Item code (e.g. GR-198)', '', 'Next'); if (!c) break; const code = c.trim().toUpperCase(); if (S.stock[code]) { toast(code + ' already exists. Use Edit qty.'); ui.stk.q = code; render(); break; }
       const nm = await uiPrompt('Item name', '', 'Next'); if (nm == null) break; const um = await uiPrompt('Unit (KG, NOS, LTR…)', 'KG', 'Next'); if (um == null) break; const qq = await uiPrompt('Quantity in stock', '0', 'Add'); if (qq == null) break;
       const q = parseFloat(qq); if (isNaN(q) || q < 0) { toast('Enter 0 or more.'); break; }
-      undoArm('stkEdit'); S.stock[code] = { name: nm.trim() || code, uom: um.trim().toUpperCase() || 'NOS', qty: q }; S.stockEdits = S.stockEdits || {}; S.stockEdits[code] = { from: 0, to: q, at: new Date().toISOString(), by: S.me.name || '', added: true };
+      undoArm('stkEdit'); S.stock[code] = { name: nm.trim() || code, uom: um.trim().toUpperCase() || 'NOS', qty: q }; if (allOn()) { ALL[code] = S.stock[code]; allSave(); } S.stockEdits = S.stockEdits || {}; S.stockEdits[code] = { from: 0, to: q, at: new Date().toISOString(), by: S.me.name || '', added: true };
       save(); ui.stk.q = code; ui.stk.open = code; render(); break; }
     case 'stkOpen': ui.stk.open = ui.stk.open === v ? null : v; { const b = document.getElementById('stkres'); if (b) b.innerHTML = stockResults(); } break;
     case 'regSt': ui.reg.st = v; render(); break;
@@ -3810,7 +3872,7 @@ document.addEventListener('click', async ev => {
       S.lines.push(nl); s.lineIds.push(nl.id); s.addCode = ''; s.addQty = ''; save(true); renderSheet(); if (!S.stock[code]) toast(code + ' is not in the stock sheet; CUIMS will check it.'); break; }
     case 'upPick': ui.upload = { kind: v }; document.getElementById('fileIn').click(); break;
     case 'uploadCancel': ui.upload = null; renderSheet(); break;
-    case 'uploadOk': { const u = ui.upload; if (u && u.kind === 'stock' && u.diff && Object.keys(S.stock).length) { const D = u.diff;
+    case 'uploadOk': { const u = ui.upload; if (u && u.kind === 'stock' && u.diff && stockCount()) { const D = u.diff;
         const msg = u.stockMode === 'fresh' ? 'Replace the whole stock list with this report? ' + u.result.count + ' items · ' + D.up.length + ' qty up · ' + D.down.length + ' qty down · ' + D.fresh.length + ' new · ' + D.gone.length + ' removed (not in file).'
           : 'Update closing qty only? Linked by ' + ({ code: 'item code', name: 'exact item name', both: 'code, then exact name' }[D.linkBy || 'both']) + '. ' + (D.code.length + D.name.length) + ' items matched (' + D.code.length + ' by code, ' + D.name.length + ' by name) · ' + D.up.length + ' up · ' + D.down.length + ' down · ' + D.same.length + ' same' + (u.addNew ? ' · ' + D.fresh.length + ' new added' : ' · ' + D.fresh.length + ' new skipped') + ' · ' + D.gone.length + ' not in file kept as they are.';
         if (!(await uiConfirm(msg, u.stockMode === 'fresh' ? 'Replace stock' : 'Update closing'))) { ui.pendUndo = null; break; } }
@@ -3889,7 +3951,7 @@ document.addEventListener('click', async ev => {
     case 'openUrl': if (N) N.openUrl(v); else window.open(v); break;
     case 'bkSave': { const note = ui.sheet.note || ''; await syncNow(false, 'manual', note); ui.sheet.note = ''; loadBackups(); break; }
     case 'bkRestore': { if (!await uiConfirm('Replace ALL data on this phone with this backup? (Tip: save a backup of the current data first.)')) break;
-      try { const j = await apiGet('action=get&id=' + encodeURIComponent(v)); const url = S.sync.url; S = Object.assign(blank(), JSON.parse(j.backup)); S.sync.url = url; save(true); ui.sheet = null; renderSheet(); render(); toast('Backup restored.'); } catch (e) { toast('Restore failed: ' + e.message); } break; }
+      try { const j = await apiGet('action=get&id=' + encodeURIComponent(v)); const url = S.sync.url, B = JSON.parse(j.backup), full = B._stockAll; delete B._stockAll; S = Object.assign(blank(), B); S.sync.url = url; if (full && typeof full === 'object') { ALL = full; for (const c in S.stock) ALL[c] = S.stock[c]; ALL_WS = S.stock; await allSave(); stockRebuild(); } else { ALL = null; ALL_P = null; allLoad(); } save(true); ui.sheet = null; renderSheet(); render(); toast('Backup restored.'); } catch (e) { toast('Restore failed: ' + e.message); } break; }
     case 'bkKeep': try { await apiPost({ action: 'meta', id: v, keep: t.dataset.k === '1' }); loadBackups(); } catch (e) { toast('Failed: ' + e.message); } break;
     case 'bkDel': if (await uiConfirm('Delete this backup copy from Drive?', 'Delete', true)) { try { await apiPost({ action: 'delete', id: v }); loadBackups(); } catch (e) { toast('Failed: ' + e.message); } } break;
     case 'bkNote': { const b = (ui.sheet.items || []).find(x => x.id === v); ui.sheet.editing = v; ui.sheet.rename = b ? b.note : ''; renderSheet(); break; }
@@ -4041,14 +4103,15 @@ document.addEventListener('change', async ev => {
 
 function doImport() {
   const u = ui.upload, r = u.result;
-  if (u.kind === 'stock' && u.diff && u.stockMode === 'update' && Object.keys(S.stock).length) {
-    const D = u.diff; D.code.concat(D.name).forEach(x => { if (S.stock[x.code]) { S.stock[x.code].qty = x.to; if (S.stock[x.code].raw == null && (u.result.stock[x.fileCode] || {}).raw != null && x.how === 'code') S.stock[x.code].raw = u.result.stock[x.fileCode].raw; } if (S.stockEdits) delete S.stockEdits[x.code]; });
-    if (u.addNew) D.fresh.forEach(x => { if (!/^#NOCODE/.test(x.code)) S.stock[x.code] = Object.assign({}, x.v); });
+  if (u.kind === 'stock' && u.diff && u.stockMode === 'update' && stockCount()) {
+    const F = stockFull(), D = u.diff; D.code.concat(D.name).forEach(x => { if (F[x.code]) { F[x.code].qty = x.to; if (F[x.code].raw == null && (u.result.stock[x.fileCode] || {}).raw != null && x.how === 'code') F[x.code].raw = u.result.stock[x.fileCode].raw; } if (S.stockEdits) delete S.stockEdits[x.code]; });
+    if (u.addNew) D.fresh.forEach(x => { if (!/^#NOCODE/.test(x.code)) F[x.code] = Object.assign({}, x.v); });
+    if (allOn()) { stockRebuild(); allSave(); }
     S.stockAt = new Date().toISOString(); S.stockSrc = u.auto ? 'auto' : 'file';
     S.stockLog = (S.stockLog || []).concat([{ at: S.stockAt, src: S.stockSrc, mode: 'update', n: D.code.length + D.name.length, up: D.up.length, down: D.down.length, added: u.addNew ? D.fresh.length : 0, by: S.me.name || '' }]).slice(-60);
     save(); ui.upload = null; ui.sheet = null; renderSheet(); render(); toast('Closing updated for ' + (D.code.length + D.name.length) + ' items' + (u.addNew && D.fresh.length ? ', ' + D.fresh.length + ' added' : '') + '. Everything re-planned.'); return; }
   if (u.kind === 'stock' && r.noCode) { toast('This report has no Item Codes, so it cannot replace your stock.'); return; }
-  if (u.kind === 'stock') { S.stock = r.stock; S.stockEdits = {}; S.stockAt = new Date().toISOString(); S.stockSrc = u.auto ? 'auto' : 'file'; S.stockLog = (S.stockLog || []).concat([{ at: S.stockAt, src: S.stockSrc, n: r.count, by: S.me.name || '' }]).slice(-60); save(); toast('Stock replaced: ' + r.count + ' items. Everything re-planned.'); }
+  if (u.kind === 'stock') { if (ALL_OK && !S.testMode) { ALL = r.stock; S.stock = r.stock; ALL_WS = r.stock; stockRebuild(); allSave(); } else S.stock = r.stock; S.stockEdits = {}; S.stockAt = new Date().toISOString(); S.stockSrc = u.auto ? 'auto' : 'file'; S.stockLog = (S.stockLog || []).concat([{ at: S.stockAt, src: S.stockSrc, n: r.count, by: S.me.name || '' }]).slice(-60); save(); toast('Stock replaced: ' + r.count + ' items. Everything re-planned.'); }
   else {
     r.rows.forEach(x => {
       S.lines.push({ fromFile: true, id: nid(), req: x.req, store: x.store, date: x.date, code: x.code, qty: x.qty, rcv: x.rcv, slip: x.slip || '', src: x.src, earlier: x.earlier || '', status: 'waiting', issued: [] });
@@ -4061,6 +4124,7 @@ function doImport() {
 
 /* ---------------- start ---------------- */
 render();
+setTimeout(() => { stockBoot().catch(() => {}); }, 300);
 setTimeout(() => { const b = document.getElementById('boot'); if (b) { b.style.transition = 'opacity .35s'; b.style.opacity = '0'; setTimeout(() => b.remove(), 400); } }, 650);
 if (S.sync.url && S.sync.auto && (S.sync.dirty || !S.sync.at)) setTimeout(() => syncNow(true), 5000);
 if (Date.now() - (S.lastUpdateCheck || 0) > 12 * 3600e3) setTimeout(() => checkUpdate(false), 3000);
