@@ -1072,6 +1072,7 @@ function vSet() {
       PT.map(t => '<label class="f">Heading · ' + esc(REPORTS[t].name) + '<input type="text" data-pdfhead="' + t + '" value="' + esc(rptPref(t).title) + '"></label>').join('') +
       '<label class="chk"><input type="checkbox" data-a="pdfSignAll" data-k="sign"' + (S.pdfSign !== false ? ' checked' : '') + '> My signature box (Prepared & checked / Received & reported) on all PDFs</label>' +
       '<label class="chk"><input type="checkbox" data-a="pdfSignAll" data-k="mgr"' + (S.pdfMgr ? ' checked' : '') + '> Manager signature box on all PDFs</label></div>'; }
+    h += signBox();
 
   h += '<div class="card pad col"><h3>Manager signature on PDFs</h3><label class="chk"><input type="checkbox" data-a="mgrToggle"' + (S.mgr.on ? ' checked' : '') + '> Add manager signature line</label>' +
     (S.mgr.on ? '<div class="grid2"><label class="f">Manager name<input type="text" data-set="mgr.name" value="' + esc(S.mgr.name) + '"></label><label class="f">Emp code<input type="text" data-set="mgr.emp" value="' + esc(S.mgr.emp || '') + '" autocapitalize="characters"></label></div><label class="f">Designation<input type="text" data-set="mgr.desig" value="' + esc(S.mgr.desig) + '"></label>' : '') + '</div>';
@@ -1199,21 +1200,64 @@ function pdfHead(doc, title, sub, chips) {
   });
   return cy + 13;
 }
-function pdfSign(doc, showMe, showMgr) {
+function pdfSign(doc, showMe, showMgr, sig) {
   if (showMe === undefined) showMe = true; if (showMgr === undefined) showMgr = S.mgr.on;
   const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight();
   let y = (doc.lastAutoTable ? doc.lastAutoTable.finalY : 40) + 10;
   if (y + 30 > H - 13) { doc.addPage(); y = 20; }
-  const box = (x, label, name, sub) => {
+  const box = (x, label, name, sub, img) => {
     doc.setDrawColor(232, 229, 223); doc.setFillColor(250, 249, 246); doc.roundedRect(x, y, 80, 28, 3, 3, 'FD');
     doc.setFontSize(8); doc.setTextColor(138, 106, 31); doc.setFont('helvetica', 'bold'); doc.text(label.toUpperCase(), x + 5, y + 6);
+    if (img) drawSig(doc, img, x + 5, y + 7.4, 70, 9.4);
     doc.setDrawColor(180); doc.line(x + 5, y + 17, x + 75, y + 17);
     doc.setTextColor(...INK); doc.setFont('helvetica', 'bold'); doc.setFontSize(9.5); doc.text(name || ' ', x + 5, y + 22.5);
     doc.setFont('helvetica', 'normal'); doc.setFontSize(8); doc.setTextColor(107, 111, 118); doc.text(sub || ' ', x + 5, y + 26.2);
   };
-  if (showMe) box(12, 'Prepared & checked by', S.me.name || '', [S.me.emp, S.me.desig].filter(Boolean).join(' · '));
+  if (showMe) box(12, 'Prepared & checked by', S.me.name || '', [S.me.emp, S.me.desig].filter(Boolean).join(' · '), sig);
   if (showMgr) box(showMe ? W - 92 : 12, 'Manager', S.mgr.name || '', [S.mgr.emp, S.mgr.desig].filter(Boolean).join(' · '));
 }
+function meSig(p) { return p && p.sign && p.dsign && S.me.signImg ? S.me.signImg : null; }
+function drawSig(doc, img, x, y, maxW, maxH) { const wh = S.me.signWH || [3, 1], k = Math.min(maxW / wh[0], maxH / wh[1]); try { doc.addImage(img, 'PNG', x, y + maxH - wh[1] * k, wh[0] * k, wh[1] * k); } catch (e) {} }
+function sigTrim(c) { const g = c.getContext('2d'), d = g.getImageData(0, 0, c.width, c.height).data; let x0 = c.width, y0 = c.height, x1 = -1, y1 = -1;
+  for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) if (d[(y * c.width + x) * 4 + 3] > 24) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  if (x1 < 0 || (x1 - x0) < 12 || (y1 - y0) < 6) return null; const pad = 6; x0 = Math.max(0, x0 - pad); y0 = Math.max(0, y0 - pad); x1 = Math.min(c.width - 1, x1 + pad); y1 = Math.min(c.height - 1, y1 + pad);
+  const w = x1 - x0 + 1, h = y1 - y0 + 1, k = Math.min(1, 700 / w, 240 / h), o = document.createElement('canvas'); o.width = Math.max(1, Math.round(w * k)); o.height = Math.max(1, Math.round(h * k));
+  o.getContext('2d').drawImage(c, x0, y0, w, h, 0, 0, o.width, o.height); return { img: o.toDataURL('image/png'), wh: [o.width, o.height] }; }
+function sigFromPhoto(img) { // remove paper background: ink = clearly darker than its local surroundings
+  const k = Math.min(1, 1100 / Math.max(img.width, img.height)), W = Math.max(1, Math.round(img.width * k)), H = Math.max(1, Math.round(img.height * k));
+  const c = document.createElement('canvas'); c.width = W; c.height = H; const g = c.getContext('2d'); g.drawImage(img, 0, 0, W, H);
+  const D = g.getImageData(0, 0, W, H), d = D.data, L = new Float32Array(W * H), I = new Float64Array((W + 1) * (H + 1));
+  for (let i = 0; i < W * H; i++) L[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+  for (let y = 0; y < H; y++) { let r = 0; for (let x = 0; x < W; x++) { r += L[y * W + x]; I[(y + 1) * (W + 1) + x + 1] = I[y * (W + 1) + x + 1] + r; } }
+  const R = Math.max(8, Math.round(Math.max(W, H) / 40));
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const xa = Math.max(0, x - R), xb = Math.min(W, x + R + 1), ya = Math.max(0, y - R), yb = Math.min(H, y + R + 1);
+    const bg = (I[yb * (W + 1) + xb] - I[ya * (W + 1) + xb] - I[yb * (W + 1) + xa] + I[ya * (W + 1) + xa]) / ((xb - xa) * (yb - ya)), i = y * W + x, dk = bg - L[i];
+    const a = Math.max(0, Math.min(255, (dk - 22) * 7)); if (a < 30) { d[i * 4 + 3] = 0; continue; }
+    d[i * 4] = Math.round(d[i * 4] * 0.55); d[i * 4 + 1] = Math.round(d[i * 4 + 1] * 0.55); d[i * 4 + 2] = Math.round(d[i * 4 + 2] * 0.62); d[i * 4 + 3] = a; }
+  g.putImageData(D, 0, 0); return sigTrim(c); }
+function signPick() { let i = document.getElementById('signIn'); if (!i) { i = document.createElement('input'); i.type = 'file'; i.accept = 'image/*'; i.id = 'signIn'; i.className = 'hidden'; document.body.appendChild(i);
+    i.addEventListener('change', () => { const f = i.files[0]; i.value = ''; if (!f) return; loader(true, 'Cleaning your signature'); const fr = new FileReader(), im = new Image();
+      fr.onload = () => { im.onload = () => { let r = null; try { r = sigFromPhoto(im); } catch (e) {} loader(false); if (!r) { toast('Could not find a signature in that photo. Try a clear photo on white paper.'); return; }
+        ui.sheet = { kind: 'signPrev', img: r.img, wh: r.wh, back: ui.sheet && ui.sheet.kind !== 'signPrev' && ui.sheet.kind !== 'signPad' ? ui.sheet : (ui.sheet && ui.sheet.back) }; renderSheet(); };
+        im.onerror = () => { loader(false); toast('Could not open that photo.'); }; im.src = fr.result; }; fr.readAsDataURL(f); }); }
+  i.click(); }
+function shSignPad() { return '<div class="row"><h2>Draw your signature</h2><button class="btn sm ghost" data-a="sigBack">Close</button></div><div class="note">Sign with your finger inside the box, as you sign on paper.</div>' +
+  '<canvas id="sigPad" style="width:100%;aspect-ratio:2.6/1;background:#fff;border:1.5px dashed #D9D6E3;border-radius:18px;touch-action:none;display:block"></canvas>' +
+  '<div class="grid2"><button class="btn" data-a="sigClear">Clear</button><button class="btn main" data-a="sigSave">Save signature</button></div>'; }
+function shSignPrev() { return '<div class="row"><h2>Your signature</h2><button class="btn sm ghost" data-a="sigBack">Close</button></div><div class="note">This is how it will look in your signature box. Background removed.</div>' +
+  '<div style="background:#FAF9F6;border:1px solid #E8E5DF;border-radius:18px;padding:18px;display:flex;justify-content:center"><img src="' + ui.sheet.img + '" style="max-width:100%;max-height:120px"></div>' +
+  '<div class="grid2"><button class="btn" data-a="signUpload">Try another photo</button><button class="btn main" data-a="sigUse">Use this signature</button></div>'; }
+function sigPadInit() { const c = document.getElementById('sigPad'); if (!c || c._on) return; c._on = 1; const r = c.getBoundingClientRect(), dpr = Math.max(2, window.devicePixelRatio || 1);
+  c.width = Math.round(r.width * dpr); c.height = Math.round(r.height * dpr); const g = c.getContext('2d'); g.scale(dpr, dpr); g.lineCap = 'round'; g.lineJoin = 'round'; g.strokeStyle = '#16213E'; g.lineWidth = 2.6;
+  let last = null; const pt = e => { const b = c.getBoundingClientRect(); return [e.clientX - b.left, e.clientY - b.top]; };
+  c.addEventListener('pointerdown', e => { e.preventDefault(); c.setPointerCapture(e.pointerId); last = pt(e); g.beginPath(); g.arc(last[0], last[1], 1.2, 0, 7); g.fillStyle = '#16213E'; g.fill(); c._ink = 1; });
+  c.addEventListener('pointermove', e => { if (!last) return; e.preventDefault(); const q = pt(e); g.beginPath(); g.moveTo(last[0], last[1]); g.lineTo(q[0], q[1]); g.stroke(); last = q; });
+  const up = () => { last = null; }; c.addEventListener('pointerup', up); c.addEventListener('pointercancel', up); }
+function signBox() { const has = !!S.me.signImg;
+  return '<div class="card pad col" style="gap:10px"><h3>My digital signature</h3><div class="note">Used only in your own signature box, and only on a PDF where you tick “Digitally sign my box”. Employee and manager boxes are never signed with it.</div>' +
+    (has ? '<div style="background:#FAF9F6;border:1px solid #E8E5DF;border-radius:18px;padding:16px;display:flex;justify-content:center"><img src="' + S.me.signImg + '" style="max-width:100%;max-height:90px"></div>' : '') +
+    '<div class="grid2"><button class="btn" data-a="signDraw">' + (has ? 'Draw again' : 'Draw signature') + '</button><button class="btn" data-a="signUpload">' + (has ? 'New photo' : 'Upload photo') + '</button></div>' +
+    (has ? '<button class="btn danger-t" data-a="signDel">Remove my signature</button>' : '') + '</div>'; }
 function pdfFoot(doc, label) {
   const n = doc.getNumberOfPages(), W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight();
   for (let i = 1; i <= n; i++) {
@@ -1713,7 +1757,7 @@ function empSheetPdf(p, D) {
         headStyles: { fillColor: [44, 46, 51], textColor: 255, fontStyle: 'bold', fontSize: fs, minCellHeight: HEAD, valign: 'middle' },
         styles: { fontSize: fs, textColor: INK, lineColor: [204, 204, 211], lineWidth: 0.25, minCellHeight: PL.rh, valign: 'middle', overflow: 'ellipsize', cellPadding: { left: 2, right: 2, top: 0.5, bottom: 0.5 } },
         didParseCell: d => { if (d.section === 'head') d.cell.styles.halign = AL[cols[d.column.index][0]] || 'left'; } });
-      if (pg === PL.rows.length - 1) { const B = [['Counted by (Sign here)', q.name, [q.code, q.desig].filter(Boolean).join(' · ')]]; if (p.sign) B.push(meBox('Received & Reported by')); if (p.mgr) B.push(mgrBox()); signBoxes(doc, BOT - 28, B, true); }
+      if (pg === PL.rows.length - 1) { const B = [['Counted by (Sign here)', q.name, [q.code, q.desig].filter(Boolean).join(' · ')]]; if (p.sign) B.push(meBox('Received & Reported by', '', meSig(p))); if (p.mgr) B.push(mgrBox()); signBoxes(doc, BOT - 28, B, true); }
     }); });
   cleanFoot(doc); pdfSave(doc, D.file + '.pdf');
 }
@@ -1723,7 +1767,7 @@ async function empResultPdf(p, D) {
   const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight(), fs = p.font === 's' ? 7.8 : p.font === 'b' ? 10 : 8.6;
   const C = { Match: [26, 128, 69], Excess: [41, 84, 191], Short: [191, 38, 59], 'Not counted': [107, 111, 118] };
   const cols = orderedCols(p, D).filter(k => colOn(p, k[0])), AL = { UOM: 'center', 'System stock': 'right', Counted: 'right', Difference: 'right', Result: 'center', 'Mfg. Date': 'center', 'Expiry Date': 'center' };
-  const TOP = 30, HEAD = 8, BOT = H - 12, SIGN = 30, A = BOT - TOP - HEAD, people = x ? x.people : [{ name: '', code: '', desig: '', photos: [] }];
+  const TOP = 30, HEAD = 8, BOT = H - 12, SIGN = meSig(p) ? 38.5 : 30, A = BOT - TOP - HEAD, people = x ? x.people : [{ name: '', code: '', desig: '', photos: [] }];
   let first = true; loader(true, 'Making the PDF');
   try {
     people.forEach((q, pi) => { const R = D.rows.filter(r => r._p === pi); if (!R.length) return; const PL = empRowsPlan(R.length, A, SIGN, 11.5); let k = 0;
@@ -1736,8 +1780,8 @@ async function empResultPdf(p, D) {
           didParseCell: d => { const kk = cols[d.column.index][0]; d.cell.styles.halign = AL[kk] || 'left'; if (d.section !== 'body') return; const res = chunk[d.row.index]._res;
             if (kk === 'Counted') d.cell.styles.fontStyle = 'bold'; if (kk === 'Difference' || kk === 'Result') { d.cell.styles.fontStyle = 'bold'; d.cell.styles.textColor = C[res] || INK; } } });
         if (pg === PL.rows.length - 1) { const sub = q.subDate ? 'Submitted ' + mdy(q.subDate) + (q.subTime ? ' · ' + String(q.subTime).padStart(4, '0') + ' Hrs' : '') : '';
-          const B = [['Counted by', q.name, [q.code, q.desig].filter(Boolean).join(' · '), sub]]; if (p.sign) B.push(meBox('Received & Reported by', D.draft ? '' : 'Locked ' + hrsDT(c.doneAt))); if (p.mgr) B.push(mgrBox());
-          signBoxes(doc, BOT - 24, B, false); } }); });
+          const B = [['Counted by', q.name, [q.code, q.desig].filter(Boolean).join(' · '), sub]]; if (p.sign) B.push(meBox('Received & Reported by', D.draft ? '' : 'Locked ' + hrsDT(c.doneAt), meSig(p))); if (p.mgr) B.push(mgrBox());
+          signBoxes(doc, BOT - 2 - signH(B, false), B, false); } }); });
     const photoFrom = doc.getNumberOfPages() + 1;
     if (p.photos !== false && x) for (const q of x.people) for (const ph of (q.photos || [])) { const src = paperSrc(ph.id); if (!src) continue; const sz = await imgSize(src); if (!sz) continue;
       doc.addPage('a4', 'portrait'); const PW = doc.internal.pageSize.getWidth(), PH = doc.internal.pageSize.getHeight();
@@ -1953,20 +1997,22 @@ function cleanTiles(doc, y, chips, colors) {
 }
 function cleanFoot(doc) { const n = doc.getNumberOfPages(), W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight();
   for (let i = 1; i <= n; i++) { doc.setPage(i); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(107, 111, 118); doc.text('Page ' + i + ' of ' + n, W - 12, H - 6.5, { align: 'right' }); } }
+function signH(boxes, pen) { return pen ? 28 : boxes.some(b => b[4]) ? 30.5 : 22; }
 function signBoxes(doc, y, boxes, pen) {
   const W = doc.internal.pageSize.getWidth(), k = boxes.length; if (!k) return;
-  const bw = k === 1 ? 80 : k === 2 ? Math.min(88, (W - 24 - 6) / 2) : (W - 24 - (k - 1) * 4) / k, hh = pen ? 28 : 22;
+  const bw = k === 1 ? 80 : k === 2 ? Math.min(88, (W - 24 - 6) / 2) : (W - 24 - (k - 1) * 4) / k, hh = signH(boxes, pen), im = !pen && boxes.some(b => b[4]);
   boxes.forEach((b, i) => { const x = k === 2 && bw < (W - 24 - 6) / 2 ? (i ? W - 12 - bw : 12) : 12 + i * (bw + 4);
     doc.setDrawColor(232, 229, 223); doc.setFillColor(250, 249, 246); doc.setLineWidth(0.3); doc.roundedRect(x, y, bw, hh, 3, 3, 'FD');
     doc.setFont('helvetica', 'bold'); doc.setFontSize(7.6); doc.setTextColor(138, 106, 31); doc.text(String(b[0]).toUpperCase(), x + 4, y + 6);
-    if (pen) { doc.setDrawColor(180); doc.line(x + 4, y + 17, x + bw - 4, y + 17);
+    if (pen) { if (b[4]) drawSig(doc, b[4], x + 4, y + 7.4, bw - 8, 9.4); doc.setDrawColor(180); doc.line(x + 4, y + 17, x + bw - 4, y + 17);
       doc.setTextColor(...INK); doc.setFontSize(9.5); doc.text(b[1] || ' ', x + 4, y + 22.5);
       doc.setFont('helvetica', 'normal'); doc.setFontSize(7.8); doc.setTextColor(107, 111, 118); doc.text(b[2] || ' ', x + 4, y + 26.2); }
-    else { doc.setTextColor(...INK); doc.setFontSize(9.8); doc.text(b[1] || ' ', x + 4, y + 12.5);
-      doc.setFont('helvetica', 'normal'); doc.setFontSize(7.8); doc.setTextColor(107, 111, 118); doc.text(b[2] || ' ', x + 4, y + 16.6); if (b[3]) doc.text(b[3], x + 4, y + 20.3); } });
+    else { const o = im ? 8.5 : 0; if (b[4]) drawSig(doc, b[4], x + 4, y + 7.6, bw - 8, 8.6);
+      doc.setTextColor(...INK); doc.setFontSize(9.8); doc.text(b[1] || ' ', x + 4, y + 12.5 + o);
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(7.8); doc.setTextColor(107, 111, 118); doc.text(b[2] || ' ', x + 4, y + 16.6 + o); if (b[3]) doc.text(b[3], x + 4, y + 20.3 + o); } });
   return y + hh;
 }
-const meBox = (label, when) => [label, S.me.name || '', [S.me.emp, S.me.desig].filter(Boolean).join(' · '), when || ''];
+const meBox = (label, when, sig) => [label, S.me.name || '', [S.me.emp, S.me.desig].filter(Boolean).join(' · '), when || '', sig || null];
 const mgrBox = when => ['Manager', S.mgr.name || '', [S.mgr.emp, S.mgr.desig].filter(Boolean).join(' · '), when || ''];
 function expiryPdf2(p, D) {
   const doc = pdfDoc(p.orient === 'l'); if (!doc) return;
@@ -1981,7 +2027,7 @@ function expiryPdf2(p, D) {
     styles: { fontSize: fs, textColor: INK, lineColor: [214, 214, 219], lineWidth: { bottom: 0.2 }, cellPadding: { top: 2.2, bottom: 2.2, left: 1.8, right: 1.8 }, valign: 'middle' }, alternateRowStyles: { fillColor: [249, 249, 250] },
     didParseCell: d => { const k = cols[d.column.index][0]; d.cell.styles.halign = AL[k] || 'left'; if (d.section !== 'body') return; const r = D.rows[d.row.index];
       if (k === 'Item' || k === 'Expiry') d.cell.styles.fontStyle = 'bold'; if (k === 'Days left' || k === 'Status') { d.cell.styles.fontStyle = 'bold'; d.cell.styles.textColor = scol(r.Status); } } });
-  const B = []; if (p.sign) B.push(meBox('Prepared & checked by')); if (p.mgr) B.push(mgrBox());
+  const B = []; if (p.sign) B.push(meBox('Prepared & checked by', '', meSig(p))); if (p.mgr) B.push(mgrBox());
   if (B.length) { let sy = doc.lastAutoTable.finalY + 10; if (sy + 30 > H - 14) { doc.addPage(); sy = 20; } signBoxes(doc, sy, B, true); }
   cleanFoot(doc); pdfSave(doc, 'Expiry-Tracker-' + isoOf(new Date()) + '.pdf');
 }
@@ -1998,7 +2044,7 @@ function zwPdf2(p, D) {
     styles: { fontSize: fs, textColor: INK, lineColor: [214, 214, 219], lineWidth: { bottom: 0.2 }, cellPadding: { top: 2.2, bottom: 2.2, left: 1.8, right: 1.8 }, valign: 'middle' }, alternateRowStyles: { fillColor: [249, 249, 250] },
     didParseCell: d => { const k = cols[d.column.index][0]; d.cell.styles.halign = AL[k] || 'left'; if (d.section !== 'body') return; const st = String(D.rows[d.row.index].Status || '');
       if (k === 'Item') d.cell.styles.fontStyle = 'bold'; if (k === 'Status' || (k === 'Stock now' && !/^Zero/.test(st))) { d.cell.styles.fontStyle = 'bold'; d.cell.styles.textColor = col(st); } if (k === 'Stock now' && /^Zero/.test(st)) d.cell.styles.fontStyle = 'bold'; } });
-  const B = []; if (p.sign) B.push(meBox('Prepared & checked by')); if (p.mgr) B.push(mgrBox());
+  const B = []; if (p.sign) B.push(meBox('Prepared & checked by', '', meSig(p))); if (p.mgr) B.push(mgrBox());
   if (B.length) { let sy = doc.lastAutoTable.finalY + 10; if (sy + 30 > H - 14) { doc.addPage(); sy = 20; } signBoxes(doc, sy, B, true); }
   cleanFoot(doc); pdfSave(doc, 'Zero-stock-Watch-' + isoOf(new Date()) + '.pdf');
 }
@@ -2029,7 +2075,7 @@ function countPdf2(p, D) {
       if (d.section !== 'body') return; const k = cols[d.column.index][0], res = D.rows[d.row.index]._res;
       if (k === 'Counted') d.cell.styles.fontStyle = 'bold';
       if (k === 'Difference' || k === 'Result') { d.cell.styles.fontStyle = 'bold'; d.cell.styles.textColor = C[res] || INK; } } });
-  if (p.sign || p.mgr) pdfSign(doc, p.sign, p.mgr);
+  if (p.sign || p.mgr) pdfSign(doc, p.sign, p.mgr, meSig(p));
   const n = doc.getNumberOfPages();
   for (let i = 1; i <= n; i++) { doc.setPage(i); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); doc.setTextColor(...GR); doc.text('Page ' + i + ' of ' + n, W - 12, H - 6.5, { align: 'right' }); }
   pdfSave(doc, D.file + '.pdf');
@@ -2145,7 +2191,10 @@ function shExport() {
     h += '<div class="card pad col"><h3>Page</h3><div class="seg">' + [['p', 'A4 Portrait'], ['l', 'A4 Landscape']].map(([v, l]) => '<button data-a="rpSet" data-k="orient" data-v="' + v + '" class="' + (p.orient === v ? 'on' : '') + '">' + l + '</button>').join('') + '</div>' +
       '<div class="seg">' + [['s', 'Small text'], ['n', 'Normal'], ['b', 'Large text']].map(([v, l]) => '<button data-a="rpSet" data-k="font" data-v="' + v + '" class="' + (p.font === v ? 'on' : '') + '">' + l + '</button>').join('') + '</div>' +
       (R.details ? '<label class="chk"><input type="checkbox" data-a="rpTog" data-k="details"' + (p.details ? ' checked' : '') + '> Print item details under each ' + (type === 'issue' ? 'request' : 'return') + '</label>' : '') +
-      '<label class="chk"><input type="checkbox" data-a="rpTog" data-k="sign"' + (p.sign ? ' checked' : '') + '> Signature box (Prepared & checked by)</label>' +
+      '<label class="chk"><input type="checkbox" data-a="rpTog" data-k="sign"' + (p.sign ? ' checked' : '') + '> My signature box (' + (type === 'empSheet' || type === 'empResult' ? 'Received & reported by' : 'Prepared & checked by') + ')</label>' +
+      (p.sign ? '<label class="chk" style="margin-left:26px"><input type="checkbox" data-a="rpTog" data-k="dsign"' + (p.dsign && S.me.signImg ? ' checked' : '') + '> Digitally sign my box' + (type === 'empSheet' || type === 'empResult' ? ' (only mine, not employees)' : '') + '</label>' +
+        (p.dsign && S.me.signImg ? '<div style="margin-left:26px;background:#FAF9F6;border:1px solid #E8E5DF;border-radius:14px;padding:8px 12px;display:flex;justify-content:flex-start"><img src="' + S.me.signImg + '" style="max-height:44px;max-width:70%"></div>' : '') +
+        (!S.me.signImg ? '<div class="note" style="margin-left:26px">No signature saved yet. <button class="btn sm ghost" data-a="signDraw" style="min-height:30px;padding:0 10px">Add my signature</button></div>' : '') : '') +
       '<label class="chk"><input type="checkbox" data-a="rpTog" data-k="mgr"' + (p.mgr ? ' checked' : '') + '> Manager signature box</label></div>';
   }
   if (type === 'empSheet' || type === 'empResult') {
@@ -2177,14 +2226,14 @@ function shExport() {
     (p.tiles !== false ? '<div class="wrap" style="gap:6px;padding:10px 12px">' + D.chips.map(c => pill(c[0] + ' ' + c[1], 'c-gy')).join('') + '</div>' : '') +
     '<div class="tblwrap" style="padding:0 0 6px"><table style="font-size:13px"><tr>' + cols.map(c => '<th>' + esc(c[1]) + '</th>').join('') + '</tr>' + (D.rows.slice(0, 8).map(r => '<tr>' + cols.map(c => '<td style="white-space:pre-line' + ((c[0] === 'Difference' || c[0] === 'Result') ? ';font-weight:700;color:' + ({ Match: '#1A8045', Excess: '#2954BF', Short: '#BF263B' }[r._res] || '#6B6F76') : '') + '">' + esc(cellText(r[c[0]], '\n')) + '</td>').join('') + '</tr>').join('') || '<tr><td colspan="' + cols.length + '" class="note">No rows selected.</td></tr>') + '</table></div>' +
     (D.rows.length > 8 ? '<div class="note" style="padding:0 12px 10px">…and ' + (D.rows.length - 8) + ' more rows</div>' : '') +
-    ((p.sign || p.mgr) ? '<div class="note" style="padding:0 12px 12px">+ ' + [p.sign ? 'your signature box' : '', p.mgr ? 'manager signature box' : ''].filter(Boolean).join(' and ') + '</div>' : '') + '</div>';
+    ((p.sign || p.mgr) ? '<div class="note" style="padding:0 12px 12px">+ ' + [p.sign ? 'your signature box' + (meSig(p) ? ' (digitally signed)' : '') : '', p.mgr ? 'manager signature box' : ''].filter(Boolean).join(' and ') + '</div>' : '') + '</div>';
   else h += '<div class="sect">Preview</div><div class="card" style="overflow:hidden"><div style="background:linear-gradient(160deg,#1B2540,#0B1220);color:#fff;padding:12px 14px;border-bottom:2px solid var(--gold)"><b style="font-size:16px">' + esc(p.title) + '</b><div style="font-size:12px;color:#C9CED6">' + esc([p.sub, D.sub2].filter(Boolean).join(' · ')) + '</div></div>' +
     '<div class="wrap" style="gap:6px;padding:10px 12px">' + D.chips.map(c => pill(c[0] + ' ' + c[1], 'c-gd')).join('') + '</div>' +
     '<div class="tblwrap" style="padding:0 0 6px"><table style="font-size:' + (p.font === 's' ? 12 : p.font === 'b' ? 15 : 13.5) + 'px"><tr>' + cols.map(c => '<th>' + esc(c[1]) + '</th>').join('') + '</tr>' +
     (pr.length ? pr.map(r => '<tr>' + cols.map(c => '<td style="white-space:pre-line">' + esc(cellText(r[c[0]], '\n')) + '</td>').join('') + '</tr>').join('') : '<tr><td colspan="' + cols.length + '" class="note">No data for this selection.</td></tr>') + '</table></div>' +
     (D.rows.length > pr.length ? '<div class="note" style="padding:0 12px 10px">…and ' + (D.rows.length - pr.length) + ' more rows</div>' : '') +
     (R.pdf && p.details && D.detail && D.detail.length ? '<div class="note" style="padding:0 12px 10px">+ item details for ' + D.detail.length + ' ' + (type === 'issue' ? 'requests' : 'returns') + '</div>' : '') +
-    (R.pdf && (p.sign || p.mgr) ? '<div class="note" style="padding:0 12px 12px">+ ' + [p.sign ? 'your signature box' : '', p.mgr ? 'manager signature box' : ''].filter(Boolean).join(' and ') + '</div>' : '') + '</div>';
+    (R.pdf && (p.sign || p.mgr) ? '<div class="note" style="padding:0 12px 12px">+ ' + [p.sign ? 'your signature box' + (meSig(p) ? ' (digitally signed)' : '') : '', p.mgr ? 'manager signature box' : ''].filter(Boolean).join(' and ') + '</div>' : '') + '</div>';
   h += '<div class="grid2">' + (R.pdf ? '<button class="btn main" data-a="rpPdf"' + (D.rows.length && cols.length ? '' : ' disabled') + '>Download PDF</button>' : '') + '<button class="btn' + (R.pdf ? '' : ' main') + '" data-a="rpXlsx"' + (D.rows.length && cols.length ? '' : ' disabled') + '>Download Excel</button></div>';
   return h;
 }
@@ -2199,21 +2248,23 @@ function rpPdf2(type) {
   const doc = pdfDoc(p.orient === 'l'); if (!doc) return;
   const fs = p.font === 's' ? 7.5 : p.font === 'b' ? 10 : 8.5;
   const cols = orderedCols(p, D).filter(c => colOn(p, c[0]));
-  const y0 = pdfHead(doc, p.title, [p.sub, D.sub2].filter(Boolean).join(' · '), D.chips);
-  const st = Object.assign({}, TSTYLE, { styles: Object.assign({}, TSTYLE.styles, { fontSize: fs }), headStyles: Object.assign({}, TSTYLE.headStyles, { fontSize: fs }) });
+  cleanHead(doc, p.title, [p.sub, D.sub2].filter(Boolean).join(' · '), new Date().toISOString());
+  const y0 = D.chips && D.chips.length ? cleanTiles(doc, 29, D.chips) : 30;
+  const st = { margin: { left: 12, right: 12, bottom: 16 }, headStyles: { fillColor: [44, 46, 51], textColor: 255, fontStyle: 'bold', fontSize: fs, cellPadding: { top: 2.4, bottom: 2.4, left: 1.8, right: 1.8 }, valign: 'middle' },
+    styles: { fontSize: fs, textColor: INK, lineColor: [214, 214, 219], lineWidth: { bottom: 0.2 }, cellPadding: { top: 2, bottom: 2, left: 1.8, right: 1.8 }, valign: 'middle' }, alternateRowStyles: { fillColor: [249, 249, 250] } };
   const WGT = { no: 3.5, req: 8.5, rdate: 11, store: 15, to: 22, slips: 9, serials: 8, times: 6.5, items: 6, remarks: 12, by: 14, rno: 10, dt: 13, against: 8, serial: 8, ent: 14 };
   const avail = doc.internal.pageSize.getWidth() - 24, known = cols.every(c => WGT[c[0]]), sumW = cols.reduce((n, c) => n + (WGT[c[0]] || 0), 0);
   const colStyles = {}; if (known) cols.forEach((c, i) => { colStyles[i] = { cellWidth: avail * WGT[c[0]] / sumW }; if (/^(no|items|times)$/.test(c[0])) colStyles[i].halign = 'center'; });
   const meEmp = String(S.me.emp || '').toUpperCase();
   const body = D.rows.map(r => cols.map(c => c[0] === 'by' || c[0] === 'ent' ? cellText(r[c[0]], '\n').replace(/\s*\((GA\d+)\)/gi, (m, g) => g.toUpperCase() === meEmp ? '' : '\n' + g) : cellText(r[c[0]], '\n')));
   const itemsIdx = cols.findIndex(c => c[0] === 'items'), foot = itemsIdx >= 0 ? [cols.map((c, i) => i === 0 ? { content: 'Total', colSpan: itemsIdx, styles: { halign: 'right' } } : i === itemsIdx ? String(D.rows.reduce((n, r) => n + (Number(r.items) || 0), 0)) : i < itemsIdx ? null : '').filter(x => x !== null)] : undefined;
-  doc.autoTable(Object.assign({}, st, { startY: y0, tableWidth: avail, columnStyles: colStyles, pageBreak: 'auto', rowPageBreak: 'avoid', showFoot: 'lastPage', foot, footStyles: { fillColor: [247, 239, 217], textColor: INK, fontStyle: 'bold', fontSize: fs }, head: [cols.map(c => c[1])], body,
+  doc.autoTable(Object.assign({}, st, { startY: y0, tableWidth: avail, columnStyles: colStyles, pageBreak: 'auto', rowPageBreak: 'avoid', showFoot: 'lastPage', foot, footStyles: { fillColor: [241, 241, 244], textColor: INK, fontStyle: 'bold', fontSize: fs, lineWidth: 0 }, head: [cols.map(c => c[1])], body,
     didParseCell: d => { if (d.section === 'body') { const k = cols[d.column.index][0]; if (/req|store|Store|Request/.test(k)) d.cell.styles.fontStyle = 'bold'; if (/slips|Slip/.test(k)) d.cell.styles.textColor = [30, 58, 138]; if (/serial|Serial/.test(k)) d.cell.styles.textColor = [11, 94, 61]; } } }));
   if (p.details && D.detail) D.detail.forEach(b => {
-    doc.autoTable(Object.assign({}, st, { startY: doc.lastAutoTable.finalY + 6, headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: 'bold', fontSize: fs }, head: [[{ content: b.head, colSpan: b.cols.length }], b.cols], body: b.rows }));
+    doc.autoTable(Object.assign({}, st, { startY: doc.lastAutoTable.finalY + 6, rowPageBreak: 'avoid', head: [[{ content: b.head, colSpan: b.cols.length, styles: { fillColor: [241, 238, 251], textColor: INK, fontStyle: 'bold' } }], b.cols], body: b.rows }));
   });
-  if (p.sign || p.mgr) pdfSign(doc, p.sign, p.mgr);
-  pdfFoot(doc, R.name); pdfSave(doc, D.file + '.pdf');
+  if (p.sign || p.mgr) pdfSign(doc, p.sign, p.mgr, meSig(p));
+  cleanFoot(doc); pdfSave(doc, D.file + '.pdf');
 }
 function rpXlsx(type) { loader(true, 'Making your Excel file'); setTimeout(() => { try { rpXlsx2(type); } finally { loader(false); } }, 60); }
 function rpXlsx2(type) {
@@ -2595,12 +2646,13 @@ function renderSheet() {
   const el = document.getElementById('sheet');
   if (!ui.sheet) { el.innerHTML = ''; return; }
   const k = ui.sheet.kind;
-  const body = k === 'empZoom' ? '<div class="row"><h2>Signed sheet</h2><button class="btn sm ghost" data-a="closeSheet">Close</button></div><img src="' + esc(ui.sheet.src) + '" style="width:100%;border-radius:14px">' : k === 'zwAdd' ? shZwAdd() : k === 'link' ? shLink() : k === 'retBatch' ? shRetBatch() : k === 'paperDay' ? shPaperDay() : k === 'manReq' ? shManReq() : k === 'mslips' ? shMslips() : k === 'reqStatus' ? shReqStatus() : k === 'corr' ? shCorr() : k === 'batch' ? shBatch() : k === 'newReq' ? shNewReq() : k === 'export' ? shExport() : k === 'crop' ? shCrop() : k === 'backups' ? shBackups() : k === 'start' ? shStart() : k === 'upload' ? shUpload() : k === 'entry' ? shEntry() : k === 'return' ? shReturn() : k === 'editReq' ? shEditReq() : k === 'bulk' ? shBulk() : k === 'mark' ? shMark() : '';
+  const body = k === 'empZoom' ? '<div class="row"><h2>Signed sheet</h2><button class="btn sm ghost" data-a="closeSheet">Close</button></div><img src="' + esc(ui.sheet.src) + '" style="width:100%;border-radius:14px">' : k === 'zwAdd' ? shZwAdd() : k === 'link' ? shLink() : k === 'retBatch' ? shRetBatch() : k === 'paperDay' ? shPaperDay() : k === 'manReq' ? shManReq() : k === 'mslips' ? shMslips() : k === 'reqStatus' ? shReqStatus() : k === 'corr' ? shCorr() : k === 'batch' ? shBatch() : k === 'newReq' ? shNewReq() : k === 'export' ? shExport() : k === 'signPad' ? shSignPad() : k === 'signPrev' ? shSignPrev() : k === 'crop' ? shCrop() : k === 'backups' ? shBackups() : k === 'start' ? shStart() : k === 'upload' ? shUpload() : k === 'entry' ? shEntry() : k === 'return' ? shReturn() : k === 'editReq' ? shEditReq() : k === 'bulk' ? shBulk() : k === 'mark' ? shMark() : '';
   const sc = el.querySelector('.sheet') ? el.querySelector('.sheet').scrollTop : 0;
   el.innerHTML = '<div class="sheetbg" data-a="bgClose"><div class="sheet" role="dialog" aria-modal="true">' + body + '</div></div>';
   el.querySelector('.sheet').scrollTop = sc;
   enhanceDates(document.getElementById('sheet'));
   enhanceRcv(document.getElementById('sheet'));
+  if (k === 'signPad') sigPadInit();
 }
 const SORT_OPTS = [['reqdate', 'Day, then Request No'], ['req_asc', 'Request No, low to high'], ['req_desc', 'Request No, high to low'], ['name_asc', 'Store name A to Z'], ['name_desc', 'Store name Z to A'],
   ['date_asc', 'Date, oldest first'], ['date_desc', 'Date, newest first'], ['custom', 'My store order'], ['stock', 'Stock priority (most ready first)'], ['size', 'Most articles first']];
@@ -3870,7 +3922,16 @@ document.addEventListener('click', async ev => {
     case 'tasksTog': S.uiPrefs = S.uiPrefs || {}; S.uiPrefs.tasksOpen = !S.uiPrefs.tasksOpen; writeLocal(); render(); break;
     case 'syncTap': if (S.sync.url) syncNow(false); else { ui.tab = 'set'; ui.setPage = 'cloud'; ui.view = null; render(); } break;
     case 'rpSet': rptPref(ui.sheet.type)[t.dataset.k] = v; save(true); renderSheet(); break;
-    case 'rpTog': rptPref(ui.sheet.type)[t.dataset.k] = t.checked; save(true); renderSheet(); break;
+    case 'rpTog': rptPref(ui.sheet.type)[t.dataset.k] = t.checked; save(true); if (t.dataset.k === 'dsign' && t.checked && !S.me.signImg) { ui.sheet = { kind: 'signPad', back: ui.sheet }; } renderSheet(); break;
+    case 'signDraw': ui.sheet = { kind: 'signPad', back: ui.sheet && ui.sheet.kind === 'export' ? ui.sheet : null }; renderSheet(); break;
+    case 'signUpload': signPick(); break;
+    case 'sigClear': { const c = document.getElementById('sigPad'); if (c) { c.getContext('2d').clearRect(0, 0, c.width, c.height); c._ink = 0; } break; }
+    case 'sigBack': ui.sheet = (ui.sheet && ui.sheet.back) || null; renderSheet(); render(); break;
+    case 'sigSave': case 'sigUse': { let r = null;
+      if (a === 'sigSave') { const c = document.getElementById('sigPad'); r = c && c._ink ? sigTrim(c) : null; if (!r) { toast('Sign inside the box first.'); break; } } else r = { img: ui.sheet.img, wh: ui.sheet.wh };
+      S.me.signImg = r.img; S.me.signWH = r.wh; const bk = ui.sheet.back; if (bk && bk.kind === 'export') rptPref(bk.type).dsign = true; save();
+      ui.sheet = bk || null; renderSheet(); render(); toast('Signature saved. Tick “Digitally sign my box” on any PDF to use it.'); break; }
+    case 'signDel': if (!(await uiConfirm('Remove your saved signature? PDFs will show a blank signature space again.', 'Remove', true))) break; delete S.me.signImg; delete S.me.signWH; save(); render(); break;
     case 'rpCol': rptPref(ui.sheet.type).cols[t.dataset.k] = t.checked; save(true); renderSheet(); break;
     case 'rpMove': { const p = rptPref(ui.sheet.type), D = reportDef(ui.sheet.type); const keys = orderedCols(p, D).map(c => c[0]); const i = keys.indexOf(t.dataset.k), j = i + (+t.dataset.d);
       if (j >= 0 && j < keys.length) { [keys[i], keys[j]] = [keys[j], keys[i]]; p.order = keys; save(true); renderSheet(); } break; }
