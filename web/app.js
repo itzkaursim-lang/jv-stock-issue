@@ -2317,6 +2317,9 @@ async function loadBackups() {
   catch (e) { ui.sheet.err = 'Could not load backups: ' + e.message + '. If you just updated Code.gs, deploy it as a New version.'; }
   ui.sheet.loading = false; renderSheet();
 }
+function reqTaken(req) { req = String(req || '').trim(); return !!req && S.lines.some(l => l.req === req && l.status !== 'dropped'); }
+function reqFree(req) { req = String(req || '').trim(); if (!req || reqTaken(req)) return; const gone = new Set(S.lines.filter(l => l.req === req).map(l => l.id)); if (!gone.size) return;
+  S.lines = S.lines.filter(l => !gone.has(l.id)); S.entries.forEach(e => { e.items = (e.items || []).filter(i => !gone.has(i.lineId)); }); if (S.paper) delete S.paper[req]; }
 function reqPre(iso) { const p = iso && /^\d{4}-\d{2}-\d{2}$/.test(iso) ? P(iso) : null, d = new Date(); return p ? pad(p.d) + pad(p.m) + '-' : pad(d.getDate()) + pad(d.getMonth() + 1) + '-'; }
 function nextReqNo(iso) { return nextReqNoFrom([], iso); }
 function nrHits() {
@@ -2325,7 +2328,7 @@ function nrHits() {
 }
 function shNewReq() {
   const f = ui.form, stores = [...new Set([...(S.storeOrder || []), ...Object.keys(S.stores), ...S.lines.map(l => l.store)])].sort(byStore);
-  const reqClash = S.lines.some(l => l.req === f.req);
+  const reqClash = reqTaken(f.req);
   let h = '<div class="row"><h2>Add store request</h2><button class="btn sm ghost" data-a="closeSheet">Close</button></div>';
   h += '<label class="f">Store</label>' + pickBtn('nrStore', { title: 'Choose store', search: true, full: true, placeholder: 'Choose store', opts: stores.map(st => [st, st, (S.stores[st] || {}).rcv ? 'Receiver ' + rcvLabel(S.stores[st].rcv) : '']), val: f.store, set: v => { ui.form.store = v; const d = (S.stores[v] || {}).rcv; if (d) ui.form.rcv = d; renderSheet(); } });
   h += '<div class="grid2"><label class="f">Request No<input type="text" data-nr="req" value="' + esc(f.req) + '" class="mono' + (reqClash ? ' bad' : '') + '"></label><label class="f">Request date<input type="date" data-nr="date" value="' + esc(f.date) + '"></label></div>' + (reqClash ? '<div class="err">Request No ' + esc(f.req) + ' already exists.</div>' : '');
@@ -2344,7 +2347,7 @@ function shNewReq() {
 function allStores() { return [...new Set([...(S.storeOrder || []), ...Object.keys(S.stores), ...S.lines.map(l => l.store), ...(S.areas || [])].filter(Boolean))].sort(byStore); }
 function nextReqNoFrom(used, iso) {
   const pre = reqPre(iso);
-  let mx = 0; S.lines.concat(used.map(r => ({ req: r }))).forEach(l => { if (String(l.req).startsWith(pre)) { const n = parseInt(String(l.req).slice(pre.length), 10); if (n > mx) mx = n; } });
+  let mx = 0; S.lines.filter(l => l.status !== 'dropped').concat(used.map(r => ({ req: r }))).forEach(l => { if (String(l.req).startsWith(pre)) { const n = parseInt(String(l.req).slice(pre.length), 10); if (n > mx) mx = n; } });
   return pre + String(mx + 1).padStart(2, '0');
 }
 function lastRetBy(store) { const r = S.returns.filter(x => x.store === store && validRcv(x.by)).sort((a, b) => String(b.date).localeCompare(String(a.date)))[0]; return r ? r.by : ((S.stores[store] || {}).rcv || ''); }
@@ -2390,7 +2393,7 @@ function shBatch() {
   const rows = f.groups.flatMap(g => g.items.map(it => ({ g, it })));
   if (rows.length) h += '<div class="sect">Preview · ' + rows.length + ' articles · ' + f.groups.length + (RET ? ' returns' : ' requests') + '</div><div class="card tblwrap"><table><tr><th>' + (RET ? 'Return' : 'Request') + '</th><th>Store</th><th>Item</th><th>Qty</th><th>' + (RET ? 'By employee' : 'Receiver') + '</th>' + (RET ? '' : '<th>Slip</th>') + '</tr>' +
     rows.map(({ g, it }) => '<tr><td><b>' + esc(g.req) + '</b></td><td>' + esc(g.store) + '</td><td>' + esc(it.name) + ' <span class="note mono">' + esc(it.code) + '</span></td><td' + (parseFloat(it.qty) > 0 ? '' : ' style="color:var(--noInk);font-weight:700"') + '>' + esc(it.qty || 'missing') + '</td><td>' + esc(g.rcv || '–') + (g.rcv && rcvName(g.rcv) ? ' ' + esc(rcvName(g.rcv)) : '') + '</td>' + (RET ? '' : '<td>' + esc(g.slip || '–') + '</td>') + '</tr>').join('') + '</table></div>';
-  const bad = f.groups.find(g => !g.req || (RET ? S.returns.some(r => String(r.no).toUpperCase() === String(g.req).toUpperCase()) : S.lines.some(l => l.req === g.req)) || f.groups.filter(x => x.req === g.req).length > 1);
+  const bad = f.groups.find(g => !g.req || (RET ? S.returns.some(r => String(r.no).toUpperCase() === String(g.req).toUpperCase()) : reqTaken(g.req)) || f.groups.filter(x => x.req === g.req).length > 1);
   if (bad) h += '<div class="err">' + (RET ? 'Return' : 'Request') + ' No ' + esc(bad.req) + ' is empty or already used.</div>';
   const badRcv = RET && f.groups.find(g => !validRcv(g.rcv || ''));
   if (badRcv) h += '<div class="err">' + esc(badRcv.store) + ': By employee needs 6 digits.</div>';
@@ -2708,7 +2711,7 @@ function setTestMode(on) {
 }
 function renumberReqStore(from, store, to) {
   to = String(to || '').trim(); if (!to) return false;
-  if (S.lines.some(l => l.req === to)) { toast('Request No ' + to + ' already exists.'); return false; }
+  if (reqTaken(to)) { toast('Request No ' + to + ' already exists.'); return false; } reqFree(to);
   const ids = new Set(S.lines.filter(l => l.req === from && l.store === store).map(l => l.id));
   S.lines.forEach(l => { if (ids.has(l.id)) l.req = to; });
   S.entries.forEach(e => e.items.forEach(i => { if (ids.has(i.lineId)) i.req = to; }));
@@ -3227,7 +3230,7 @@ function vCheck() {
 }
 function renumberReq(from, to) {
   to = String(to || '').trim(); if (!to || to === from) return false;
-  if (S.lines.some(l => l.req === to)) { toast('Request No ' + to + ' already exists.'); return false; }
+  if (reqTaken(to)) { toast('Request No ' + to + ' already exists.'); return false; } reqFree(to);
   S.lines.forEach(l => { if (l.req === from) l.req = to; });
   S.entries.forEach(e => e.items.forEach(i => { if (i.req === from) i.req = to; }));
   if (ui.lastReq === from) ui.lastReq = to;
@@ -3599,11 +3602,12 @@ document.addEventListener('click', async ev => {
       renderSheet(); break; }
     case 'bulkDate': ui.form.rows.forEach(r => r.date = ui.form.allDate || today()); renderSheet(); break;
     case 'bulkSave': { const f = ui.form; const bad = f.rows.find(r => (r.slip && !SLIP_RE.test(r.slip)) || (r.rcv && !validRcv(r.rcv)) || !String(r.newReq || '').trim());
-      const reqClash = f.rows.find(r => r.newReq.trim() !== r.req && S.lines.some(l => l.req === r.newReq.trim()));
+      const reqClash = f.rows.find(r => r.newReq.trim() !== r.req && reqTaken(r.newReq.trim()));
       if (reqClash) { toast('Request No ' + reqClash.newReq + ' already exists. Use another.'); break; }
       if (bad) { toast('Check ' + bad.store + ': Slip 2–10 chars with a digit, receiver 6 digits.'); break; }
       const seen = {}; const used = allSlips(); const clash = f.rows.find(r => r.slip && (seen[r.slip] || used.has(r.slip)) ? true : (seen[r.slip] = 1, false));
       if (clash) { toast('Slip ' + clash.slip + ' is used twice or already used. Change it.'); break; }
+      f.rows.forEach(r => { if (r.newReq.trim() !== r.req) reqFree(r.newReq.trim()); });
       f.rows.forEach(r => S.lines.forEach(l => { if (l.req !== r.req) return; if (r.date) l.date = r.date; l.rcv = r.rcv || ''; if (l.status === 'waiting') l.slip = r.slip || ''; l.req = r.newReq.trim(); }));
       S.entries.forEach(e => e.items.forEach(i => { const r = f.rows.find(x => x.req === i.req); if (r) i.req = r.newReq.trim(); }));
       save(); ui.sheet = null; renderSheet(); render(); toast('All requests updated.'); break; }
@@ -3649,7 +3653,7 @@ document.addEventListener('click', async ev => {
     case 'newReq': ui.drawer = false; renderDrawer(); ui.form = { store: '', req: nextReqNo(), date: today(), rcv: '', slip: '', q: '', items: [] }; ui.sheet = { kind: 'newReq' }; renderSheet(); break;
     case 'nrPick': { const st = S.stock[v]; ui.form.items.push({ code: v, name: st.name, uom: st.uom, qty: '' }); ui.form.q = ''; renderSheet(); const el = document.querySelector('[data-nrq="' + (ui.form.items.length - 1) + '"]'); if (el) el.focus(); break; }
     case 'nrDel': ui.form.items.splice(+v, 1); renderSheet(); break;
-    case 'nrSave': { const f = ui.form; const st = f.store.trim().toUpperCase();
+    case 'nrSave': { const f = ui.form; const st = f.store.trim().toUpperCase(); reqFree(f.req);
       f.items.forEach(it => S.lines.push({ id: nid(), req: f.req.trim(), store: st, date: f.date || today(), code: it.code, qty: parseFloat(it.qty), rcv: f.rcv || '', slip: (f.slip || '').trim().toUpperCase(), remark: (f.remark || '').trim(), src: 'new', earlier: '', status: 'waiting', issued: [] }));
       if (!S.stores[st]) S.stores[st] = { rcv: f.rcv || '', rname: '' };
       save(); ui.sheet = null; renderSheet(); render(); toast('Request ' + f.req + ' saved for ' + st + '.'); break; }
@@ -3674,7 +3678,7 @@ document.addEventListener('click', async ev => {
         f.groups.forEach(g => { const rec = { id: nid(), no: String(g.req).trim().toUpperCase(), against: '1111', store: g.store.toUpperCase(), by: g.rcv, byName: rcvName(g.rcv), date: today(), recvDate: f.date || today(), time: tm, serial: '', remarks: '', enteredBy: { name: S.me.name || '', emp: S.me.emp || '' },
           items: g.items.map(it => ({ code: it.code, name: it.name || itemName(it.code), uom: it.uom || itemUom(it.code), qty: parseFloat(it.qty), remark: '' })) }; S.returns.push(rec); made.push(rec); });
         ui.tab = 'reg'; ui.reg.type = 'return'; save(); ui.sheet = null; renderSheet(); render(); if (v === 'cuims' && made[0]) startReturnJob(made[0]); break; }
-      { const f = ui.form; let n = 0;
+      { const f = ui.form; let n = 0; f.groups.forEach(g => reqFree(g.req));
       f.groups.forEach(g => { const st = g.store.toUpperCase(); g.items.forEach(it => { S.lines.push({ id: nid(), req: g.req.trim(), store: st, date: f.date || today(), code: it.code, qty: parseFloat(it.qty), rcv: g.rcv || '', slip: (g.slip || '').toUpperCase(), remark: (g.remark || '').trim(), src: 'new', earlier: '', status: 'waiting', issued: [] }); n++; });
         if (!S.stores[st]) S.stores[st] = { rcv: g.rcv || '', rname: '' }; });
       save(); ui.sheet = null; renderSheet(); render(); toast(n + ' articles saved in ' + f.groups.length + ' requests.'); break; }
@@ -3976,7 +3980,7 @@ document.addEventListener('click', async ev => {
     case 'mrRemove': { const f = ui.form; if (!(await uiConfirm('Delete manual request ' + f.req + ' and its ' + f.slips.length + ' slip(s)?', 'Delete', true))) break; undoArm('delEntry'); S.entries = S.entries.filter(e => !(e.kind === 'manual' && !e.items.length && entryHasReq(e, f.req))); delete S.manReqs[f.req]; save(); ui.sheet = null; renderSheet(); render(); break; }
     case 'mrSave': { const f = ui.form; const req = String(f.req || '').trim();
       if (!req) { toast('Enter the Request No.'); break; } if (!f.store) { toast('Choose the store.'); break; } if (f.rcv && !validRcv(f.rcv)) { toast('Issued to must be 6 digits.'); break; }
-      if (f._new && (S.lines.some(l => l.req === req) || (S.manReqs || {})[req])) { toast('Request No ' + req + ' already exists.'); break; }
+      if (f._new && (reqTaken(req) || (S.manReqs || {})[req])) { toast('Request No ' + req + ' already exists.'); break; } if (f._new) reqFree(req);
       const keep = new Set(f.slips.filter(x => x.id).map(x => String(x.id)));
       const used = allSlips(); const mine = new Set(S.entries.filter(e => keep.has(String(e.id))).map(e => String(e.slip).toUpperCase()));
       const seen = {}; let bad = '';
