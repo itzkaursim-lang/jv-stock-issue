@@ -2317,11 +2317,8 @@ async function loadBackups() {
   catch (e) { ui.sheet.err = 'Could not load backups: ' + e.message + '. If you just updated Code.gs, deploy it as a New version.'; }
   ui.sheet.loading = false; renderSheet();
 }
-function nextReqNo() {
-  const d = new Date(), pre = pad(d.getDate()) + pad(d.getMonth() + 1) + '-';
-  let mx = 0; S.lines.forEach(l => { if (String(l.req).startsWith(pre)) { const n = parseInt(String(l.req).slice(pre.length), 10); if (n > mx) mx = n; } });
-  return pre + String(mx + 1).padStart(2, '0');
-}
+function reqPre(iso) { const p = iso && /^\d{4}-\d{2}-\d{2}$/.test(iso) ? P(iso) : null, d = new Date(); return p ? pad(p.d) + pad(p.m) + '-' : pad(d.getDate()) + pad(d.getMonth() + 1) + '-'; }
+function nextReqNo(iso) { return nextReqNoFrom([], iso); }
 function nrHits() {
   const f = ui.form; const hits = itemHits(f.q, new Set(f.items.map(x => x.code)), 8);
   return String(f.q || '').trim() ? (hits.length ? hits.map(([c, v], k) => '<button class="hit' + (k === 0 ? ' first' : '') + '" data-a="nrPick" data-v="' + esc(c) + '"><span><b>' + esc(v.name) + '</b><span class="mono">' + esc(c) + '</span></span><span class="note">' + num(v.qty) + ' ' + esc(v.uom) + '</span></button>').join('') : '<div class="note">No item matches "' + esc(f.q) + '".</div>') : '';
@@ -2345,8 +2342,8 @@ function shNewReq() {
   return h;
 }
 function allStores() { return [...new Set([...(S.storeOrder || []), ...Object.keys(S.stores), ...S.lines.map(l => l.store), ...(S.areas || [])].filter(Boolean))].sort(byStore); }
-function nextReqNoFrom(used) {
-  const d = new Date(), pre = pad(d.getDate()) + pad(d.getMonth() + 1) + '-';
+function nextReqNoFrom(used, iso) {
+  const pre = reqPre(iso);
   let mx = 0; S.lines.concat(used.map(r => ({ req: r }))).forEach(l => { if (String(l.req).startsWith(pre)) { const n = parseInt(String(l.req).slice(pre.length), 10); if (n > mx) mx = n; } });
   return pre + String(mx + 1).padStart(2, '0');
 }
@@ -2354,9 +2351,9 @@ function lastRetBy(store) { const r = S.returns.filter(x => x.store === store &&
 function batchAddGroup(store) {
   const f = ui.form;
   if (f.mode === 'return') { f.groups.push({ store, req: nextReturnNo(f.date, f.groups.map(g => g.req)), _auto: true, rcv: lastRetBy(store), slip: '', remark: '', items: [] }); f.act = f.groups.length - 1; return; }
-  const req = nextReqNoFrom(f.groups.map(g => g.req));
+  const req = nextReqNoFrom(f.groups.map(g => g.req), f.date);
   let slip = ''; if (f.slipStart) { const m = String(f.slipStart).toUpperCase().match(/^(.*?)(\d+)$/); if (m) { const used = allSlips(); f.groups.forEach(g => used.add(g.slip)); let n = parseInt(m[2], 10); do { slip = m[1] + String(n).padStart(m[2].length, '0'); n++; } while (used.has(slip)); } }
-  f.groups.push({ store, req, rcv: (S.stores[store] || {}).rcv || '', slip, remark: '', items: [] }); f.act = f.groups.length - 1;
+  f.groups.push({ store, req, _auto: true, rcv: (S.stores[store] || {}).rcv || '', slip, remark: '', items: [] }); f.act = f.groups.length - 1;
 }
 function itemHits(q, have, n) {
   q = String(q || '').trim().toUpperCase(); if (q.length < 1) return [];
@@ -2373,6 +2370,7 @@ function shBatch() {
   const f = ui.form, stores = allStores();
   const RET = f.mode === 'return';
   if (RET) { const used = []; f.groups.forEach(g => { if (g._auto) g.req = nextReturnNo(f.date, used); used.push(g.req); }); }
+  else { const used = f.groups.filter(g => !g._auto).map(g => g.req); f.groups.forEach(g => { if (g._auto) { g.req = nextReqNoFrom(used, f.date); used.push(g.req); } }); }
   let h = '<div class="row"><h2>' + (RET ? (f.single ? 'New return' : 'Batch add returns') : 'Batch add requests') + '</h2><button class="btn sm ghost" data-a="closeSheet">Close</button></div>';
   h += RET ? '<label class="f">Returns came on (in every remark)<input type="date" data-bt="date" value="' + esc(f.date) + '"></label>'
     : '<div class="grid2"><label class="f">Request date<input type="date" data-bt="date" value="' + esc(f.date) + '"></label><label class="f">First Slip No<input type="text" data-bt="slipStart" value="' + esc(f.slipStart || '') + '" class="mono" placeholder="optional, e.g. JV/1042" autocapitalize="characters"></label></div>';
@@ -4097,8 +4095,10 @@ document.addEventListener('input', ev => {
   if (el.dataset.nr) { const k = el.dataset.nr; ui.form[k] = k === 'rcv' ? el.value.toUpperCase().replace(/[^A-Z0-9]/g, '') : el.value;
     if (k === 'store') { const d = (S.stores[el.value] || {}).rcv; if (d && !ui.form.rcv) ui.form.rcv = d; }
     if (k === 'q') { const box = document.getElementById('nrhits'); if (box) box.innerHTML = nrHits(); return; }
+    if (k === 'req') ui.form._reqEdited = true;
+    if (k === 'date' && !ui.form._reqEdited) { ui.form.req = nextReqNo(ui.form.date); const fk = focusKey(el); renderSheet(); refocus(fk); return; }
     if (k === 'req' || k === 'slip') { const fk = focusKey(el); renderSheet(); refocus(fk); } return; }
-  if (el.dataset.bt) { const k = el.dataset.bt; ui.form[k] = el.value; if (k === 'date' && ui.form.mode === 'return') { renderSheet(); return; } if (k === 'q') { const box = document.getElementById('bthits'); if (box) box.innerHTML = batchHits(ui.form.act); } return; }
+  if (el.dataset.bt) { const k = el.dataset.bt; ui.form[k] = el.value; if (k === 'date') { renderSheet(); return; } if (k === 'q') { const box = document.getElementById('bthits'); if (box) box.innerHTML = batchHits(ui.form.act); } return; }
   if (el.dataset.bg) { const [gi, k] = el.dataset.bg.split('|'); if (k === 'req') ui.form.groups[+gi]._auto = false; ui.form.groups[+gi][k] = k === 'rcv' ? el.value.toUpperCase().replace(/[^A-Z0-9]/g, '') : k === 'slip' ? el.value.toUpperCase() : el.value; return; }
   if (el.dataset.bq) { const [gi, ii] = el.dataset.bq.split('|').map(Number); ui.form.groups[gi].items[ii].qty = el.value; return; }
   if (el.dataset.nrq != null) { ui.form.items[+el.dataset.nrq].qty = el.value; const b = document.querySelector('[data-a=nrSave]'); if (b) { const f = ui.form; b.disabled = !(f.store && f.req && f.items.length && f.items.every(x => parseFloat(x.qty) > 0)); } return; }
